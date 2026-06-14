@@ -18,6 +18,9 @@ public:
     void stop();
     void seek(double seconds);
 
+    void setRepeat(bool repeat) { m_repeat = repeat; }
+    void setTrimPoints(double startSec, double endSec);
+
     bool isPlaying() const { return playing; }
     double getCurrentTime() const;
     double getDuration() const;
@@ -38,6 +41,9 @@ private:
     std::unique_ptr<VideoPlayer> player;
     GLuint texture = 0;
     bool playing = false;
+    bool m_repeat = false;
+    double m_trimStart = 0.0;
+    double m_trimEnd = -1.0;
     QTimer *frameTimer = nullptr;
 
     void setupTexture();

@@ -108,10 +108,17 @@ int VideoPlayer::getHeight() const {
 }
 
 double VideoPlayer::getDuration() const {
-    if (!formatContext || videoStream->duration == AV_NOPTS_VALUE) {
-        return 0.0;
-    }
-    return (double)videoStream->duration * av_q2d(videoStream->time_base);
+    if (!formatContext) return 0.0;
+
+    // Stream-level duration (most accurate when present)
+    if (videoStream && videoStream->duration != AV_NOPTS_VALUE)
+        return static_cast<double>(videoStream->duration) * av_q2d(videoStream->time_base);
+
+    // Container-level fallback (covers H.264/MP4 and most modern formats)
+    if (formatContext->duration != AV_NOPTS_VALUE)
+        return static_cast<double>(formatContext->duration) / AV_TIME_BASE;
+
+    return 0.0;
 }
 
 double VideoPlayer::getCurrentTime() const {

@@ -22,6 +22,8 @@ set(SOURCES
     src/core/ThumbnailExtractor.cpp
     src/ui/MainWindow.cpp
     src/ui/VideoWidget.cpp
+    src/ui/ClipCard.cpp
+    src/ui/ClipEditDialog.cpp
 )
 
 set(HEADERS
@@ -30,6 +32,8 @@ set(HEADERS
     src/core/ThumbnailExtractor.h
     src/ui/MainWindow.h
     src/ui/VideoWidget.h
+    src/ui/ClipCard.h
+    src/ui/ClipEditDialog.h
 )
 
 # Create executable

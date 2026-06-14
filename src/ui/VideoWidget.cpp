@@ -109,6 +109,11 @@ double VideoWidget::getDuration() const {
     return player->isOpen() ? player->getDuration() : 0.0;
 }
 
+void VideoWidget::setTrimPoints(double startSec, double endSec) {
+    m_trimStart = startSec;
+    m_trimEnd = endSec;
+}
+
 void VideoWidget::setupTexture() {
     if (texture) {
         glDeleteTextures(1, &texture);
@@ -146,9 +151,36 @@ void VideoWidget::updateTexture() {
 }
 
 void VideoWidget::updateFrame() {
-    if (playing && player->isOpen()) {
-        updateTexture();
+    if (!playing || !player->isOpen()) return;
+
+    double endLimit = (m_trimEnd > 0) ? m_trimEnd : player->getDuration();
+    if (endLimit > 0 && player->getCurrentTime() >= endLimit) {
+        if (m_repeat) {
+            player->seek(m_trimStart);
+        } else {
+            playing = false;
+            frameTimer->stop();
+            return;
+        }
+    }
+
+    if (player->decodeFrame()) {
+        makeCurrent();
+        const uint8_t *frameData = player->getFrameData();
+        QSize size = player->getFrameSize();
+        glBindTexture(GL_TEXTURE_2D, texture);
+        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, size.width(), size.height(),
+                        GL_RGB, GL_UNSIGNED_BYTE, frameData);
+        glBindTexture(GL_TEXTURE_2D, 0);
         update();
+    } else {
+        // EOF
+        if (m_repeat) {
+            player->seek(m_trimStart);
+        } else {
+            playing = false;
+            frameTimer->stop();
+        }
     }
 }
 
