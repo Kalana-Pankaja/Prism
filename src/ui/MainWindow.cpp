@@ -11,6 +11,10 @@
 #include <QUrl>
 #include <QFileInfo>
 #include <QPixmap>
+#include <QVBoxLayout>
+#include <QHBoxLayout>
+#include <QLabel>
+#include <QPushButton>
 #include <algorithm>
 
 MainWindow::MainWindow(QWidget *parent)
@@ -18,25 +22,49 @@ MainWindow::MainWindow(QWidget *parent)
     ui->setupUi(this);
     setAcceptDrops(true);
 
-    for (int i = 0; i < 512; ++i)
-        clipCards[i] = nullptr;
-
     outputWindow = new OutputWindow(this);
     outputWindow->show();
 
-    for (int i = 0; i < 32; ++i) {
-        clipCards[i] = new ClipCard(i, this);
-        connect(clipCards[i], &ClipCard::triggered,      this, &MainWindow::onClipGridClicked);
-        connect(clipCards[i], &ClipCard::aButtonClicked, this, &MainWindow::onAButtonClicked);
-        connect(clipCards[i], &ClipCard::bButtonClicked, this, &MainWindow::onBButtonClicked);
-
-        int row = i / 8;
-        int col = i % 8;
-        ui->gridLayout->addWidget(clipCards[i], row, col);
-    }
-
     setupConnections();
     applyTheme();
+
+    // Build the empty-state placeholder (shown before any media is loaded)
+    m_emptyPlaceholder = new QWidget(ui->gridWidget);
+    m_emptyPlaceholder->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+    auto *phLayout = new QVBoxLayout(m_emptyPlaceholder);
+    phLayout->setAlignment(Qt::AlignCenter);
+    phLayout->setSpacing(16);
+
+    auto *phIcon = new QLabel("📁", m_emptyPlaceholder);
+    phIcon->setAlignment(Qt::AlignCenter);
+    phIcon->setStyleSheet("font-size: 52px;");
+
+    auto *phText = new QLabel("No media loaded\nLoad a folder, add another folder, or pick individual files.",
+                              m_emptyPlaceholder);
+    phText->setAlignment(Qt::AlignCenter);
+    phText->setWordWrap(true);
+    phText->setStyleSheet("color: #555; font-size: 13px;");
+
+    // Quick-action buttons embedded in the placeholder
+    auto *phBtnRow = new QWidget(m_emptyPlaceholder);
+    auto *phBtns   = new QHBoxLayout(phBtnRow);
+    phBtns->setSpacing(10);
+    auto *phLoad  = new QPushButton("📁  Load Folder",  phBtnRow);
+    auto *phAdd   = new QPushButton("📂  Add Folder",   phBtnRow);
+    auto *phFiles = new QPushButton("＋  Add Files",    phBtnRow);
+    for (auto *b : {phLoad, phAdd, phFiles}) {
+        b->setStyleSheet("font-size: 12px; padding: 6px 16px;");
+        phBtns->addWidget(b);
+    }
+    connect(phLoad,  &QPushButton::clicked, this, &MainWindow::onLoadFolderClicked);
+    connect(phAdd,   &QPushButton::clicked, this, &MainWindow::onAddFolderClicked);
+    connect(phFiles, &QPushButton::clicked, this, &MainWindow::onAddFilesClicked);
+
+    phLayout->addWidget(phIcon);
+    phLayout->addWidget(phText);
+    phLayout->addWidget(phBtnRow);
+
+    ui->gridLayout->addWidget(m_emptyPlaceholder, 0, 0, 1, 1);
 
     updateTimer = new QTimer(this);
     connect(updateTimer, &QTimer::timeout, this, &MainWindow::onTimerUpdate);
@@ -51,6 +79,9 @@ MainWindow::~MainWindow() {
 
 void MainWindow::setupConnections() {
     connect(ui->loadFolderBtn,    &QPushButton::clicked,  this, &MainWindow::onLoadFolderClicked);
+    connect(ui->addFolderBtn,     &QPushButton::clicked,  this, &MainWindow::onAddFolderClicked);
+    connect(ui->addFilesBtn,      &QPushButton::clicked,  this, &MainWindow::onAddFilesClicked);
+    connect(ui->clearAllBtn,      &QPushButton::clicked,  this, &MainWindow::onClearAllClicked);
     connect(ui->aDeckPlayBtn,     &QPushButton::clicked,  this, &MainWindow::onADeckPlayClicked);
     connect(ui->bDeckPlayBtn,     &QPushButton::clicked,  this, &MainWindow::onBDeckPlayClicked);
     connect(ui->aDeckSpeedSpinBox, QOverload<int>::of(&QSpinBox::valueChanged), this, &MainWindow::onADeckSpeedChanged);
@@ -93,37 +124,95 @@ void MainWindow::setupConnections() {
 }
 
 void MainWindow::onClipGridClicked(int index) {
-    ClipCard *card = clipCards[index];
+    if (index < 0 || index >= m_clipCards.size()) return;
+    ClipCard *card = m_clipCards[index];
     if (!card || card->clipPath().isEmpty()) return;
 
-    for (int i = 0; i < 32; ++i) {
-        if (clipCards[i]) clipCards[i]->setActive(false);
-    }
+    for (ClipCard *c : m_clipCards) c->setActive(false);
     selectedClipIndex = index;
     card->setActive(true);
 
-    if (ui->crossfaderSlider->value() <= 50) {
+    if (ui->crossfaderSlider->value() <= 50)
         onAButtonClicked(index);
-    } else {
+    else
         onBButtonClicked(index);
-    }
 }
 
 void MainWindow::onLoadFolderClicked() {
-    QString folderPath = QFileDialog::getExistingDirectory(this, "Select Media Folder", "");
-    if (!folderPath.isEmpty()) {
-        clipManager.loadFolder(folderPath);
-        for (int i = 0; i < 32; ++i) {
-            if (i < clipManager.getClipCount()) {
-                QString clipPath = clipManager.getClipPath(i);
-                QPixmap thumb = ThumbnailExtractor::extract(clipPath, 110, 65);
-                clipCards[i]->loadClip(clipPath, thumb);
-            } else {
-                clipCards[i]->clearClip();
-            }
-        }
-        qDebug() << "Loaded folder with" << clipManager.getClipCount() << "clips";
+    QString path = QFileDialog::getExistingDirectory(this, "Select Media Folder");
+    if (path.isEmpty()) return;
+    clipManager.loadFolder(path);
+    selectedClipIndex = aClipIndex = bClipIndex = -1;
+    rebuildGrid();
+}
+
+void MainWindow::onAddFolderClicked() {
+    QString path = QFileDialog::getExistingDirectory(this, "Add Media Folder");
+    if (path.isEmpty()) return;
+    clipManager.addFolder(path);
+    rebuildGrid();
+}
+
+void MainWindow::onAddFilesClicked() {
+    QStringList files = QFileDialog::getOpenFileNames(
+        this, "Add Media Files", "",
+        "Media Files (*.mp4 *.avi *.mov *.mkv *.webm *.png *.jpg *.jpeg)");
+    if (files.isEmpty()) return;
+    clipManager.addFiles(files);
+    rebuildGrid();
+}
+
+void MainWindow::onClearAllClicked() {
+    clipManager.clear();
+    selectedClipIndex = aClipIndex = bClipIndex = -1;
+    rebuildGrid();
+}
+
+// ── Grid management ───────────────────────────────────────────────────────────
+
+void MainWindow::rebuildGrid() {
+    // Remove every item from the layout
+    while (QLayoutItem *item = ui->gridLayout->takeAt(0)) {
+        if (item->widget()) item->widget()->hide();
+        delete item;
     }
+
+    // Delete all old ClipCards
+    for (ClipCard *c : m_clipCards) c->deleteLater();
+    m_clipCards.clear();
+
+    int n = clipManager.getClipCount();
+
+    if (n == 0) {
+        // Show the "no media" placeholder
+        m_emptyPlaceholder->show();
+        ui->gridLayout->addWidget(m_emptyPlaceholder, 0, 0, 1, 1);
+        return;
+    }
+
+    m_emptyPlaceholder->hide();
+
+    // Create exactly n ClipCards
+    int availW = ui->clipsScrollArea->viewport()->width();
+    if (availW < 10) availW = width() - 40;
+    dynamicCols = std::max(MIN_COLS, availW / (CARD_WIDTH + 4));
+
+    for (int i = 0; i < n; ++i) {
+        auto *card = new ClipCard(i, ui->gridWidget);
+        connect(card, &ClipCard::triggered,      this, &MainWindow::onClipGridClicked);
+        connect(card, &ClipCard::aButtonClicked, this, &MainWindow::onAButtonClicked);
+        connect(card, &ClipCard::bButtonClicked, this, &MainWindow::onBButtonClicked);
+
+        QString path  = clipManager.getClipPath(i);
+        QPixmap thumb = ThumbnailExtractor::extract(path, 110, 65);
+        card->loadClip(path, thumb);
+
+        ui->gridLayout->addWidget(card, i / dynamicCols, i % dynamicCols);
+        card->show();
+        m_clipCards.append(card);
+    }
+
+    qDebug() << "Grid rebuilt with" << n << "clips";
 }
 
 void MainWindow::onCrossfaderMoved(int value) {
@@ -193,23 +282,21 @@ void MainWindow::onTimerUpdate() {
 }
 
 void MainWindow::updateGridLayout() {
-    if (!ui->gridLayout) return;
+    if (m_clipCards.isEmpty()) return;
 
     while (QLayoutItem *item = ui->gridLayout->takeAt(0)) {
         if (item->widget()) item->widget()->hide();
         delete item;
     }
 
-    int availableWidth = width() - 60;
-    if (availableWidth <= 0) availableWidth = 1200 - 60;
-    dynamicCols = std::max(MIN_COLS, availableWidth / (CARD_WIDTH + 4));
+    int availW = ui->clipsScrollArea->viewport()->width();
+    if (availW < 10) availW = width() - 40;
+    dynamicCols = std::max(MIN_COLS, availW / (CARD_WIDTH + 4));
 
-    for (int i = 0; i < 32; ++i) {
-        clipCards[i]->show();
-        ui->gridLayout->addWidget(clipCards[i], i / dynamicCols, i % dynamicCols);
+    for (int i = 0; i < m_clipCards.size(); ++i) {
+        m_clipCards[i]->show();
+        ui->gridLayout->addWidget(m_clipCards[i], i / dynamicCols, i % dynamicCols);
     }
-
-    ui->gridLayout->update();
 }
 
 void MainWindow::resizeEvent(QResizeEvent *event) {
@@ -429,26 +516,39 @@ void MainWindow::dragEnterEvent(QDragEnterEvent *event) {
 
 void MainWindow::dropEvent(QDropEvent *event) {
     const QMimeData *mimeData = event->mimeData();
-    if (mimeData->hasUrls()) {
-        QString filePath = mimeData->urls().first().toLocalFile();
-        outputWindow->videoWidget()->loadVideo(filePath);
-        outputWindow->videoWidget()->play();
-        event->acceptProposedAction();
+    if (!mimeData->hasUrls()) return;
+
+    QStringList paths;
+    for (const QUrl &url : mimeData->urls()) {
+        QString p = url.toLocalFile();
+        QFileInfo fi(p);
+        if (fi.isDir()) {
+            clipManager.addFolder(p);
+        } else {
+            paths << p;
+        }
     }
+    if (!paths.isEmpty())
+        clipManager.addFiles(paths);
+    rebuildGrid();
+    event->acceptProposedAction();
 }
 
 void MainWindow::onAButtonClicked(int index) {
-    ClipCard *card = clipCards[index];
+    if (index < 0 || index >= m_clipCards.size()) return;
+    ClipCard *card = m_clipCards[index];
     if (!card || card->clipPath().isEmpty()) return;
 
-    if (aClipIndex >= 0 && aClipIndex < 32)
-        clipCards[aClipIndex]->setASelected(false);
+    if (aClipIndex >= 0 && aClipIndex < m_clipCards.size())
+        m_clipCards[aClipIndex]->setASelected(false);
     aClipIndex = index;
     card->setASelected(true);
 
     VideoWidget *out = outputWindow->videoWidget();
     out->setRepeatA(card->isRepeat());
     out->setTrimPointsA(card->startTime(), card->endTime());
+    out->setCropA(card->cropX(), card->cropY(), card->cropW(), card->cropH());
+    out->setOverlaysA(card->overlays());
     out->loadVideoA(card->clipPath());
     if (card->startTime() > 0) out->seekA(card->startTime());
     out->playA();
@@ -463,17 +563,20 @@ void MainWindow::onAButtonClicked(int index) {
 }
 
 void MainWindow::onBButtonClicked(int index) {
-    ClipCard *card = clipCards[index];
+    if (index < 0 || index >= m_clipCards.size()) return;
+    ClipCard *card = m_clipCards[index];
     if (!card || card->clipPath().isEmpty()) return;
 
-    if (bClipIndex >= 0 && bClipIndex < 32)
-        clipCards[bClipIndex]->setBSelected(false);
+    if (bClipIndex >= 0 && bClipIndex < m_clipCards.size())
+        m_clipCards[bClipIndex]->setBSelected(false);
     bClipIndex = index;
     card->setBSelected(true);
 
     VideoWidget *out = outputWindow->videoWidget();
     out->setRepeatB(card->isRepeat());
     out->setTrimPointsB(card->startTime(), card->endTime());
+    out->setCropB(card->cropX(), card->cropY(), card->cropW(), card->cropH());
+    out->setOverlaysB(card->overlays());
     out->loadVideoB(card->clipPath());
     if (card->startTime() > 0) out->seekB(card->startTime());
     out->playB();

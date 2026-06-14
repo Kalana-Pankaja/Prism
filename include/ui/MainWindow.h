@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QMainWindow>
+#include <QVector>
 #include "ui/ClipCard.h"
 #include "ui/OutputWindow.h"
 #include "core/ClipManager.h"
@@ -22,6 +23,9 @@ protected:
 private slots:
     void onClipGridClicked(int index);
     void onLoadFolderClicked();
+    void onAddFolderClicked();
+    void onAddFilesClicked();
+    void onClearAllClicked();
     void onCrossfaderMoved(int value);
     void onADeckPlayClicked();
     void onBDeckPlayClicked();
@@ -33,25 +37,28 @@ private slots:
 
 private:
     static constexpr int CARD_WIDTH = 122;
-    static constexpr int MIN_COLS = 2;
+    static constexpr int MIN_COLS   = 2;
     int dynamicCols = 8;
 
-    Ui::MainWindow *ui;
-    OutputWindow *outputWindow = nullptr;
-    ClipCard *clipCards[512];
+    Ui::MainWindow  *ui;
+    OutputWindow    *outputWindow  = nullptr;
+    QWidget         *m_emptyPlaceholder = nullptr;
+
+    QVector<ClipCard*> m_clipCards;
 
     bool m_aSliderDragging = false;
     bool m_bSliderDragging = false;
 
     ClipManager clipManager;
-    QTimer *updateTimer = nullptr;
-    int selectedClipIndex = -1;
-    int aClipIndex = -1;
-    int bClipIndex = -1;
+    QTimer     *updateTimer       = nullptr;
+    int         selectedClipIndex = -1;
+    int         aClipIndex        = -1;
+    int         bClipIndex        = -1;
 
     void setupConnections();
     void applyTheme();
-    void updateGridLayout();
+    void rebuildGrid();          // recreates ClipCards to match clip count
+    void updateGridLayout();     // re-flows existing cards into columns
 
     static QString formatTimeShort(double secs);
 };

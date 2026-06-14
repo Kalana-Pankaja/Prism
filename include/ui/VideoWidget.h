@@ -3,8 +3,11 @@
 #include <QOpenGLWidget>
 #include <QOpenGLFunctions>
 #include <QImage>
+#include <QHash>
+#include <QPixmap>
 #include <memory>
 #include "core/VideoPlayer.h"
+#include "core/OverlayItem.h"
 
 class VideoWidget : public QOpenGLWidget, protected QOpenGLFunctions {
     Q_OBJECT
@@ -29,6 +32,14 @@ public:
     void setRepeatB(bool repeat) { m_repeatB = repeat; }
     void setTrimPointsA(double startSec, double endSec);
     void setTrimPointsB(double startSec, double endSec);
+
+    // Spatial crop (normalized 0..1; default 0,0,1,1 = full frame)
+    void setCropA(float x, float y, float w, float h);
+    void setCropB(float x, float y, float w, float h);
+
+    // Overlays drawn on top of the video
+    void setOverlaysA(const QList<OverlayItem> &overlays);
+    void setOverlaysB(const QList<OverlayItem> &overlays);
 
     bool isPlayingA() const { return m_playingA; }
     bool isPlayingB() const { return m_playingB; }
@@ -62,6 +73,7 @@ protected:
     void initializeGL() override;
     void resizeGL(int w, int h) override;
     void paintGL() override;
+    void paintEvent(QPaintEvent *event) override;   // overlays drawn here
     void dragEnterEvent(QDragEnterEvent *event) override;
     void dropEvent(QDropEvent *event) override;
 
@@ -82,11 +94,25 @@ private:
     double m_trimEndA = -1.0;
     double m_trimStartB = 0.0;
     double m_trimEndB = -1.0;
+
+    // Crop: normalized [0,1]
+    float m_cropXA = 0.f, m_cropYA = 0.f, m_cropWA = 1.f, m_cropHA = 1.f;
+    float m_cropXB = 0.f, m_cropYB = 0.f, m_cropWB = 1.f, m_cropHB = 1.f;
+
+    // Overlays
+    QList<OverlayItem> m_overlaysA;
+    QList<OverlayItem> m_overlaysB;
+    QHash<QString, QPixmap> m_overlayPixCache;
+
     QTimer *m_frameTimer = nullptr;
+    QRectF m_videoRect;   // letterboxed display rect, updated each paintGL
 
     void setupTextureGL(GLuint &tex, VideoPlayer *player);
     void uploadFrameGL(GLuint tex, VideoPlayer *player);
-    void renderTexture(GLuint tex);
+    QRectF computeVideoRect(VideoPlayer *player, float cx, float cy, float cw, float ch) const;
+    void renderTexture(GLuint tex, float cx, float cy, float cw, float ch,
+                       float dstX, float dstY, float dstW, float dstH);
+    void renderOverlays(QPainter &p, const QList<OverlayItem> &overlays);
     bool advancePlayer(VideoPlayer *player, bool &playing, bool repeat,
                        double trimStart, double trimEnd);
 };

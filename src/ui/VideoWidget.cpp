@@ -4,6 +4,10 @@
 #include <QDragEnterEvent>
 #include <QMimeData>
 #include <QUrl>
+#include <QPainter>
+#include <QFont>
+#include <QFileInfo>
+#include <algorithm>
 
 VideoWidget::VideoWidget(QWidget *parent)
     : QOpenGLWidget(parent)
@@ -47,18 +51,96 @@ void VideoWidget::paintGL() {
     GLuint tex = m_showA ? m_textureA : m_textureB;
     VideoPlayer *player = m_showA ? m_playerA.get() : m_playerB.get();
     if (!tex || !player->isOpen()) return;
-    renderTexture(tex);
+
+    float cx, cy, cw, ch;
+    if (m_showA) { cx=m_cropXA; cy=m_cropYA; cw=m_cropWA; ch=m_cropHA; }
+    else         { cx=m_cropXB; cy=m_cropYB; cw=m_cropWB; ch=m_cropHB; }
+
+    // Compute letterboxed rect and cache it for overlay rendering
+    m_videoRect = computeVideoRect(player, cx, cy, cw, ch);
+    renderTexture(tex, cx, cy, cw, ch,
+                  (float)m_videoRect.x(),     (float)m_videoRect.y(),
+                  (float)m_videoRect.width(), (float)m_videoRect.height());
 }
 
-void VideoWidget::renderTexture(GLuint tex) {
+void VideoWidget::paintEvent(QPaintEvent *e) {
+    QOpenGLWidget::paintEvent(e);  // runs initializeGL / resizeGL / paintGL
+
+    const auto &overlays = m_showA ? m_overlaysA : m_overlaysB;
+    if (overlays.isEmpty()) return;
+
+    QPainter p(this);
+    p.setRenderHint(QPainter::Antialiasing);
+    renderOverlays(p, overlays);
+}
+
+void VideoWidget::renderTexture(GLuint tex, float cx, float cy, float cw, float ch,
+                                float dstX, float dstY, float dstW, float dstH) {
     glBindTexture(GL_TEXTURE_2D, tex);
     glBegin(GL_QUADS);
-    glTexCoord2f(0, 0); glVertex2f(0,       0);
-    glTexCoord2f(1, 0); glVertex2f(width(),  0);
-    glTexCoord2f(1, 1); glVertex2f(width(),  height());
-    glTexCoord2f(0, 1); glVertex2f(0,       height());
+    glTexCoord2f(cx,      cy);      glVertex2f(dstX,        dstY);
+    glTexCoord2f(cx + cw, cy);      glVertex2f(dstX + dstW, dstY);
+    glTexCoord2f(cx + cw, cy + ch); glVertex2f(dstX + dstW, dstY + dstH);
+    glTexCoord2f(cx,      cy + ch); glVertex2f(dstX,        dstY + dstH);
     glEnd();
     glBindTexture(GL_TEXTURE_2D, 0);
+}
+
+// Returns the letterboxed rect (in widget pixels) for the given video/crop combo.
+QRectF VideoWidget::computeVideoRect(VideoPlayer *player,
+                                     float cx, float cy, float cw, float ch) const {
+    Q_UNUSED(cx); Q_UNUSED(cy);
+    QSize fs = player->getFrameSize();
+    if (fs.isEmpty()) return QRectF(0, 0, width(), height());
+
+    // Aspect ratio of the *visible* (cropped) portion
+    float videoAR = (fs.width() * cw) / (fs.height() * ch);
+    float widgetAR = (float)width() / (float)height();
+
+    float dstW, dstH, dstX, dstY;
+    if (videoAR > widgetAR) {           // wider: pillarbox (bars top/bottom)
+        dstW = (float)width();
+        dstH = dstW / videoAR;
+        dstX = 0.f;
+        dstY = ((float)height() - dstH) / 2.f;
+    } else {                            // taller: letterbox (bars left/right)
+        dstH = (float)height();
+        dstW = dstH * videoAR;
+        dstX = ((float)width() - dstW) / 2.f;
+        dstY = 0.f;
+    }
+    return QRectF(dstX, dstY, dstW, dstH);
+}
+
+void VideoWidget::renderOverlays(QPainter &p, const QList<OverlayItem> &overlays) {
+    // Position overlays relative to the video display rect, not the whole widget.
+    const QRectF &vr = m_videoRect.isEmpty()
+                     ? QRectF(0, 0, width(), height())
+                     : m_videoRect;
+
+    for (const auto &ov : overlays) {
+        if (!ov.visible) continue;
+        QRectF r(vr.left() + ov.x * vr.width(),
+                 vr.top()  + ov.y * vr.height(),
+                 ov.w * vr.width(),
+                 ov.h * vr.height());
+        p.setOpacity(static_cast<double>(ov.opacity));
+        if (ov.type == OverlayItem::Type::Text) {
+            QFont f;
+            f.setPixelSize(std::max(8, static_cast<int>(ov.fontSize * vr.width() / 1280.0)));
+            p.setFont(f);
+            p.setPen(ov.color);
+            p.drawText(r, Qt::AlignCenter | Qt::TextWordWrap, ov.content);
+        } else {
+            if (!m_overlayPixCache.contains(ov.content))
+                m_overlayPixCache.insert(ov.content, QPixmap(ov.content));
+            const QPixmap &pm = m_overlayPixCache[ov.content];
+            if (!pm.isNull())
+                p.drawPixmap(r.toRect(),
+                    pm.scaled(r.size().toSize(), Qt::KeepAspectRatio, Qt::SmoothTransformation));
+        }
+    }
+    p.setOpacity(1.0);
 }
 
 // ── Load ─────────────────────────────────────────────────────────────────────
@@ -123,6 +205,32 @@ void VideoWidget::seekB(double seconds) {
 
 void VideoWidget::setTrimPointsA(double s, double e) { m_trimStartA = s; m_trimEndA = e; }
 void VideoWidget::setTrimPointsB(double s, double e) { m_trimStartB = s; m_trimEndB = e; }
+
+// ── Crop ─────────────────────────────────────────────────────────────────────
+
+void VideoWidget::setCropA(float x, float y, float w, float h) {
+    m_cropXA = x; m_cropYA = y; m_cropWA = w; m_cropHA = h;
+    if (m_showA) update();
+}
+
+void VideoWidget::setCropB(float x, float y, float w, float h) {
+    m_cropXB = x; m_cropYB = y; m_cropWB = w; m_cropHB = h;
+    if (!m_showA) update();
+}
+
+// ── Overlays ─────────────────────────────────────────────────────────────────
+
+void VideoWidget::setOverlaysA(const QList<OverlayItem> &overlays) {
+    m_overlaysA = overlays;
+    m_overlayPixCache.clear();
+    update();
+}
+
+void VideoWidget::setOverlaysB(const QList<OverlayItem> &overlays) {
+    m_overlaysB = overlays;
+    m_overlayPixCache.clear();
+    update();
+}
 
 // ── Query ─────────────────────────────────────────────────────────────────────
 

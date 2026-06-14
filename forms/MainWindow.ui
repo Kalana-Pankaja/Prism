@@ -58,16 +58,45 @@
         <number>10</number>
        </property>
        <item>
-        <widget class="QPushButton" name="loadFolderBtn">
-         <property name="maximumSize">
-          <size>
-           <width>100</width>
-           <height>16777215</height>
-          </size>
-         </property>
-         <property name="text">
-          <string>📁 Load</string>
-         </property>
+        <widget class="QWidget" name="mediaToolbar" native="true">
+         <layout class="QHBoxLayout" name="mediaToolbarLayout">
+          <property name="spacing"><number>6</number></property>
+          <property name="leftMargin"><number>0</number></property>
+          <property name="topMargin"><number>0</number></property>
+          <property name="rightMargin"><number>0</number></property>
+          <property name="bottomMargin"><number>0</number></property>
+          <item>
+           <widget class="QPushButton" name="loadFolderBtn">
+            <property name="text"><string>📁  Load Folder</string></property>
+            <property name="toolTip"><string>Load a folder — replaces current clips</string></property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QPushButton" name="addFolderBtn">
+            <property name="text"><string>📂  Add Folder</string></property>
+            <property name="toolTip"><string>Append another folder's clips without replacing the current ones</string></property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QPushButton" name="addFilesBtn">
+            <property name="text"><string>＋  Add Files</string></property>
+            <property name="toolTip"><string>Pick individual media files to add to the grid</string></property>
+           </widget>
+          </item>
+          <item>
+           <spacer>
+            <property name="orientation"><enum>Qt::Horizontal</enum></property>
+            <property name="sizeHint" stdset="0"><size><width>40</width><height>20</height></size></property>
+           </spacer>
+          </item>
+          <item>
+           <widget class="QPushButton" name="clearAllBtn">
+            <property name="text"><string>🗑  Clear All</string></property>
+            <property name="toolTip"><string>Remove all clips from the grid</string></property>
+            <property name="styleSheet"><string notr="true">QPushButton { color: #c06060; } QPushButton:hover { color: #e07070; }</string></property>
+           </widget>
+          </item>
+         </layout>
         </widget>
        </item>
        <item>

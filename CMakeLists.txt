@@ -20,10 +20,13 @@ set(SOURCES
     src/core/VideoPlayer.cpp
     src/core/ClipManager.cpp
     src/core/ThumbnailExtractor.cpp
+    src/core/OverlayItem.cpp
     src/ui/MainWindow.cpp
     src/ui/VideoWidget.cpp
     src/ui/ClipCard.cpp
     src/ui/ClipEditDialog.cpp
+    src/ui/CropSelectorWidget.cpp
+    src/ui/OverlayCanvasWidget.cpp
     src/ui/OutputWindow.cpp
 )
 
@@ -31,10 +34,13 @@ set(HEADERS
     include/core/VideoPlayer.h
     include/core/ClipManager.h
     include/core/ThumbnailExtractor.h
+    include/core/OverlayItem.h
     include/ui/MainWindow.h
     include/ui/VideoWidget.h
     include/ui/ClipCard.h
     include/ui/ClipEditDialog.h
+    include/ui/CropSelectorWidget.h
+    include/ui/OverlayCanvasWidget.h
     include/ui/OutputWindow.h
 )
 

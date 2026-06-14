@@ -30,8 +30,7 @@ int ClipCard::volume() const {
 
 void ClipCard::loadClip(const QString &path, const QPixmap &thumbnail) {
     m_clipPath = path;
-    m_startTime = 0.0;
-    m_endTime = -1.0;
+    m_settings = ClipSettings::loadFor(path);  // load sidecar (or defaults)
 
     if (!thumbnail.isNull()) {
         ui->thumbnailBtn->setIcon(QIcon(thumbnail));
@@ -58,8 +57,7 @@ void ClipCard::loadClip(const QString &path, const QPixmap &thumbnail) {
 
 void ClipCard::clearClip() {
     m_clipPath.clear();
-    m_startTime = 0.0;
-    m_endTime = -1.0;
+    m_settings = {};
     ui->thumbnailBtn->setIcon(QIcon());
     ui->thumbnailBtn->setText("Empty");
     ui->titleLabel->setText("—");
@@ -113,10 +111,10 @@ void ClipCard::onRepeatClicked() {
 
 void ClipCard::onEditClicked() {
     if (m_clipPath.isEmpty()) return;
-    ClipEditDialog dlg(m_clipPath, m_startTime, m_endTime, this);
+    ClipEditDialog dlg(m_clipPath, m_settings, this);
     if (dlg.exec() == QDialog::Accepted) {
-        m_startTime = dlg.startTime();
-        m_endTime = dlg.endTime();
+        m_settings = dlg.resultSettings();
+        m_settings.saveFor(m_clipPath);
     }
 }
 
