@@ -1,8 +1,9 @@
 #pragma once
 
 #include <QMainWindow>
-#include <QPushButton>
-#include "VideoWidget.h"
+
+namespace Ui { class OutputWindow; }
+class VideoWidget;
 
 class OutputWindow : public QMainWindow {
     Q_OBJECT
@@ -11,13 +12,10 @@ public:
     explicit OutputWindow(QWidget *parent = nullptr);
     ~OutputWindow();
 
-    VideoWidget *videoWidget() const { return outputWidget; }
+    VideoWidget *videoWidget() const;
 
 private:
-    VideoWidget *outputWidget = nullptr;
-    QPushButton *fullscreenBtn = nullptr;
-
-    void createUI();
+    Ui::OutputWindow *ui;
 
 private slots:
     void onFullscreenClicked();

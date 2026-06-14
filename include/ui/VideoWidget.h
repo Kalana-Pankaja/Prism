@@ -4,7 +4,7 @@
 #include <QOpenGLFunctions>
 #include <QImage>
 #include <memory>
-#include "../core/VideoPlayer.h"
+#include "core/VideoPlayer.h"
 
 class VideoWidget : public QOpenGLWidget, protected QOpenGLFunctions {
     Q_OBJECT

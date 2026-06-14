@@ -1,4 +1,4 @@
-#include "ThumbnailExtractor.h"
+#include "core/ThumbnailExtractor.h"
 #include <QDebug>
 #include <QImage>
 

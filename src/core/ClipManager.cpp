@@ -1,4 +1,4 @@
-#include "ClipManager.h"
+#include "core/ClipManager.h"
 #include <QDir>
 #include <QDebug>
 

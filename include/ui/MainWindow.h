@@ -1,15 +1,11 @@
 #pragma once
 
 #include <QMainWindow>
-#include <QSlider>
-#include <QPushButton>
-#include <QGridLayout>
-#include <QLabel>
-#include <QSpinBox>
-#include "VideoWidget.h"
-#include "ClipCard.h"
-#include "OutputWindow.h"
-#include "../core/ClipManager.h"
+#include "ui/ClipCard.h"
+#include "ui/OutputWindow.h"
+#include "core/ClipManager.h"
+
+namespace Ui { class MainWindow; }
 
 class MainWindow : public QMainWindow {
     Q_OBJECT
@@ -37,28 +33,12 @@ private slots:
 
 private:
     static constexpr int CARD_WIDTH = 122;
-    static constexpr int CARD_HEIGHT = 176;
     static constexpr int MIN_COLS = 2;
     int dynamicCols = 8;
 
+    Ui::MainWindow *ui;
     OutputWindow *outputWindow = nullptr;
     ClipCard *clipCards[512];
-    QGridLayout *gridLayout = nullptr;
-
-    QPushButton *aDeckPlayBtn = nullptr;
-    QPushButton *bDeckPlayBtn = nullptr;
-    QSpinBox *aDeckSpeedSpinBox = nullptr;
-    QSpinBox *bDeckSpeedSpinBox = nullptr;
-    QSlider *crossfaderSlider = nullptr;
-    QPushButton *loadFolderBtn = nullptr;
-    QLabel *aPreviewLabel = nullptr;
-    QLabel *bPreviewLabel = nullptr;
-    QLabel *aSelectedLabel = nullptr;
-    QLabel *bSelectedLabel = nullptr;
-    QSlider *aProgressSlider = nullptr;
-    QSlider *bProgressSlider = nullptr;
-    QLabel *aTimeLabel = nullptr;
-    QLabel *bTimeLabel = nullptr;
 
     bool m_aSliderDragging = false;
     bool m_bSliderDragging = false;
@@ -69,9 +49,7 @@ private:
     int aClipIndex = -1;
     int bClipIndex = -1;
 
-    void createUI();
     void setupConnections();
-    void createControlPanel();
     void applyTheme();
     void updateGridLayout();
 

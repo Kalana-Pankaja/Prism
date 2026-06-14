@@ -1,4 +1,4 @@
-#include "VideoWidget.h"
+#include "ui/VideoWidget.h"
 #include <QTimer>
 #include <QDebug>
 #include <QDragEnterEvent>

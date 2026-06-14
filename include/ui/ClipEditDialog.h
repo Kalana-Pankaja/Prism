@@ -1,17 +1,15 @@
 #pragma once
 
 #include <QDialog>
-#include <QSlider>
-#include <QLabel>
-#include <QLineEdit>
-#include <QPushButton>
 #include <QTimer>
-#include "VideoWidget.h"
+
+namespace Ui { class ClipEditDialog; }
 
 class ClipEditDialog : public QDialog {
     Q_OBJECT
 public:
     ClipEditDialog(const QString &clipPath, double startTime, double endTime, QWidget *parent = nullptr);
+    ~ClipEditDialog();
 
     double startTime() const { return m_startTime; }
     double endTime() const { return m_endTime; }
@@ -29,22 +27,14 @@ private slots:
     void onPollTimer();
 
 private:
+    Ui::ClipEditDialog *ui;
+    QTimer *pollTimer;
     QString m_clipPath;
     double m_startTime;
     double m_endTime;
     double m_duration = 0.0;
     bool m_videoLoaded = false;
     bool m_sliderDragging = false;
-
-    VideoWidget *preview;
-    QSlider *progressSlider;
-    QPushButton *playPauseBtn;
-    QLineEdit *timestampEdit;
-    QLabel *durationLabel;
-    QLabel *startTimeLabel;
-    QLabel *endTimeLabel;
-    QLabel *statusLabel;
-    QTimer *pollTimer;
 
     void seekRelative(double delta);
     void seekTo(double secs, bool updateSlider = true);

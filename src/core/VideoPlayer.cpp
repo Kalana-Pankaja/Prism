@@ -1,4 +1,4 @@
-#include "VideoPlayer.h"
+#include "core/VideoPlayer.h"
 #include <QDebug>
 
 VideoPlayer::VideoPlayer() = default;

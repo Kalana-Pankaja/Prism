@@ -28,22 +28,34 @@ set(SOURCES
 )
 
 set(HEADERS
-    src/core/VideoPlayer.h
-    src/core/ClipManager.h
-    src/core/ThumbnailExtractor.h
-    src/ui/MainWindow.h
-    src/ui/VideoWidget.h
-    src/ui/ClipCard.h
-    src/ui/ClipEditDialog.h
-    src/ui/OutputWindow.h
+    include/core/VideoPlayer.h
+    include/core/ClipManager.h
+    include/core/ThumbnailExtractor.h
+    include/ui/MainWindow.h
+    include/ui/VideoWidget.h
+    include/ui/ClipCard.h
+    include/ui/ClipEditDialog.h
+    include/ui/OutputWindow.h
+)
+
+set(UI_FILES
+    forms/MainWindow.ui
+    forms/ClipCard.ui
+    forms/ClipEditDialog.ui
+    forms/OutputWindow.ui
 )
 
 # Create executable
-qt_add_executable(Prism ${SOURCES} ${HEADERS} resources/resources.qrc)
+qt_add_executable(Prism ${SOURCES} ${HEADERS} ${UI_FILES} resources/resources.qrc)
+
+# Tell AUTOUIC where to find .ui files
+set_target_properties(Prism PROPERTIES
+    AUTOUIC_SEARCH_PATHS "${CMAKE_CURRENT_SOURCE_DIR}/forms"
+)
 
 # Include directories
 target_include_directories(Prism PRIVATE
-    src
+    include
     ${FFMPEG_INCLUDE_DIRS}
 )
 

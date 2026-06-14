@@ -52,3 +52,5 @@ external/
 # Test results
 Testing/
 Test.log
+
+repomix-output.xml

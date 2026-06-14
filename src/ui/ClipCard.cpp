@@ -1,90 +1,31 @@
-#include "ClipCard.h"
-#include "ClipEditDialog.h"
-#include <QVBoxLayout>
-#include <QHBoxLayout>
+#include "ui/ClipCard.h"
+#include "ui_ClipCard.h"
+#include "ui/ClipEditDialog.h"
 #include <QFileInfo>
 #include <QFontMetrics>
 
 ClipCard::ClipCard(int index, QWidget *parent)
-    : QFrame(parent), m_index(index) {
-    setFixedSize(122, 176);
-    setFrameShape(QFrame::StyledPanel);
+    : QFrame(parent), m_index(index), ui(new Ui::ClipCard) {
+    ui->setupUi(this);
 
-    QVBoxLayout *layout = new QVBoxLayout(this);
-    layout->setContentsMargins(5, 5, 5, 5);
-    layout->setSpacing(3);
-
-    thumbnailBtn = new QPushButton(this);
-    thumbnailBtn->setFixedSize(110, 65);
-    thumbnailBtn->setIconSize(QSize(110, 65));
-    thumbnailBtn->setFlat(true);
-    thumbnailBtn->setStyleSheet(
-        "QPushButton { background-color: #18191b; border: 1px solid #2a2c30;"
-        " border-radius: 4px; font-size: 9px; color: #555; }"
-        "QPushButton:hover { border-color: #2a8fa0; }"
-        "QPushButton:pressed { background-color: #1a3d45; }");
-    connect(thumbnailBtn, &QPushButton::clicked, this, [this]() {
+    connect(ui->thumbnailBtn, &QPushButton::clicked, this, [this]() {
         if (!m_clipPath.isEmpty()) emit triggered(m_index);
     });
-    layout->addWidget(thumbnailBtn);
-
-    titleLabel = new QLabel("—", this);
-    titleLabel->setFixedWidth(110);
-    titleLabel->setAlignment(Qt::AlignCenter);
-    titleLabel->setStyleSheet("font-size: 9px; color: #aaa; background: transparent;");
-    layout->addWidget(titleLabel);
-
-    QWidget *volRow = new QWidget(this);
-    QHBoxLayout *volLayout = new QHBoxLayout(volRow);
-    volLayout->setContentsMargins(0, 0, 0, 0);
-    volLayout->setSpacing(3);
-
-    muteBtn = new QPushButton("🔊", this);
-    muteBtn->setFixedSize(24, 20);
-    muteBtn->setStyleSheet("font-size: 11px; padding: 0; min-height: 0; height: 20px;");
-    connect(muteBtn, &QPushButton::clicked, this, &ClipCard::onMuteClicked);
-
-    volumeSlider = new QSlider(Qt::Horizontal, this);
-    volumeSlider->setRange(0, 100);
-    volumeSlider->setValue(100);
-    volumeSlider->setFixedHeight(20);
-
-    volLayout->addWidget(muteBtn);
-    volLayout->addWidget(volumeSlider, 1);
-    layout->addWidget(volRow);
-
-    repeatBtn = new QPushButton("↺  Off", this);
-    repeatBtn->setFixedHeight(20);
-    repeatBtn->setStyleSheet("font-size: 9px; min-height: 0; height: 20px; text-align: left; padding-left: 6px;");
-    connect(repeatBtn, &QPushButton::clicked, this, &ClipCard::onRepeatClicked);
-    layout->addWidget(repeatBtn);
-
-    editBtn = new QPushButton("Edit", this);
-    editBtn->setFixedHeight(20);
-    editBtn->setStyleSheet("font-size: 9px; min-height: 0; height: 20px;");
-    connect(editBtn, &QPushButton::clicked, this, &ClipCard::onEditClicked);
-    layout->addWidget(editBtn);
-
-    QWidget *abRow = new QWidget(this);
-    QHBoxLayout *abLayout = new QHBoxLayout(abRow);
-    abLayout->setContentsMargins(0, 0, 0, 0);
-    abLayout->setSpacing(3);
-
-    aBtn = new QPushButton("A", this);
-    aBtn->setFixedHeight(20);
-    aBtn->setStyleSheet("font-size: 9px; min-height: 0; height: 20px;");
-    connect(aBtn, &QPushButton::clicked, this, &ClipCard::onAButtonClicked);
-
-    bBtn = new QPushButton("B", this);
-    bBtn->setFixedHeight(20);
-    bBtn->setStyleSheet("font-size: 9px; min-height: 0; height: 20px;");
-    connect(bBtn, &QPushButton::clicked, this, &ClipCard::onBButtonClicked);
-
-    abLayout->addWidget(aBtn, 1);
-    abLayout->addWidget(bBtn, 1);
-    layout->addWidget(abRow);
+    connect(ui->muteBtn,   &QPushButton::clicked, this, &ClipCard::onMuteClicked);
+    connect(ui->repeatBtn, &QPushButton::clicked, this, &ClipCard::onRepeatClicked);
+    connect(ui->editBtn,   &QPushButton::clicked, this, &ClipCard::onEditClicked);
+    connect(ui->aBtn,      &QPushButton::clicked, this, &ClipCard::onAButtonClicked);
+    connect(ui->bBtn,      &QPushButton::clicked, this, &ClipCard::onBButtonClicked);
 
     clearClip();
+}
+
+ClipCard::~ClipCard() {
+    delete ui;
+}
+
+int ClipCard::volume() const {
+    return ui->volumeSlider->value();
 }
 
 void ClipCard::loadClip(const QString &path, const QPixmap &thumbnail) {
@@ -93,25 +34,25 @@ void ClipCard::loadClip(const QString &path, const QPixmap &thumbnail) {
     m_endTime = -1.0;
 
     if (!thumbnail.isNull()) {
-        thumbnailBtn->setIcon(QIcon(thumbnail));
-        thumbnailBtn->setText("");
+        ui->thumbnailBtn->setIcon(QIcon(thumbnail));
+        ui->thumbnailBtn->setText("");
     } else {
-        thumbnailBtn->setIcon(QIcon());
-        thumbnailBtn->setText("No Preview");
+        ui->thumbnailBtn->setIcon(QIcon());
+        ui->thumbnailBtn->setText("No Preview");
     }
 
     QFileInfo info(path);
     QString name = info.baseName();
-    QFontMetrics fm(titleLabel->font());
-    titleLabel->setText(fm.elidedText(name, Qt::ElideRight, 108));
-    titleLabel->setToolTip(name);
+    QFontMetrics fm(ui->titleLabel->font());
+    ui->titleLabel->setText(fm.elidedText(name, Qt::ElideRight, 108));
+    ui->titleLabel->setToolTip(name);
 
-    repeatBtn->setEnabled(true);
-    editBtn->setEnabled(true);
-    muteBtn->setEnabled(true);
-    volumeSlider->setEnabled(true);
-    aBtn->setEnabled(true);
-    bBtn->setEnabled(true);
+    ui->repeatBtn->setEnabled(true);
+    ui->editBtn->setEnabled(true);
+    ui->muteBtn->setEnabled(true);
+    ui->volumeSlider->setEnabled(true);
+    ui->aBtn->setEnabled(true);
+    ui->bBtn->setEnabled(true);
     setActive(false);
 }
 
@@ -119,16 +60,16 @@ void ClipCard::clearClip() {
     m_clipPath.clear();
     m_startTime = 0.0;
     m_endTime = -1.0;
-    thumbnailBtn->setIcon(QIcon());
-    thumbnailBtn->setText("Empty");
-    titleLabel->setText("—");
-    titleLabel->setToolTip({});
-    repeatBtn->setEnabled(false);
-    editBtn->setEnabled(false);
-    muteBtn->setEnabled(false);
-    volumeSlider->setEnabled(false);
-    aBtn->setEnabled(false);
-    bBtn->setEnabled(false);
+    ui->thumbnailBtn->setIcon(QIcon());
+    ui->thumbnailBtn->setText("Empty");
+    ui->titleLabel->setText("—");
+    ui->titleLabel->setToolTip({});
+    ui->repeatBtn->setEnabled(false);
+    ui->editBtn->setEnabled(false);
+    ui->muteBtn->setEnabled(false);
+    ui->volumeSlider->setEnabled(false);
+    ui->aBtn->setEnabled(false);
+    ui->bBtn->setEnabled(false);
     setActive(false);
     setASelected(false);
     setBSelected(false);
@@ -145,29 +86,29 @@ void ClipCard::setActive(bool active) {
 void ClipCard::setASelected(bool selected) {
     m_aSelected = selected;
     if (selected) {
-        aBtn->setStyleSheet("QPushButton { background-color: #2a5c66; color: #FFFFFF; font-weight: bold; font-size: 9px; min-height: 0; height: 20px; border-radius: 4px; }");
+        ui->aBtn->setStyleSheet("QPushButton { background-color: #2a5c66; color: #FFFFFF; font-weight: bold; font-size: 9px; min-height: 0; height: 20px; border-radius: 4px; }");
     } else {
-        aBtn->setStyleSheet("font-size: 9px; min-height: 0; height: 20px;");
+        ui->aBtn->setStyleSheet("font-size: 9px; min-height: 0; height: 20px;");
     }
 }
 
 void ClipCard::setBSelected(bool selected) {
     m_bSelected = selected;
     if (selected) {
-        bBtn->setStyleSheet("QPushButton { background-color: #2a5c66; color: #FFFFFF; font-weight: bold; font-size: 9px; min-height: 0; height: 20px; border-radius: 4px; }");
+        ui->bBtn->setStyleSheet("QPushButton { background-color: #2a5c66; color: #FFFFFF; font-weight: bold; font-size: 9px; min-height: 0; height: 20px; border-radius: 4px; }");
     } else {
-        bBtn->setStyleSheet("font-size: 9px; min-height: 0; height: 20px;");
+        ui->bBtn->setStyleSheet("font-size: 9px; min-height: 0; height: 20px;");
     }
 }
 
 void ClipCard::onMuteClicked() {
     m_muted = !m_muted;
-    muteBtn->setText(m_muted ? "🔇" : "🔊");
+    ui->muteBtn->setText(m_muted ? "🔇" : "🔊");
 }
 
 void ClipCard::onRepeatClicked() {
     m_repeat = !m_repeat;
-    repeatBtn->setText(m_repeat ? "↺  On" : "↺  Off");
+    ui->repeatBtn->setText(m_repeat ? "↺  On" : "↺  Off");
 }
 
 void ClipCard::onEditClicked() {
