@@ -16,7 +16,8 @@ struct SourceDescriptor {
         Screen,      // display capture    — screenIndex into QGuiApplication::screens()
         Color,       // solid colour       — color field
         Window,      // window/tab capture — windowIndex into capturableWindows()
-        Shader,      // GLSL fragment shader — shaderCode field
+        Shader,           // GLSL fragment shader — shaderCode field
+        DynamicInterface, // QML dynamic UI     — qmlCode field
     };
 
     Kind    kind    = Kind::VideoFile;
@@ -28,11 +29,12 @@ struct SourceDescriptor {
     int     windowIndex      = 0;       // Window kind
     int     slideshowIntervalMs = 3000; // Slideshow kind
     QString shaderCode;                 // Shader kind
+    QString qmlCode;                    // DynamicInterface kind
 
     bool isLiveSource() const {
-        return kind == Kind::Camera || kind == Kind::Screen ||
-               kind == Kind::Color  || kind == Kind::Window ||
-               kind == Kind::Shader;
+        return kind == Kind::Camera || kind == Kind::Screen  ||
+               kind == Kind::Color  || kind == Kind::Window  ||
+               kind == Kind::Shader || kind == Kind::DynamicInterface;
     }
     bool isFileSource() const {
         return kind == Kind::VideoFile || kind == Kind::Image || kind == Kind::Slideshow;

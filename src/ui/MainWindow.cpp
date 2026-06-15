@@ -9,8 +9,11 @@
 #include "core/ColorSource.h"
 #include "core/ImageSource.h"
 #include "core/ShaderSource.h"
+#include "core/DynamicInterfaceSource.h"
 #include "ui/ShaderEditDialog.h"
+#include "ui/QmlEditDialog.h"
 #include <QApplication>
+#include <QCoreApplication>
 #include <QDir>
 #include <QEventLoop>
 #include <glob.h>
@@ -146,6 +149,7 @@ void MainWindow::setupConnections() {
     addElemMenu->addAction("⬛  Solid Color…",     this, &MainWindow::onAddElementColor);
     addElemMenu->addSeparator();
     addElemMenu->addAction("≋  Shader…",           this, &MainWindow::onAddElementShader);
+    addElemMenu->addAction("⬡  Dynamic Interface…", this, &MainWindow::onAddElementDynamicInterface);
 
     connect(ui->aDeckPlayBtn,     &QPushButton::clicked,  this, &MainWindow::onADeckPlayClicked);
     connect(ui->bDeckPlayBtn,     &QPushButton::clicked,  this, &MainWindow::onBDeckPlayClicked);
@@ -371,6 +375,16 @@ QPixmap MainWindow::makeShaderThumb(const QString &code, int w, int h) {
     ShaderSource src(code, QSize(w, h));
     if (!src.nextFrame() || !src.isReady())
         return makeIconThumb("≋", w, h);
+    const uint8_t *data = src.frameData();
+    QImage img(data, w, h, w * 3, QImage::Format_RGB888);
+    return QPixmap::fromImage(img.copy());
+}
+
+QPixmap MainWindow::makeQmlThumb(const QString &code, int w, int h) {
+    DynamicInterfaceSource src(code, QSize(w, h));
+    QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
+    if (!src.nextFrame() || !src.isReady())
+        return makeIconThumb("⬡", w, h);
     const uint8_t *data = src.frameData();
     QImage img(data, w, h, w * 3, QImage::Format_RGB888);
     return QPixmap::fromImage(img.copy());
@@ -845,6 +859,17 @@ static void assignCardToDeck(ClipCard *card, bool deckA,
         break;
     }
 
+    case Kind::DynamicInterface: {
+        auto src = std::make_unique<DynamicInterfaceSource>(desc.qmlCode);
+        if (deckA) { out->setSourceA(std::move(src)); out->playA(); }
+        else        { out->setSourceB(std::move(src)); out->playB(); }
+        progressSlider->setEnabled(false);
+        playBtn->setEnabled(false);
+        selectedLabel->setText(QString("%1: %2").arg(deckA ? "A" : "B", card->sourceName()));
+        timeLabel->setText("LIVE");
+        break;
+    }
+
     }
 }
 
@@ -1055,7 +1080,6 @@ void MainWindow::onAddElementColor() {
 }
 
 void MainWindow::onAddElementShader() {
-    // Add a card immediately with the first preset, then let the user edit it.
     ShaderEditDialog dlg(QString(), this);
     if (dlg.exec() != QDialog::Accepted) return;
 
@@ -1068,6 +1092,21 @@ void MainWindow::onAddElementShader() {
     desc.displayName = "Shader";
 
     addElementCard(desc, makeShaderThumb(code));
+}
+
+void MainWindow::onAddElementDynamicInterface() {
+    QmlEditDialog dlg(QString(), this);
+    if (dlg.exec() != QDialog::Accepted) return;
+
+    QString code = dlg.resultCode().trimmed();
+    if (code.isEmpty()) return;
+
+    SourceDescriptor desc;
+    desc.kind        = SourceDescriptor::Kind::DynamicInterface;
+    desc.qmlCode     = code;
+    desc.displayName = "Dynamic Interface";
+
+    addElementCard(desc, makeQmlThumb(code));
 }
 
 // ── Card management ────────────────────────────────────────────────────────────

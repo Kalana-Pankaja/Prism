@@ -8,7 +8,7 @@ set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
 # Qt
-find_package(Qt6 REQUIRED COMPONENTS Core Widgets OpenGL OpenGLWidgets Gui Multimedia)
+find_package(Qt6 REQUIRED COMPONENTS Core Widgets OpenGL OpenGLWidgets Gui Multimedia Quick Qml)
 
 # FFmpeg
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/CMakeModules")
@@ -29,6 +29,7 @@ set(SOURCES
     src/core/ThumbnailExtractor.cpp
     src/core/OverlayItem.cpp
     src/core/ShaderSource.cpp
+    src/core/DynamicInterfaceSource.cpp
     src/ui/MainWindow.cpp
     src/ui/VideoWidget.cpp
     src/ui/ClipCard.cpp
@@ -37,6 +38,7 @@ set(SOURCES
     src/ui/OverlayCanvasWidget.cpp
     src/ui/OutputWindow.cpp
     src/ui/ShaderEditDialog.cpp
+    src/ui/QmlEditDialog.cpp
 )
 
 set(HEADERS
@@ -54,6 +56,7 @@ set(HEADERS
     include/core/ThumbnailExtractor.h
     include/core/OverlayItem.h
     include/core/ShaderSource.h
+    include/core/DynamicInterfaceSource.h
     include/ui/MainWindow.h
     include/ui/VideoWidget.h
     include/ui/ClipCard.h
@@ -62,6 +65,7 @@ set(HEADERS
     include/ui/OverlayCanvasWidget.h
     include/ui/OutputWindow.h
     include/ui/ShaderEditDialog.h
+    include/ui/QmlEditDialog.h
 )
 
 set(UI_FILES
@@ -70,6 +74,7 @@ set(UI_FILES
     forms/ClipEditDialog.ui
     forms/OutputWindow.ui
     forms/ShaderEditDialog.ui
+    forms/QmlEditDialog.ui
 )
 
 # Create executable
@@ -94,6 +99,8 @@ target_link_libraries(Prism PRIVATE
     Qt6::OpenGLWidgets
     Qt6::Gui
     Qt6::Multimedia
+    Qt6::Quick
+    Qt6::Qml
     ${FFMPEG_LIBRARIES}
 )
 

@@ -2,8 +2,11 @@
 #include "ui_ClipCard.h"
 #include "ui/ClipEditDialog.h"
 #include "ui/ShaderEditDialog.h"
+#include "ui/QmlEditDialog.h"
 #include "core/ImageSource.h"
 #include "core/ShaderSource.h"
+#include "core/DynamicInterfaceSource.h"
+#include <QCoreApplication>
 #include <QFileInfo>
 #include <QFontMetrics>
 #include <QDialog>
@@ -366,8 +369,26 @@ void ClipCard::onEditClicked() {
             QString newCode = dlg.resultCode().trimmed();
             if (!newCode.isEmpty()) {
                 m_sourceDesc.shaderCode = newCode;
-                // Re-render thumbnail
                 ShaderSource src(newCode, QSize(110, 65));
+                if (src.nextFrame() && src.isReady()) {
+                    const uint8_t *data = src.frameData();
+                    QImage img(data, 110, 65, 110 * 3, QImage::Format_RGB888);
+                    ui->thumbnailBtn->setIcon(QIcon(QPixmap::fromImage(img.copy())));
+                }
+                emit sourceDescriptorChanged(m_index, m_sourceDesc);
+            }
+        }
+        break;
+    }
+
+    case Kind::DynamicInterface: {
+        QmlEditDialog dlg(m_sourceDesc.qmlCode, this);
+        if (dlg.exec() == QDialog::Accepted) {
+            QString newCode = dlg.resultCode().trimmed();
+            if (!newCode.isEmpty()) {
+                m_sourceDesc.qmlCode = newCode;
+                DynamicInterfaceSource src(newCode, QSize(110, 65));
+                QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
                 if (src.nextFrame() && src.isReady()) {
                     const uint8_t *data = src.frameData();
                     QImage img(data, 110, 65, 110 * 3, QImage::Format_RGB888);
