@@ -9,8 +9,6 @@
 #include "core/SourceDescriptor.h"
 #include "core/MediaSource.h"
 
-class QShortcut;
-
 namespace Ui { class MainWindow; }
 
 class MainWindow : public QMainWindow {
@@ -47,7 +45,7 @@ private slots:
     void onAddElementCamera();
     void onAddElementScreen();
     void onAddElementWindow();
-    void onAddElementColor();
+    void onAddElementCanvas();
     void onAddElementShader();
 
 private:
@@ -69,6 +67,7 @@ private:
 
     // Add an element node to the editor
     void addElementNode(const SourceDescriptor &desc, const QPixmap &thumb);
+    void appendClipsToEditor(const QStringList &clipPaths);
 
     // Assign a ready-made source to the active deck (based on crossfader).
     void assignSourceToActiveDeck(std::unique_ptr<MediaSource> src,
@@ -80,24 +79,11 @@ private:
     void setupConnections();
     void applyTheme();
 
-    // ── Hotkey grid ───────────────────────────────────────────────────────────
-    // Auto-assigns keyboard shortcuts (key → Deck A, Shift+key → Deck B) to
-    // each node as it is added.  Keys are taken in order from the standard VJ
-    // grid row sequence: 1–0, Q–P, A–L, Z–M (36 slots total).
-    void assignHotkeyToNode(NodeId nodeId);
-    void releaseHotkeyForNode(NodeId nodeId);
-    static const QList<Qt::Key> &hotkeySequence();
-
-    struct NodeShortcuts {
-        QShortcut *deckA = nullptr;
-        QShortcut *deckB = nullptr;
-    };
-    QMap<NodeId, Qt::Key>       m_nodeHotkeys;
-    QMap<Qt::Key,  NodeId>      m_keyToNode;
-    QMap<NodeId, NodeShortcuts> m_nodeShortcuts;
-
     static QPixmap makeIconThumb(const QString &glyph, int w = 110, int h = 65);
-    static QPixmap makeColorThumb(const QColor &color, int w = 110, int h = 65);
+    static QPixmap makeCanvasThumb(const QString &label,
+                                   SourceDescriptor::CanvasFill fill,
+                                   const QColor &color = Qt::white,
+                                   int w = 110, int h = 65);
     static QPixmap makeShaderThumb(const QString &code, int w = 110, int h = 65);
     static QString formatTimeShort(double secs);
 };

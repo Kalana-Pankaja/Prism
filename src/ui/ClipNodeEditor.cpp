@@ -465,11 +465,9 @@ ClipNodeModel *ClipNodeEditor::addClipNode(const QString &path, const QPixmap &t
     m_scene->addItem(nodeItem);
     m_nodeMap[id] = model;
 
-    model->setNodeId(id);
     model->loadClip(path, thumbnail);
     connectNodeSignals(model, id);
 
-    emit nodeAdded(id);
     return model;
 }
 
@@ -485,11 +483,9 @@ ClipNodeModel *ClipNodeEditor::addSourceNode(const SourceDescriptor &desc, const
     m_scene->addItem(nodeItem);
     m_nodeMap[id] = model;
 
-    model->setNodeId(id);
     model->loadSource(desc, thumbnail);
     connectNodeSignals(model, id);
 
-    emit nodeAdded(id);
     return model;
 }
 
