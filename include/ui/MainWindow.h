@@ -53,6 +53,7 @@ private slots:
     void onAddElementWindow();
     void onAddElementCanvas();
     void onAddElementShader();
+    void onAddElementDynamicInterface();
 
     // ── Transition mode ───────────────────────────────────────────────────────
     void onTransitionModeChanged(int index);
@@ -120,5 +121,6 @@ private:
                                    const QColor &color = Qt::white,
                                    int w = 110, int h = 65);
     static QPixmap makeShaderThumb(const QString &code, int w = 110, int h = 65);
+    static QPixmap makeQmlThumb(const QString &code, int w = 110, int h = 65); // kept for ABI compat
     static QString formatTimeShort(double secs);
 };

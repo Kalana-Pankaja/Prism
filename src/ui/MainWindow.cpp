@@ -9,8 +9,11 @@
 #include "core/CanvasSource.h"
 #include "core/ImageSource.h"
 #include "core/ShaderSource.h"
+#include "core/HtmlSource.h"
 #include "ui/ShaderEditDialog.h"
+#include "ui/HtmlEditDialog.h"
 #include <QApplication>
+#include <QCoreApplication>
 #include <QDir>
 #include <QEventLoop>
 #include <QShortcut>
@@ -191,6 +194,7 @@ void MainWindow::setupConnections() {
     addElemMenu->addAction("⬜  Canvas…",          this, &MainWindow::onAddElementCanvas);
     addElemMenu->addSeparator();
     addElemMenu->addAction("≋  Shader…",           this, &MainWindow::onAddElementShader);
+    addElemMenu->addAction("🌐  HTML Overlay…",        this, &MainWindow::onAddElementDynamicInterface);
 
     // ── ClipNodeEditor signals ────────────────────────────────────────────────
     connect(m_clipNodeEditor, &ClipNodeEditor::deckAClipChanged, this, &MainWindow::onNodeAButtonClicked);
@@ -389,6 +393,10 @@ QPixmap MainWindow::makeShaderThumb(const QString &code, int w, int h) {
     const uint8_t *data = src.frameData();
     QImage img(data, w, h, w * 3, QImage::Format_RGB888);
     return QPixmap::fromImage(img.copy());
+}
+
+QPixmap MainWindow::makeQmlThumb(const QString &, int w, int h) {
+    return makeIconThumb("🌐", w, h);
 }
 
 // ── Crossfader ────────────────────────────────────────────────────────────────
@@ -871,6 +879,17 @@ void MainWindow::assignNodeToDeck(ClipNodeModel *node, NodeId nodeId, bool deckA
         break;
     }
 
+    case Kind::Html: {
+        auto src = std::make_unique<HtmlSource>(desc.htmlContent, desc.path);
+        if (deckA) { out->setSourceA(std::move(src)); out->playA(); }
+        else        { out->setSourceB(std::move(src)); out->playB(); }
+        progressSlider->setEnabled(false);
+        playBtn->setEnabled(false);
+        selectedLabel->setText(QString("%1: %2").arg(deckA ? "A" : "B", node->sourceName()));
+        timeLabel->setText("LIVE");
+        break;
+    }
+
     }
 }
 
@@ -1214,6 +1233,24 @@ void MainWindow::onAddElementShader() {
     desc.displayName = "Shader";
 
     addElementNode(desc, makeShaderThumb(code));
+}
+
+void MainWindow::onAddElementDynamicInterface() {
+    HtmlEditDialog dlg(QString(), this);
+    if (dlg.exec() != QDialog::Accepted) return;
+
+    QString filePath = dlg.resultFilePath();
+    QString html     = dlg.resultHtml().trimmed();
+    if (filePath.isEmpty() && html.isEmpty()) return;
+
+    SourceDescriptor desc;
+    desc.kind        = SourceDescriptor::Kind::Html;
+    desc.htmlContent = html;
+    desc.path        = filePath;
+    desc.displayName = filePath.isEmpty() ? "HTML Overlay"
+                                          : QFileInfo(filePath).fileName();
+
+    addElementNode(desc, makeIconThumb("🌐"));
 }
 
 // ── Hotkey grid ───────────────────────────────────────────────────────────────
