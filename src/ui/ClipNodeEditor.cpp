@@ -26,6 +26,7 @@
 #include <QMenu>
 #include <QCursor>
 #include <QGraphicsSceneContextMenuEvent>
+#include <QSet>
 #include <functional>
 #include <cmath>
 
@@ -498,6 +499,13 @@ public:
         for (const auto &e : m_edges)
             if (e.edgeKind == ConnectionItem::Chain && e.toNodeId == nodeId)
                 return e.fromNodeId;
+        return 0;
+    }
+
+    NodeId downstreamOf(NodeId nodeId) const {
+        for (const auto &e : m_edges)
+            if (e.edgeKind == ConnectionItem::Chain && e.fromNodeId == nodeId)
+                return e.toNodeId;
         return 0;
     }
 
@@ -1004,6 +1012,36 @@ void ClipNodeEditor::setClipTransform(NodeId clipId, float x, float y, float w, 
 
 QVector<NodeId> ClipNodeEditor::clipsForContext(NodeId contextId) const {
     return m_scene->clipsForContext(contextId);
+}
+
+QVector<NodeId> ClipNodeEditor::clipsForContextOrdered(NodeId contextId) const {
+    const QVector<NodeId> unordered = m_scene->clipsForContext(contextId);
+    if (unordered.size() <= 1) return unordered;
+
+    QSet<NodeId> clipSet(unordered.begin(), unordered.end());
+    QVector<NodeId> ordered;
+    ordered.reserve(unordered.size());
+
+    // Follow each chain head (clip whose upstream is absent from the context set)
+    // downstream to collect clips in chain order.
+    for (NodeId clipId : unordered) {
+        NodeId up = m_scene->upstreamOf(clipId);
+        if (up == 0 || !clipSet.contains(up)) {
+            NodeId current = clipId;
+            while (current != 0 && clipSet.contains(current) && !ordered.contains(current)) {
+                ordered.append(current);
+                current = m_scene->downstreamOf(current);
+            }
+        }
+    }
+
+    // Append any clips not reachable from any chain head (isolated / unchained)
+    for (NodeId clipId : unordered) {
+        if (!ordered.contains(clipId))
+            ordered.append(clipId);
+    }
+
+    return ordered;
 }
 
 bool ClipNodeEditor::contextCanvasSize(NodeId clipId, int &w, int &h) const {

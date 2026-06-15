@@ -137,11 +137,11 @@ void VideoWidget::paintGL() {
         drawDeck(m_textureA, m_sourceA.get(),
                  m_cropXA, m_cropYA, m_cropWA, m_cropHA,
                  m_baseXA, m_baseYA, m_baseWA, m_baseHA, alphaA, m_videoRectA, m_canvasWidthA, m_canvasHeightA);
-        drawChainSources(m_chainA, m_chainTexA, alphaA, m_videoRectA);
+        drawChainSources(m_chainA, m_chainTexA, alphaA, m_canvasWidthA, m_canvasHeightA);
         drawDeck(m_textureB, m_sourceB.get(),
                  m_cropXB, m_cropYB, m_cropWB, m_cropHB,
                  m_baseXB, m_baseYB, m_baseWB, m_baseHB, alphaB, m_videoRectB, m_canvasWidthB, m_canvasHeightB);
-        drawChainSources(m_chainB, m_chainTexB, alphaB, m_videoRectB);
+        drawChainSources(m_chainB, m_chainTexB, alphaB, m_canvasWidthB, m_canvasHeightB);
         break;
     }
 
@@ -151,12 +151,12 @@ void VideoWidget::paintGL() {
             drawDeck(m_textureA, m_sourceA.get(),
                      m_cropXA, m_cropYA, m_cropWA, m_cropHA,
                      m_baseXA, m_baseYA, m_baseWA, m_baseHA, 1.f, m_videoRectA, m_canvasWidthA, m_canvasHeightA);
-            drawChainSources(m_chainA, m_chainTexA, 1.f, m_videoRectA);
+            drawChainSources(m_chainA, m_chainTexA, 1.f, m_canvasWidthA, m_canvasHeightA);
         } else {
             drawDeck(m_textureB, m_sourceB.get(),
                      m_cropXB, m_cropYB, m_cropWB, m_cropHB,
                      m_baseXB, m_baseYB, m_baseWB, m_baseHB, 1.f, m_videoRectB, m_canvasWidthB, m_canvasHeightB);
-            drawChainSources(m_chainB, m_chainTexB, 1.f, m_videoRectB);
+            drawChainSources(m_chainB, m_chainTexB, 1.f, m_canvasWidthB, m_canvasHeightB);
         }
         break;
     }
@@ -167,7 +167,7 @@ void VideoWidget::paintGL() {
         drawDeck(m_textureA, m_sourceA.get(),
                  m_cropXA, m_cropYA, m_cropWA, m_cropHA,
                  m_baseXA, m_baseYA, m_baseWA, m_baseHA, 1.f, m_videoRectA, m_canvasWidthA, m_canvasHeightA);
-        drawChainSources(m_chainA, m_chainTexA, 1.f, m_videoRectA);
+        drawChainSources(m_chainA, m_chainTexA, 1.f, m_canvasWidthA, m_canvasHeightA);
 
         if (t > 0.f) {
             glEnable(GL_SCISSOR_TEST);
@@ -176,7 +176,7 @@ void VideoWidget::paintGL() {
             drawDeck(m_textureB, m_sourceB.get(),
                      m_cropXB, m_cropYB, m_cropWB, m_cropHB,
                      m_baseXB, m_baseYB, m_baseWB, m_baseHB, 1.f, m_videoRectB, m_canvasWidthB, m_canvasHeightB);
-            drawChainSources(m_chainB, m_chainTexB, 1.f, m_videoRectB);
+            drawChainSources(m_chainB, m_chainTexB, 1.f, m_canvasWidthB, m_canvasHeightB);
             glDisable(GL_SCISSOR_TEST);
         }
         break;
@@ -186,7 +186,7 @@ void VideoWidget::paintGL() {
         drawDeck(m_textureA, m_sourceA.get(),
                  m_cropXA, m_cropYA, m_cropWA, m_cropHA,
                  m_baseXA, m_baseYA, m_baseWA, m_baseHA, 1.f, m_videoRectA, m_canvasWidthA, m_canvasHeightA);
-        drawChainSources(m_chainA, m_chainTexA, 1.f, m_videoRectA);
+        drawChainSources(m_chainA, m_chainTexA, 1.f, m_canvasWidthA, m_canvasHeightA);
 
         if (t > 0.f) {
             glEnable(GL_SCISSOR_TEST);
@@ -195,7 +195,7 @@ void VideoWidget::paintGL() {
             drawDeck(m_textureB, m_sourceB.get(),
                      m_cropXB, m_cropYB, m_cropWB, m_cropHB,
                      m_baseXB, m_baseYB, m_baseWB, m_baseHB, 1.f, m_videoRectB, m_canvasWidthB, m_canvasHeightB);
-            drawChainSources(m_chainB, m_chainTexB, 1.f, m_videoRectB);
+            drawChainSources(m_chainB, m_chainTexB, 1.f, m_canvasWidthB, m_canvasHeightB);
             glDisable(GL_SCISSOR_TEST);
         }
         break;
@@ -205,7 +205,7 @@ void VideoWidget::paintGL() {
         drawDeck(m_textureA, m_sourceA.get(),
                  m_cropXA, m_cropYA, m_cropWA, m_cropHA,
                  m_baseXA, m_baseYA, m_baseWA, m_baseHA, 1.f, m_videoRectA, m_canvasWidthA, m_canvasHeightA);
-        drawChainSources(m_chainA, m_chainTexA, 1.f, m_videoRectA);
+        drawChainSources(m_chainA, m_chainTexA, 1.f, m_canvasWidthA, m_canvasHeightA);
 
         if (t > 0.f) {
             glEnable(GL_SCISSOR_TEST);
@@ -213,7 +213,7 @@ void VideoWidget::paintGL() {
             drawDeck(m_textureB, m_sourceB.get(),
                      m_cropXB, m_cropYB, m_cropWB, m_cropHB,
                      m_baseXB, m_baseYB, m_baseWB, m_baseHB, 1.f, m_videoRectB, m_canvasWidthB, m_canvasHeightB);
-            drawChainSources(m_chainB, m_chainTexB, 1.f, m_videoRectB);
+            drawChainSources(m_chainB, m_chainTexB, 1.f, m_canvasWidthB, m_canvasHeightB);
             glDisable(GL_SCISSOR_TEST);
         }
         break;
@@ -223,7 +223,7 @@ void VideoWidget::paintGL() {
         drawDeck(m_textureA, m_sourceA.get(),
                  m_cropXA, m_cropYA, m_cropWA, m_cropHA,
                  m_baseXA, m_baseYA, m_baseWA, m_baseHA, 1.f, m_videoRectA, m_canvasWidthA, m_canvasHeightA);
-        drawChainSources(m_chainA, m_chainTexA, 1.f, m_videoRectA);
+        drawChainSources(m_chainA, m_chainTexA, 1.f, m_canvasWidthA, m_canvasHeightA);
 
         if (t > 0.f) {
             glEnable(GL_SCISSOR_TEST);
@@ -232,7 +232,7 @@ void VideoWidget::paintGL() {
             drawDeck(m_textureB, m_sourceB.get(),
                      m_cropXB, m_cropYB, m_cropWB, m_cropHB,
                      m_baseXB, m_baseYB, m_baseWB, m_baseHB, 1.f, m_videoRectB, m_canvasWidthB, m_canvasHeightB);
-            drawChainSources(m_chainB, m_chainTexB, 1.f, m_videoRectB);
+            drawChainSources(m_chainB, m_chainTexB, 1.f, m_canvasWidthB, m_canvasHeightB);
             glDisable(GL_SCISSOR_TEST);
         }
         break;
@@ -249,7 +249,7 @@ void VideoWidget::paintGL() {
         drawDeck(m_textureA, m_sourceA.get(),
                  m_cropXA, m_cropYA, m_cropWA, m_cropHA,
                  m_baseXA, m_baseYA, m_baseWA, m_baseHA, 1.f, m_videoRectA, m_canvasWidthA, m_canvasHeightA);
-        drawChainSources(m_chainA, m_chainTexA, 1.f, m_videoRectA);
+        drawChainSources(m_chainA, m_chainTexA, 1.f, m_canvasWidthA, m_canvasHeightA);
         glPopMatrix();
 
         glPushMatrix();
@@ -257,7 +257,7 @@ void VideoWidget::paintGL() {
         drawDeck(m_textureB, m_sourceB.get(),
                  m_cropXB, m_cropYB, m_cropWB, m_cropHB,
                  m_baseXB, m_baseYB, m_baseWB, m_baseHB, 1.f, m_videoRectB, m_canvasWidthB, m_canvasHeightB);
-        drawChainSources(m_chainB, m_chainTexB, 1.f, m_videoRectB);
+        drawChainSources(m_chainB, m_chainTexB, 1.f, m_canvasWidthB, m_canvasHeightB);
         glPopMatrix();
         break;
     }
@@ -271,7 +271,7 @@ void VideoWidget::paintGL() {
         drawDeck(m_textureA, m_sourceA.get(),
                  m_cropXA, m_cropYA, m_cropWA, m_cropHA,
                  m_baseXA, m_baseYA, m_baseWA, m_baseHA, 1.f, m_videoRectA, m_canvasWidthA, m_canvasHeightA);
-        drawChainSources(m_chainA, m_chainTexA, 1.f, m_videoRectA);
+        drawChainSources(m_chainA, m_chainTexA, 1.f, m_canvasWidthA, m_canvasHeightA);
         glPopMatrix();
 
         glPushMatrix();
@@ -279,7 +279,7 @@ void VideoWidget::paintGL() {
         drawDeck(m_textureB, m_sourceB.get(),
                  m_cropXB, m_cropYB, m_cropWB, m_cropHB,
                  m_baseXB, m_baseYB, m_baseWB, m_baseHB, 1.f, m_videoRectB, m_canvasWidthB, m_canvasHeightB);
-        drawChainSources(m_chainB, m_chainTexB, 1.f, m_videoRectB);
+        drawChainSources(m_chainB, m_chainTexB, 1.f, m_canvasWidthB, m_canvasHeightB);
         glPopMatrix();
         break;
     }
@@ -293,7 +293,7 @@ void VideoWidget::paintGL() {
         drawDeck(m_textureA, m_sourceA.get(),
                  m_cropXA, m_cropYA, m_cropWA, m_cropHA,
                  m_baseXA, m_baseYA, m_baseWA, m_baseHA, 1.f, m_videoRectA, m_canvasWidthA, m_canvasHeightA);
-        drawChainSources(m_chainA, m_chainTexA, 1.f, m_videoRectA);
+        drawChainSources(m_chainA, m_chainTexA, 1.f, m_canvasWidthA, m_canvasHeightA);
         glPopMatrix();
 
         glPushMatrix();
@@ -301,7 +301,7 @@ void VideoWidget::paintGL() {
         drawDeck(m_textureB, m_sourceB.get(),
                  m_cropXB, m_cropYB, m_cropWB, m_cropHB,
                  m_baseXB, m_baseYB, m_baseWB, m_baseHB, 1.f, m_videoRectB, m_canvasWidthB, m_canvasHeightB);
-        drawChainSources(m_chainB, m_chainTexB, 1.f, m_videoRectB);
+        drawChainSources(m_chainB, m_chainTexB, 1.f, m_canvasWidthB, m_canvasHeightB);
         glPopMatrix();
         break;
     }
@@ -315,7 +315,7 @@ void VideoWidget::paintGL() {
         drawDeck(m_textureA, m_sourceA.get(),
                  m_cropXA, m_cropYA, m_cropWA, m_cropHA,
                  m_baseXA, m_baseYA, m_baseWA, m_baseHA, 1.f, m_videoRectA, m_canvasWidthA, m_canvasHeightA);
-        drawChainSources(m_chainA, m_chainTexA, 1.f, m_videoRectA);
+        drawChainSources(m_chainA, m_chainTexA, 1.f, m_canvasWidthA, m_canvasHeightA);
         glPopMatrix();
 
         glPushMatrix();
@@ -323,7 +323,7 @@ void VideoWidget::paintGL() {
         drawDeck(m_textureB, m_sourceB.get(),
                  m_cropXB, m_cropYB, m_cropWB, m_cropHB,
                  m_baseXB, m_baseYB, m_baseWB, m_baseHB, 1.f, m_videoRectB, m_canvasWidthB, m_canvasHeightB);
-        drawChainSources(m_chainB, m_chainTexB, 1.f, m_videoRectB);
+        drawChainSources(m_chainB, m_chainTexB, 1.f, m_canvasWidthB, m_canvasHeightB);
         glPopMatrix();
         break;
     }
@@ -335,11 +335,11 @@ void VideoWidget::paintGL() {
         drawDeck(m_textureA, m_sourceA.get(),
                  m_cropXA, m_cropYA, m_cropWA, m_cropHA,
                  m_baseXA, m_baseYA, m_baseWA, m_baseHA, alphaA, m_videoRectA, m_canvasWidthA, m_canvasHeightA);
-        drawChainSources(m_chainA, m_chainTexA, alphaA, m_videoRectA);
+        drawChainSources(m_chainA, m_chainTexA, alphaA, m_canvasWidthA, m_canvasHeightA);
         drawDeck(m_textureB, m_sourceB.get(),
                  m_cropXB, m_cropYB, m_cropWB, m_cropHB,
                  m_baseXB, m_baseYB, m_baseWB, m_baseHB, alphaB, m_videoRectB, m_canvasWidthB, m_canvasHeightB);
-        drawChainSources(m_chainB, m_chainTexB, alphaB, m_videoRectB);
+        drawChainSources(m_chainB, m_chainTexB, alphaB, m_canvasWidthB, m_canvasHeightB);
         break;
     }
 
@@ -350,11 +350,11 @@ void VideoWidget::paintGL() {
         drawDeck(m_textureA, m_sourceA.get(),
                  m_cropXA, m_cropYA, m_cropWA, m_cropHA,
                  m_baseXA, m_baseYA, m_baseWA, m_baseHA, alphaA, m_videoRectA, m_canvasWidthA, m_canvasHeightA);
-        drawChainSources(m_chainA, m_chainTexA, alphaA, m_videoRectA);
+        drawChainSources(m_chainA, m_chainTexA, alphaA, m_canvasWidthA, m_canvasHeightA);
         drawDeck(m_textureB, m_sourceB.get(),
                  m_cropXB, m_cropYB, m_cropWB, m_cropHB,
                  m_baseXB, m_baseYB, m_baseWB, m_baseHB, alphaB, m_videoRectB, m_canvasWidthB, m_canvasHeightB);
-        drawChainSources(m_chainB, m_chainTexB, alphaB, m_videoRectB);
+        drawChainSources(m_chainB, m_chainTexB, alphaB, m_canvasWidthB, m_canvasHeightB);
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA); // Restore standard
         break;
     }
@@ -374,7 +374,7 @@ void VideoWidget::paintGL() {
             drawDeck(m_textureA, m_sourceA.get(),
                      m_cropXA, m_cropYA, m_cropWA, m_cropHA,
                      m_baseXA, m_baseYA, m_baseWA, m_baseHA, alphaA, m_videoRectA, m_canvasWidthA, m_canvasHeightA);
-            drawChainSources(m_chainA, m_chainTexA, alphaA, m_videoRectA);
+            drawChainSources(m_chainA, m_chainTexA, alphaA, m_canvasWidthA, m_canvasHeightA);
             glPopMatrix();
         }
 
@@ -389,7 +389,7 @@ void VideoWidget::paintGL() {
             drawDeck(m_textureB, m_sourceB.get(),
                      m_cropXB, m_cropYB, m_cropWB, m_cropHB,
                      m_baseXB, m_baseYB, m_baseWB, m_baseHB, alphaB, m_videoRectB, m_canvasWidthB, m_canvasHeightB);
-            drawChainSources(m_chainB, m_chainTexB, alphaB, m_videoRectB);
+            drawChainSources(m_chainB, m_chainTexB, alphaB, m_canvasWidthB, m_canvasHeightB);
             glPopMatrix();
         }
         break;
@@ -400,7 +400,7 @@ void VideoWidget::paintGL() {
         drawDeck(m_textureB, m_sourceB.get(),
                  m_cropXB, m_cropYB, m_cropWB, m_cropHB,
                  m_baseXB, m_baseYB, m_baseWB, m_baseHB, 1.f, m_videoRectB, m_canvasWidthB, m_canvasHeightB);
-        drawChainSources(m_chainB, m_chainTexB, 1.f, m_videoRectB);
+        drawChainSources(m_chainB, m_chainTexB, 1.f, m_canvasWidthB, m_canvasHeightB);
 
         // Draw Deck A split doors sliding apart
         if (t < 1.f) {
@@ -413,7 +413,7 @@ void VideoWidget::paintGL() {
             drawDeck(m_textureA, m_sourceA.get(),
                      m_cropXA, m_cropYA, m_cropWA, m_cropHA,
                      m_baseXA, m_baseYA, m_baseWA, m_baseHA, 1.f, m_videoRectA, m_canvasWidthA, m_canvasHeightA);
-            drawChainSources(m_chainA, m_chainTexA, 1.f, m_videoRectA);
+            drawChainSources(m_chainA, m_chainTexA, 1.f, m_canvasWidthA, m_canvasHeightA);
             glPopMatrix();
 
             // Right half door of A
@@ -423,7 +423,7 @@ void VideoWidget::paintGL() {
             drawDeck(m_textureA, m_sourceA.get(),
                      m_cropXA, m_cropYA, m_cropWA, m_cropHA,
                      m_baseXA, m_baseYA, m_baseWA, m_baseHA, 1.f, m_videoRectA, m_canvasWidthA, m_canvasHeightA);
-            drawChainSources(m_chainA, m_chainTexA, 1.f, m_videoRectA);
+            drawChainSources(m_chainA, m_chainTexA, 1.f, m_canvasWidthA, m_canvasHeightA);
             glPopMatrix();
 
             glDisable(GL_SCISSOR_TEST);
@@ -436,7 +436,7 @@ void VideoWidget::paintGL() {
         drawDeck(m_textureB, m_sourceB.get(),
                  m_cropXB, m_cropYB, m_cropWB, m_cropHB,
                  m_baseXB, m_baseYB, m_baseWB, m_baseHB, 1.f, m_videoRectB, m_canvasWidthB, m_canvasHeightB);
-        drawChainSources(m_chainB, m_chainTexB, 1.f, m_videoRectB);
+        drawChainSources(m_chainB, m_chainTexB, 1.f, m_canvasWidthB, m_canvasHeightB);
 
         // Draw Deck A split doors sliding vertically apart
         if (t < 1.f) {
@@ -449,7 +449,7 @@ void VideoWidget::paintGL() {
             drawDeck(m_textureA, m_sourceA.get(),
                      m_cropXA, m_cropYA, m_cropWA, m_cropHA,
                      m_baseXA, m_baseYA, m_baseWA, m_baseHA, 1.f, m_videoRectA, m_canvasWidthA, m_canvasHeightA);
-            drawChainSources(m_chainA, m_chainTexA, 1.f, m_videoRectA);
+            drawChainSources(m_chainA, m_chainTexA, 1.f, m_canvasWidthA, m_canvasHeightA);
             glPopMatrix();
 
             // Top half door of A
@@ -459,7 +459,7 @@ void VideoWidget::paintGL() {
             drawDeck(m_textureA, m_sourceA.get(),
                      m_cropXA, m_cropYA, m_cropWA, m_cropHA,
                      m_baseXA, m_baseYA, m_baseWA, m_baseHA, 1.f, m_videoRectA, m_canvasWidthA, m_canvasHeightA);
-            drawChainSources(m_chainA, m_chainTexA, 1.f, m_videoRectA);
+            drawChainSources(m_chainA, m_chainTexA, 1.f, m_canvasWidthA, m_canvasHeightA);
             glPopMatrix();
 
             glDisable(GL_SCISSOR_TEST);
@@ -482,7 +482,7 @@ void VideoWidget::paintGL() {
             drawDeck(m_textureA, m_sourceA.get(),
                      m_cropXA, m_cropYA, m_cropWA, m_cropHA,
                      m_baseXA, m_baseYA, m_baseWA, m_baseHA, alphaA, m_videoRectA, m_canvasWidthA, m_canvasHeightA);
-            drawChainSources(m_chainA, m_chainTexA, alphaA, m_videoRectA);
+            drawChainSources(m_chainA, m_chainTexA, alphaA, m_canvasWidthA, m_canvasHeightA);
             glPopMatrix();
         }
 
@@ -497,7 +497,7 @@ void VideoWidget::paintGL() {
             drawDeck(m_textureB, m_sourceB.get(),
                      m_cropXB, m_cropYB, m_cropWB, m_cropHB,
                      m_baseXB, m_baseYB, m_baseWB, m_baseHB, alphaB, m_videoRectB, m_canvasWidthB, m_canvasHeightB);
-            drawChainSources(m_chainB, m_chainTexB, alphaB, m_videoRectB);
+            drawChainSources(m_chainB, m_chainTexB, alphaB, m_canvasWidthB, m_canvasHeightB);
             glPopMatrix();
         }
         break;
@@ -508,7 +508,7 @@ void VideoWidget::paintGL() {
         drawDeck(m_textureB, m_sourceB.get(),
                  m_cropXB, m_cropYB, m_cropWB, m_cropHB,
                  m_baseXB, m_baseYB, m_baseWB, m_baseHB, 1.f, m_videoRectB, m_canvasWidthB, m_canvasHeightB);
-        drawChainSources(m_chainB, m_chainTexB, 1.f, m_videoRectB);
+        drawChainSources(m_chainB, m_chainTexB, 1.f, m_canvasWidthB, m_canvasHeightB);
 
         // Draw Deck A split into 4 quadrants sliding towards corners
         if (t < 1.f) {
@@ -523,7 +523,7 @@ void VideoWidget::paintGL() {
             drawDeck(m_textureA, m_sourceA.get(),
                      m_cropXA, m_cropYA, m_cropWA, m_cropHA,
                      m_baseXA, m_baseYA, m_baseWA, m_baseHA, 1.f, m_videoRectA, m_canvasWidthA, m_canvasHeightA);
-            drawChainSources(m_chainA, m_chainTexA, 1.f, m_videoRectA);
+            drawChainSources(m_chainA, m_chainTexA, 1.f, m_canvasWidthA, m_canvasHeightA);
             glPopMatrix();
 
             // Top-Right quadrant
@@ -533,7 +533,7 @@ void VideoWidget::paintGL() {
             drawDeck(m_textureA, m_sourceA.get(),
                      m_cropXA, m_cropYA, m_cropWA, m_cropHA,
                      m_baseXA, m_baseYA, m_baseWA, m_baseHA, 1.f, m_videoRectA, m_canvasWidthA, m_canvasHeightA);
-            drawChainSources(m_chainA, m_chainTexA, 1.f, m_videoRectA);
+            drawChainSources(m_chainA, m_chainTexA, 1.f, m_canvasWidthA, m_canvasHeightA);
             glPopMatrix();
 
             // Bottom-Left quadrant
@@ -543,7 +543,7 @@ void VideoWidget::paintGL() {
             drawDeck(m_textureA, m_sourceA.get(),
                      m_cropXA, m_cropYA, m_cropWA, m_cropHA,
                      m_baseXA, m_baseYA, m_baseWA, m_baseHA, 1.f, m_videoRectA, m_canvasWidthA, m_canvasHeightA);
-            drawChainSources(m_chainA, m_chainTexA, 1.f, m_videoRectA);
+            drawChainSources(m_chainA, m_chainTexA, 1.f, m_canvasWidthA, m_canvasHeightA);
             glPopMatrix();
 
             // Bottom-Right quadrant
@@ -553,7 +553,7 @@ void VideoWidget::paintGL() {
             drawDeck(m_textureA, m_sourceA.get(),
                      m_cropXA, m_cropYA, m_cropWA, m_cropHA,
                      m_baseXA, m_baseYA, m_baseWA, m_baseHA, 1.f, m_videoRectA, m_canvasWidthA, m_canvasHeightA);
-            drawChainSources(m_chainA, m_chainTexA, 1.f, m_videoRectA);
+            drawChainSources(m_chainA, m_chainTexA, 1.f, m_canvasWidthA, m_canvasHeightA);
             glPopMatrix();
 
             glDisable(GL_SCISSOR_TEST);
@@ -913,26 +913,30 @@ void VideoWidget::setNodeChainB(std::vector<NodeChainSource> chain) {
 
 void VideoWidget::drawChainSources(std::vector<NodeChainSource> &chain,
                                     std::vector<GLuint> &texList, float alpha,
-                                    const QRectF &bounds) {
+                                    int canvasW, int canvasH) {
     if (alpha <= 0.f) return;
 
-    QRectF canvasBounds = bounds;
+    // Use per-entry canvas size if available, otherwise fall back to the deck's canvas.
     if (!chain.empty() && chain[0].canvasWidth > 0 && chain[0].canvasHeight > 0) {
-        float canvasAR = (float)chain[0].canvasWidth / chain[0].canvasHeight;
-        float boundsAR = bounds.height() > 0.f ? bounds.width() / bounds.height() : canvasAR;
+        canvasW = chain[0].canvasWidth;
+        canvasH = chain[0].canvasHeight;
+    }
 
-        float canvasW, canvasH;
-        if (canvasAR > boundsAR) {
-            canvasW = bounds.width();
-            canvasH = canvasW / canvasAR;
+    // Compute canvas bounds relative to the window — same logic as drawDeck — so
+    // chain sources are positioned in the same coordinate space as the deck clip.
+    QRectF canvasBounds(0, 0, width(), height());
+    if (canvasW > 0 && canvasH > 0) {
+        float canvasAR = (float)canvasW / canvasH;
+        float windowAR = height() > 0.f ? (float)width() / height() : canvasAR;
+        float cW, cH;
+        if (canvasAR > windowAR) {
+            cW = width();
+            cH = cW / canvasAR;
         } else {
-            canvasH = bounds.height();
-            canvasW = canvasH * canvasAR;
+            cH = height();
+            cW = cH * canvasAR;
         }
-
-        canvasBounds = QRectF(bounds.left() + (bounds.width() - canvasW) / 2,
-                              bounds.top() + (bounds.height() - canvasH) / 2,
-                              canvasW, canvasH);
+        canvasBounds = QRectF((width() - cW) / 2.f, (height() - cH) / 2.f, cW, cH);
     }
 
     for (size_t i = 0; i < chain.size() && i < texList.size(); ++i) {

@@ -207,7 +207,7 @@ private:
                            std::vector<GLuint> &texList);
     void drawChainSources(std::vector<NodeChainSource> &chain,
                           std::vector<GLuint> &texList, float alpha,
-                          const QRectF &bounds);
+                          int canvasW, int canvasH);
     void advanceChainSources(std::vector<NodeChainSource> &chain,
                              std::vector<GLuint> &texList, bool &anyDecoded);
 };

@@ -129,6 +129,7 @@ private:
                                    const QColor &color = Qt::white,
                                    int w = 110, int h = 65);
     static QPixmap makeShaderThumb(const QString &code, int w = 110, int h = 65);
+    static QPixmap makeHtmlThumb(const QString &html, const QString &filePath, int w = 110, int h = 65);
     static QPixmap makeQmlThumb(const QString &code, int w = 110, int h = 65); // kept for ABI compat
     static QString formatTimeShort(double secs);
 };

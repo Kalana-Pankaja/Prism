@@ -41,7 +41,7 @@ TransformEditorDialog::TransformEditorDialog(int contextId, ClipNodeEditor *edit
 void TransformEditorDialog::populateClips() {
     QVector<ClipItem> items;
 
-    auto clipIds = m_editor->clipsForContext(m_contextId);
+    auto clipIds = m_editor->clipsForContextOrdered(m_contextId);
     for (int clipId : clipIds) {
         auto *clipNode = m_editor->nodeAt(clipId);
         if (!clipNode) continue;

@@ -42,6 +42,7 @@
 #include <QVariantAnimation>
 #include <QEasingCurve>
 #include <QDoubleSpinBox>
+#include <QWebEngineView>
 #include <algorithm>
 #include <numeric>
 
@@ -483,6 +484,31 @@ QPixmap MainWindow::makeShaderThumb(const QString &code, int w, int h) {
     const uint8_t *data = src.frameData();
     QImage img(data, w, h, w * 3, QImage::Format_RGB888);
     return QPixmap::fromImage(img.copy());
+}
+
+QPixmap MainWindow::makeHtmlThumb(const QString &html, const QString &filePath, int w, int h) {
+    QWebEngineView view;
+    view.resize(1280, 720);
+    view.setAttribute(Qt::WA_TranslucentBackground);
+    view.page()->setBackgroundColor(Qt::transparent);
+    view.setAttribute(Qt::WA_DontShowOnScreen);
+    view.show();
+
+    QEventLoop loop;
+    QObject::connect(&view, &QWebEngineView::loadFinished, &loop, &QEventLoop::quit);
+    QTimer::singleShot(8000, &loop, &QEventLoop::quit); // bail out after 8 s
+
+    if (!filePath.isEmpty())
+        view.load(QUrl::fromLocalFile(filePath));
+    else
+        view.setHtml(html, QUrl("qrc:/"));
+
+    loop.exec();
+
+    QPixmap grab = view.grab();
+    if (grab.isNull())
+        return makeIconThumb("🌐", w, h);
+    return grab.scaled(w, h, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
 }
 
 QPixmap MainWindow::makeQmlThumb(const QString &, int w, int h) {
@@ -1432,7 +1458,7 @@ void MainWindow::onAddElementDynamicInterface() {
     desc.displayName = filePath.isEmpty() ? "HTML Overlay"
                                           : QFileInfo(filePath).fileName();
 
-    addElementNode(desc, makeIconThumb("🌐"));
+    addElementNode(desc, makeHtmlThumb(html, filePath));
 }
 
 // ── Hotkey grid ───────────────────────────────────────────────────────────────
