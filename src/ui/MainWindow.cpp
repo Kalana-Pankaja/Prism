@@ -8,12 +8,7 @@
 #include "core/WindowCaptureSource.h"
 #include "core/ColorSource.h"
 #include "core/ImageSource.h"
-#include "core/ShaderSource.h"
-#include "core/HtmlSource.h"
-#include "ui/ShaderEditDialog.h"
-#include "ui/HtmlEditDialog.h"
 #include <QApplication>
-#include <QCoreApplication>
 #include <QDir>
 #include <QEventLoop>
 #include <glob.h>
@@ -109,29 +104,15 @@ MainWindow::~MainWindow() {
 }
 
 void MainWindow::setupConnections() {
-    connect(ui->actionLoadFolder, &QAction::triggered, this, &MainWindow::onLoadFolderClicked);
-    connect(ui->actionAddFolder,  &QAction::triggered, this, &MainWindow::onAddFolderClicked);
-    connect(ui->actionAddFiles,   &QAction::triggered, this, &MainWindow::onAddFilesClicked);
-    connect(ui->actionClearAll,   &QAction::triggered, this, &MainWindow::onClearAllClicked);
-    connect(ui->actionShowOutput, &QAction::triggered, this, [this]() {
-        outputWindow->show();
-        outputWindow->raise();
-        outputWindow->activateWindow();
-    });
-    connect(ui->actionStayOnTop, &QAction::toggled, this, [this](bool on) {
-        Qt::WindowFlags flags = outputWindow->windowFlags();
-        if (on)
-            flags |= Qt::WindowStaysOnTopHint;
-        else
-            flags &= ~Qt::WindowStaysOnTopHint;
-        outputWindow->setWindowFlags(flags);
-        outputWindow->show();
-    });
+    connect(ui->loadFolderBtn,    &QPushButton::clicked,  this, &MainWindow::onLoadFolderClicked);
+    connect(ui->addFolderBtn,     &QPushButton::clicked,  this, &MainWindow::onAddFolderClicked);
+    connect(ui->addFilesBtn,      &QPushButton::clicked,  this, &MainWindow::onAddFilesClicked);
+    connect(ui->clearAllBtn,      &QPushButton::clicked,  this, &MainWindow::onClearAllClicked);
 
-    // ── Add Element submenu in menubar ────────────────────────────────────────
-    auto *addElemMenu = ui->menuMedia->addMenu("Add Element");
-    addElemMenu->addAction("🎬  Video File…",  this, &MainWindow::onAddFilesClicked);
-    addElemMenu->addAction("🖼  Photo…",       this, [this]() {
+    // ── Add Element dropdown ──────────────────────────────────────────────────
+    auto *elemMenu = new QMenu(this);
+    elemMenu->addAction("🎬  Video File…",  this, &MainWindow::onAddFilesClicked);
+    elemMenu->addAction("🖼  Photo…",       this, [this]() {
         QStringList files = QFileDialog::getOpenFileNames(
             this, "Add Photos", "",
             "Images (*.png *.jpg *.jpeg *.bmp *.webp *.gif)");
@@ -139,18 +120,16 @@ void MainWindow::setupConnections() {
         clipManager.addFiles(files);
         rebuildGrid();
     });
-    addElemMenu->addSeparator();
-    addElemMenu->addAction("📁  Slideshow…",   this, &MainWindow::onAddElementSlideshow);
-    addElemMenu->addSeparator();
-    addElemMenu->addAction("📷  Camera…",          this, &MainWindow::onAddElementCamera);
-    addElemMenu->addAction("🖥  Screen Capture…",  this, &MainWindow::onAddElementScreen);
-    addElemMenu->addAction("🪟  Window / Tab…",    this, &MainWindow::onAddElementWindow);
-    addElemMenu->addSeparator();
-    addElemMenu->addAction("⬛  Solid Color…",     this, &MainWindow::onAddElementColor);
-    addElemMenu->addSeparator();
-    addElemMenu->addAction("≋  Shader…",           this, &MainWindow::onAddElementShader);
-    addElemMenu->addAction("🌐  HTML Overlay…",        this, &MainWindow::onAddElementDynamicInterface);
+    elemMenu->addSeparator();
+    elemMenu->addAction("📁  Slideshow…",   this, &MainWindow::onAddElementSlideshow);
+    elemMenu->addSeparator();
+    elemMenu->addAction("📷  Camera…",          this, &MainWindow::onAddElementCamera);
+    elemMenu->addAction("🖥  Screen Capture…",  this, &MainWindow::onAddElementScreen);
+    elemMenu->addAction("🪟  Window / Tab…",    this, &MainWindow::onAddElementWindow);
+    elemMenu->addSeparator();
+    elemMenu->addAction("⬛  Solid Color…",     this, &MainWindow::onAddElementColor);
 
+    ui->addElementBtn->setMenu(elemMenu);
     connect(ui->aDeckPlayBtn,     &QPushButton::clicked,  this, &MainWindow::onADeckPlayClicked);
     connect(ui->bDeckPlayBtn,     &QPushButton::clicked,  this, &MainWindow::onBDeckPlayClicked);
     connect(ui->aDeckSpeedSpinBox, QOverload<int>::of(&QSpinBox::valueChanged), this, &MainWindow::onADeckSpeedChanged);
@@ -310,7 +289,6 @@ void MainWindow::addElementCard(const SourceDescriptor &desc, const QPixmap &thu
     connect(card, &ClipCard::triggered,               this, &MainWindow::onClipGridClicked);
     connect(card, &ClipCard::aButtonClicked,           this, &MainWindow::onAButtonClicked);
     connect(card, &ClipCard::bButtonClicked,           this, &MainWindow::onBButtonClicked);
-    connect(card, &ClipCard::overlayButtonClicked,     this, &MainWindow::onOverlayButtonClicked);
     connect(card, &ClipCard::removeRequested,          this, &MainWindow::onCardRemoveRequested);
     connect(card, &ClipCard::sourceDescriptorChanged,  this, &MainWindow::onCardSourceDescriptorChanged);
     card->loadSource(desc, thumb);
@@ -370,19 +348,6 @@ QPixmap MainWindow::makeColorThumb(const QColor &color, int w, int h) {
     QPixmap pix(w, h);
     pix.fill(color);
     return pix;
-}
-
-QPixmap MainWindow::makeShaderThumb(const QString &code, int w, int h) {
-    ShaderSource src(code, QSize(w, h));
-    if (!src.nextFrame() || !src.isReady())
-        return makeIconThumb("≋", w, h);
-    const uint8_t *data = src.frameData();
-    QImage img(data, w, h, w * 3, QImage::Format_RGB888);
-    return QPixmap::fromImage(img.copy());
-}
-
-QPixmap MainWindow::makeQmlThumb(const QString &, int w, int h) {
-    return makeIconThumb("🌐", w, h);
 }
 
 // ── Crossfader ────────────────────────────────────────────────────────────────
@@ -843,28 +808,6 @@ static void assignCardToDeck(ClipCard *card, bool deckA,
         break;
     }
 
-    case Kind::Shader: {
-        auto src = std::make_unique<ShaderSource>(desc.shaderCode);
-        if (deckA) { out->setSourceA(std::move(src)); out->playA(); }
-        else        { out->setSourceB(std::move(src)); out->playB(); }
-        progressSlider->setEnabled(false);
-        playBtn->setEnabled(false);
-        selectedLabel->setText(QString("%1: %2").arg(deckA ? "A" : "B", card->sourceName()));
-        timeLabel->setText("LIVE");
-        break;
-    }
-
-    case Kind::Html: {
-        auto src = std::make_unique<HtmlSource>(desc.htmlContent, desc.path);
-        if (deckA) { out->setSourceA(std::move(src)); out->playA(); }
-        else        { out->setSourceB(std::move(src)); out->playB(); }
-        progressSlider->setEnabled(false);
-        playBtn->setEnabled(false);
-        selectedLabel->setText(QString("%1: %2").arg(deckA ? "A" : "B", card->sourceName()));
-        timeLabel->setText("LIVE");
-        break;
-    }
-
     }
 }
 
@@ -892,37 +835,6 @@ void MainWindow::onBButtonClicked(int index) {
     assignCardToDeck(card, false, outputWindow->videoWidget(),
                      ui->bProgressSlider, ui->bDeckPlayBtn,
                      ui->bSelectedLabel,  ui->bTimeLabel);
-}
-
-void MainWindow::onOverlayButtonClicked(int index) {
-    using Kind = SourceDescriptor::Kind;
-
-    ClipCard *card = cardAtIndex(index);
-    if (!card || !card->hasSource()) return;
-
-    VideoWidget *out = outputWindow->videoWidget();
-
-    // Toggle: if this card is already the active overlay, clear it.
-    if (overlayCardIndex == index) {
-        if (auto *prev = cardAtIndex(overlayCardIndex)) prev->setOvlSelected(false);
-        overlayCardIndex = -1;
-        out->clearHtmlOverlay();
-        return;
-    }
-
-    // Deselect previous overlay card.
-    if (overlayCardIndex >= 0) {
-        if (auto *prev = cardAtIndex(overlayCardIndex)) prev->setOvlSelected(false);
-    }
-
-    const SourceDescriptor &desc = card->sourceDescriptor();
-    if (desc.kind != Kind::Html) return;
-
-    overlayCardIndex = index;
-    card->setOvlSelected(true);
-
-    auto src = std::make_unique<HtmlSource>(desc.htmlContent, desc.path);
-    out->setHtmlOverlay(std::move(src));
 }
 
 QString MainWindow::formatTimeShort(double secs) {
@@ -1103,39 +1015,6 @@ void MainWindow::onAddElementColor() {
     desc.displayName = color.name().toUpper();
 
     addElementCard(desc, makeColorThumb(color));
-}
-
-void MainWindow::onAddElementShader() {
-    ShaderEditDialog dlg(QString(), this);
-    if (dlg.exec() != QDialog::Accepted) return;
-
-    QString code = dlg.resultCode().trimmed();
-    if (code.isEmpty()) return;
-
-    SourceDescriptor desc;
-    desc.kind        = SourceDescriptor::Kind::Shader;
-    desc.shaderCode  = code;
-    desc.displayName = "Shader";
-
-    addElementCard(desc, makeShaderThumb(code));
-}
-
-void MainWindow::onAddElementDynamicInterface() {
-    HtmlEditDialog dlg(QString(), this);
-    if (dlg.exec() != QDialog::Accepted) return;
-
-    QString filePath = dlg.resultFilePath();
-    QString html     = dlg.resultHtml().trimmed();
-    if (filePath.isEmpty() && html.isEmpty()) return;
-
-    SourceDescriptor desc;
-    desc.kind        = SourceDescriptor::Kind::Html;
-    desc.htmlContent = html;
-    desc.path        = filePath;
-    desc.displayName = filePath.isEmpty() ? "HTML Overlay"
-                                          : QFileInfo(filePath).fileName();
-
-    addElementCard(desc, makeIconThumb("🌐"));
 }
 
 // ── Card management ────────────────────────────────────────────────────────────
