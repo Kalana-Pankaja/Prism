@@ -11,7 +11,8 @@ TransformEditorDialog::TransformEditorDialog(int contextId, ClipNodeEditor *edit
     : QDialog(parent), m_contextId(contextId), m_editor(editor)
 {
     setWindowTitle("Transform Editor");
-    setMinimumSize(600, 500);
+    setMinimumSize(1000, 800);
+    resize(1200, 900);
     setModal(true);
 
     auto *layout = new QVBoxLayout(this);
