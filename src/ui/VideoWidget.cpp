@@ -135,11 +135,10 @@ void VideoWidget::paintGL() {
                                 baseH * canvasBounds.height());
             outRect = bounds;
 
-            // Decorative frame border around the clip, unless it fills the whole
-            // screen (avoids drawing borders off-screen during normal playback).
-            bool isFullScreen = std::abs(bounds.x()) < 1.0f && std::abs(bounds.y()) < 1.0f &&
-                                std::abs(bounds.width() - width()) < 2.0f && std::abs(bounds.height() - height()) < 2.0f;
-            if (!isFullScreen) {
+            // Decorative frame border: only drawn for the Gallery3D transition,
+            // where the picture-frame effect is intentional. All other transitions
+            // render clips without any border.
+            if (m_transitionMode == TransitionMode::Gallery3D) {
                 glDisable(GL_TEXTURE_2D);
                 // Outer light frame border
                 glColor4f(0.9f, 0.9f, 0.9f, alpha);
@@ -207,6 +206,13 @@ void VideoWidget::paintGL() {
     ctx.readyA = m_textureA && m_sourceA && m_sourceA->isReady();
     ctx.readyB = m_textureB && m_sourceB && m_sourceB->isReady();
     Transition::forMode(m_transitionMode).paint(ctx);
+
+    // Restore known-good 2D state after any transition (3D transitions in
+    // particular may leave depth test enabled or GL_TEXTURE_2D disabled).
+    glDisable(GL_DEPTH_TEST);
+    glEnable(GL_TEXTURE_2D);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
     // HTML overlay composited on top (RGBA, transparent parts show the A/B video)
     if (m_textureOverlay && m_htmlOverlay && m_htmlOverlay->isReady()) {
