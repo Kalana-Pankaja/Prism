@@ -64,6 +64,9 @@ public:
     void ungroup(NodeId groupId);
     QWidget *makeSubSceneView(ClipNodeScene *scene, QWidget *parent, NodeId groupId = 0);
     ClipNodeScene *subSceneForGroup(NodeId groupId) const;
+    QString groupName(NodeId groupId) const;
+    void renameGroup(NodeId groupId);
+    void renameGroupMemberClip(NodeId clipId);
     void showGroupSceneContextMenu(NodeId groupId, QGraphicsView *view);
     void addClipsFromFileDialog(NodeId groupId, QGraphicsView *view, bool atViewCenter = false);
     void addTransformContextToGroup(NodeId groupId, QGraphicsView *view, bool atViewCenter = false);

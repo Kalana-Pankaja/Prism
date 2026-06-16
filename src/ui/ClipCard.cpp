@@ -127,6 +127,17 @@ void ClipCard::loadClip(const QString &path, const QPixmap &thumbnail) {
     setActive(false);
 }
 
+void ClipCard::setDisplayName(const QString &name) {
+    const QString trimmed = name.trimmed();
+    if (trimmed.isEmpty()) return;
+
+    m_sourceDesc.displayName = trimmed;
+    QFontMetrics fm(ui->titleLabel->font());
+    ui->titleLabel->setText(fm.elidedText(m_sourceDesc.displayName, Qt::ElideRight, 108));
+    ui->titleLabel->setToolTip(m_sourceDesc.displayName);
+    emit sourceDescriptorChanged(m_index, m_sourceDesc);
+}
+
 void ClipCard::loadSource(const SourceDescriptor &desc, const QPixmap &thumbnail) {
     m_clipPath.clear();
     m_sourceDesc = desc;

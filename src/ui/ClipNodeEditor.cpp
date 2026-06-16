@@ -32,6 +32,8 @@
 #include <QMenu>
 #include <QCursor>
 #include <QMessageBox>
+#include <QInputDialog>
+#include <QLineEdit>
 #include <QGraphicsSceneContextMenuEvent>
 #include <QSet>
 #include <QCheckBox>
@@ -247,6 +249,7 @@ public:
     }
 
     std::function<void(NodeId)> onDeleteRequested;
+    std::function<void(NodeId)> onRenameRequested;
 
     NodeId nodeId() const override { return m_nodeId; }
     ClipNodeModel *model() const { return m_model; }
@@ -313,6 +316,11 @@ public:
 
     void contextMenuEvent(QGraphicsSceneContextMenuEvent *e) override {
         QMenu menu;
+        if (m_model && m_model->isGroupMember()) {
+            menu.addAction("Rename", [this]() {
+                if (onRenameRequested) onRenameRequested(m_nodeId);
+            });
+        }
         menu.addAction("Delete", [this]() {
             if (onDeleteRequested) onDeleteRequested(m_nodeId);
         });
@@ -608,10 +616,17 @@ public:
     std::function<void(NodeId)> onEditRequested;
     std::function<void(NodeId)> onUngroupRequested;
     std::function<void(NodeId)> onDeleteRequested;
+    std::function<void(NodeId)> onRenameRequested;
 
     NodeId nodeId() const override { return m_nodeId; }
     ClipNodeScene *subScene() const { return m_subScene; }
     NodeId delegateId() const { return m_delegateId; }
+    QString name() const { return m_name; }
+
+    void setName(const QString &name) {
+        m_name = name.trimmed().isEmpty() ? QStringLiteral("Group") : name.trimmed();
+        update();
+    }
 
     void setDelegateId(NodeId id) {
         m_delegateId = id;
@@ -648,7 +663,9 @@ public:
 
         p->setPen(QColor(160, 180, 210));
         p->setFont(QFont("Monospace", 8, QFont::Bold));
-        p->drawText(QRectF(4, 2, NODE_W - 8, HEADER_H), Qt::AlignCenter, "Group");
+        const QFontMetrics fm(p->font());
+        p->drawText(QRectF(4, 2, NODE_W - 8, HEADER_H), Qt::AlignCenter,
+                    fm.elidedText(m_name, Qt::ElideRight, NODE_W - 8));
 
         auto drawBtn = [&](const QRectF &r, const QString &label, bool active) {
             p->setPen(QPen(active ? QColor(0x2a, 0x8f, 0xa0) : QColor(80, 85, 95), 1));
@@ -710,6 +727,9 @@ public:
 
     void contextMenuEvent(QGraphicsSceneContextMenuEvent *e) override {
         QMenu menu;
+        menu.addAction("Rename", [this]() {
+            if (onRenameRequested) onRenameRequested(m_nodeId);
+        });
         menu.addAction("Edit Group", [this]() {
             if (onEditRequested) onEditRequested(m_nodeId);
         });
@@ -732,6 +752,7 @@ private:
     NodeId m_nodeId;
     NodeId m_delegateId = 0;
     ClipNodeScene *m_subScene;
+    QString m_name = QStringLiteral("Group");
     bool m_aActive = false;
     bool m_bActive = false;
 };
@@ -1257,6 +1278,36 @@ ClipNodeScene *ClipNodeEditor::subSceneForGroup(NodeId groupId) const {
     return nullptr;
 }
 
+QString ClipNodeEditor::groupName(NodeId groupId) const {
+    if (auto *group = m_groupNodes.value(groupId))
+        return group->name();
+    return QStringLiteral("Group");
+}
+
+void ClipNodeEditor::renameGroup(NodeId groupId) {
+    auto *group = m_groupNodes.value(groupId);
+    if (!group) return;
+
+    bool ok = false;
+    const QString name = QInputDialog::getText(this, tr("Rename Group"), tr("Name:"),
+                                               QLineEdit::Normal, group->name(), &ok);
+    if (!ok) return;
+
+    group->setName(name);
+}
+
+void ClipNodeEditor::renameGroupMemberClip(NodeId clipId) {
+    ClipNodeModel *model = nodeAt(clipId);
+    if (!model || !model->isGroupMember()) return;
+
+    bool ok = false;
+    const QString name = QInputDialog::getText(this, tr("Rename Clip"), tr("Name:"),
+                                               QLineEdit::Normal, model->sourceName(), &ok);
+    if (!ok) return;
+
+    model->setDisplayName(name.trimmed());
+}
+
 QWidget *ClipNodeEditor::makeSubSceneView(ClipNodeScene *scene, QWidget *parent, NodeId groupId) {
     auto *view = new ClipNodeView(scene, parent);
     view->setContextMenuPolicy(Qt::CustomContextMenu);
@@ -1276,6 +1327,11 @@ static void wireDeleteCallback(NodeItemBase *item, const std::function<void(Node
     else if (auto *aud = dynamic_cast<AudioControllerNodeItem *>(item)) aud->onDeleteRequested = cb;
     else if (auto *mas = dynamic_cast<MasterAudioOutputNodeItem *>(item)) mas->onDeleteRequested = cb;
     else if (auto *grp = dynamic_cast<GroupNodeItem *>(item)) grp->onDeleteRequested = cb;
+}
+
+static void wireRenameCallback(NodeItemBase *item, const std::function<void(NodeId)> &cb) {
+    if (auto *clip = dynamic_cast<ClipNodeItem *>(item)) clip->onRenameRequested = cb;
+    else if (auto *grp = dynamic_cast<GroupNodeItem *>(item)) grp->onRenameRequested = cb;
 }
 
 ClipNodeModel *ClipNodeEditor::addClipNode(const QString &path, const QPixmap &thumbnail,
@@ -1305,6 +1361,7 @@ ClipNodeModel *ClipNodeEditor::addClipNode(const QString &path, const QPixmap &t
     m_nodeMap[id] = model;
     registerItem(nodeItem);
     wireDeleteCallback(nodeItem, [this](NodeId nid) { deleteNodeById(nid); });
+    wireRenameCallback(nodeItem, [this](NodeId nid) { renameGroupMemberClip(nid); });
 
     model->setNodeId(id);
     model->loadClip(path, thumbnail);
@@ -1356,6 +1413,7 @@ ClipNodeModel *ClipNodeEditor::addSourceNode(const SourceDescriptor &desc, const
     m_nodeMap[id] = model;
     registerItem(nodeItem);
     wireDeleteCallback(nodeItem, [this](NodeId nid) { deleteNodeById(nid); });
+    wireRenameCallback(nodeItem, [this](NodeId nid) { renameGroupMemberClip(nid); });
 
     model->setNodeId(id);
     model->loadSource(desc, thumbnail);
@@ -1954,6 +2012,7 @@ void ClipNodeEditor::groupSelection() {
     group->onEditRequested = [this](NodeId gid) { openGroupEditor(gid); };
     group->onUngroupRequested = [this](NodeId gid) { ungroup(gid); };
     group->onDeleteRequested = [this](NodeId gid) { deleteNodeById(gid); };
+    group->onRenameRequested = [this](NodeId gid) { renameGroup(gid); };
 
     m_scene->addItem(group);
     m_groupNodes[groupId] = group;
@@ -2149,6 +2208,7 @@ QJsonObject ClipNodeEditor::saveState() const {
         obj["posX"] = group->pos().x();
         obj["posY"] = group->pos().y();
         obj["delegateId"] = (qint64)group->delegateId();
+        obj["name"] = group->name();
         QJsonArray members;
         for (auto mit = m_itemMap.cbegin(); mit != m_itemMap.cend(); ++mit) {
             if (mit.value()->scene() == group->subScene())
@@ -2241,6 +2301,7 @@ void ClipNodeEditor::restoreState(const QJsonObject &state) {
         m_nodeMap[id] = model;
         registerItem(nodeItem);
         wireDeleteCallback(nodeItem, [this](NodeId nid) { deleteNodeById(nid); });
+        wireRenameCallback(nodeItem, [this](NodeId nid) { renameGroupMemberClip(nid); });
 
         const SourceDescriptor desc = descriptorFromJson(obj["source"].toObject());
         model->setNodeId(id);
@@ -2317,10 +2378,13 @@ void ClipNodeEditor::restoreState(const QJsonObject &state) {
         m_nextId = groupId;
         auto *group = new GroupNodeItem(m_nextId++, subScene);
         group->setPos(obj["posX"].toDouble(), obj["posY"].toDouble());
+        if (obj.contains("name"))
+            group->setName(obj["name"].toString());
         group->onDeckRequested = [this](NodeId did, bool deckA) { setActiveDeckClip(did, deckA); };
         group->onEditRequested = [this](NodeId gid) { openGroupEditor(gid); };
         group->onUngroupRequested = [this](NodeId gid) { ungroup(gid); };
         group->onDeleteRequested = [this](NodeId gid) { deleteNodeById(gid); };
+        group->onRenameRequested = [this](NodeId gid) { renameGroup(gid); };
         m_scene->addItem(group);
         m_groupNodes[group->nodeId()] = group;
         registerItem(group);

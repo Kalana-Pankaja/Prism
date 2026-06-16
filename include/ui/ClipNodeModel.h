@@ -41,7 +41,8 @@ public:
     QString clipPath() const { return m_card->clipPath(); }
     bool hasSource() const { return m_card->hasSource(); }
     bool isLiveSource() const { return m_card->isLiveSource(); }
-    QString sourceName() const { return m_card->sourceName(); }
+    QString sourceName() const { return m_card->displayName(); }
+    void setDisplayName(const QString &name) { if (m_card) m_card->setDisplayName(name); }
     const SourceDescriptor &sourceDescriptor() const { return m_card->sourceDescriptor(); }
 
     bool isRepeat() const { return m_card->isRepeat(); }

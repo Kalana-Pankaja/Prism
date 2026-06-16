@@ -42,7 +42,8 @@ public:
     QString clipPath()   const { return m_clipPath; }
     bool    hasSource()  const;
     bool    isLiveSource() const { return m_sourceDesc.isLiveSource(); }
-    QString sourceName() const { return m_sourceDesc.displayName; }
+    void setDisplayName(const QString &name);
+    QString displayName() const { return m_sourceDesc.displayName; }
     const SourceDescriptor &sourceDescriptor() const { return m_sourceDesc; }
 
     // Hotkey badge — shows the assigned key letter over the thumbnail.

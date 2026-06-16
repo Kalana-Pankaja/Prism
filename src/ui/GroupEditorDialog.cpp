@@ -9,14 +9,15 @@
 GroupEditorDialog::GroupEditorDialog(NodeId groupId, ClipNodeEditor *editor, QWidget *parent)
     : QDialog(parent), m_groupId(groupId), m_editor(editor)
 {
-    setWindowTitle(QString("Group %1").arg(groupId));
+    const QString name = editor->groupName(groupId);
+    setWindowTitle(QString("%1 (%2)").arg(name).arg(groupId));
     setMinimumSize(800, 600);
     resize(900, 700);
 
     auto *layout = new QVBoxLayout(this);
 
-    auto *title = new QLabel(QString("Edit group %1 — use \"Set output\" on a clip to designate the deck output.")
-                                 .arg(groupId));
+    auto *title = new QLabel(QString("Edit \"%1\" — use \"Set output\" on a clip to designate the deck output.")
+                                 .arg(name));
     title->setWordWrap(true);
     layout->addWidget(title);
 
