@@ -48,6 +48,7 @@ set(SOURCES
     src/ui/CropSelectorWidget.cpp
     src/ui/TransformCanvasWidget.cpp
     src/ui/TransformEditorDialog.cpp
+    src/ui/GroupEditorDialog.cpp
     src/ui/OutputWindow.cpp
     src/ui/ShaderEditDialog.cpp
     src/ui/HtmlEditDialog.cpp
@@ -88,6 +89,7 @@ set(HEADERS
     include/ui/CropSelectorWidget.h
     include/ui/TransformCanvasWidget.h
     include/ui/TransformEditorDialog.h
+    include/ui/GroupEditorDialog.h
     include/ui/OutputWindow.h
     include/ui/ShaderEditDialog.h
     include/ui/HtmlEditDialog.h

@@ -10,6 +10,8 @@ namespace Ui { class ClipCard; }
 class ClipCard : public QFrame {
     Q_OBJECT
 public:
+    enum class CardMode { Deck, GroupMember };
+
     explicit ClipCard(int index, QWidget *parent = nullptr);
     ~ClipCard();
 
@@ -26,11 +28,19 @@ public:
     bool isASelected() const { return m_aSelected; }
     bool isBSelected() const { return m_bSelected; }
 
+    void setCardMode(CardMode mode);
+    CardMode cardMode() const { return m_cardMode; }
+    void setOutputSelected(bool selected);
+    bool isOutputSelected() const { return m_outputSelected; }
+
+    void setTransform(float x, float y, float w, float h);
+    void transform(float &x, float &y, float &w, float &h) const;
+
     // Update this card's grid index (called after rebuildGrid re-flows cards).
     void setIndex(int idx) { m_index = idx; }
 
     QString clipPath()   const { return m_clipPath; }
-    bool    hasSource()  const { return !m_sourceDesc.displayName.isEmpty(); }
+    bool    hasSource()  const;
     bool    isLiveSource() const { return m_sourceDesc.isLiveSource(); }
     QString sourceName() const { return m_sourceDesc.displayName; }
     const SourceDescriptor &sourceDescriptor() const { return m_sourceDesc; }
@@ -60,8 +70,11 @@ signals:
     void aButtonClicked(int index);
     void bButtonClicked(int index);
     void removeRequested(int index);
+    void transformChanged(int index, float x, float y, float w, float h);
+    void setOutputClicked(int index);
     // Emitted when the user changes a live source's settings via Edit.
     void sourceDescriptorChanged(int index, const SourceDescriptor &desc);
+    void preferredHeightChanged(int height);
 
 private slots:
     void onRepeatClicked();
@@ -69,8 +82,14 @@ private slots:
     void onAButtonClicked();
     void onBButtonClicked();
     void onRemoveClicked();
+    void onSetOutputClicked();
+    void onTransformToggle(bool expanded);
+    void onTransformSpinChanged();
 
 private:
+    void updateTransformToggleLabel();
+    void emitTransformChanged();
+
     Ui::ClipCard     *ui;
     int               m_index;
     QString           m_clipPath;
@@ -78,6 +97,13 @@ private:
     bool              m_repeat     = false;
     bool              m_aSelected  = false;
     bool              m_bSelected  = false;
+    bool              m_outputSelected = false;
+    CardMode          m_cardMode   = CardMode::Deck;
+    float             m_transformX = 0.f;
+    float             m_transformY = 0.f;
+    float             m_transformW = 1.f;
+    float             m_transformH = 1.f;
+    bool              m_blockTransformSignal = false;
     ClipSettings      m_settings;
     QLabel           *m_hotkeyBadge = nullptr;
 };

@@ -5,13 +5,13 @@
   <property name="minimumSize">
    <size>
     <width>122</width>
-    <height>153</height>
+    <height>175</height>
    </size>
   </property>
   <property name="maximumSize">
    <size>
     <width>122</width>
-    <height>153</height>
+    <height>16777215</height>
    </size>
   </property>
   <property name="frameShape">
@@ -124,6 +124,189 @@ QPushButton:pressed { background-color: #1a3d45; }</string>
     </widget>
    </item>
    <item>
+    <widget class="QPushButton" name="transformToggleBtn">
+     <property name="maximumSize">
+      <size>
+       <width>16777215</width>
+       <height>18</height>
+      </size>
+     </property>
+     <property name="styleSheet">
+      <string notr="true">font-size: 9px; min-height: 0; height: 18px; text-align: left; padding-left: 4px;</string>
+     </property>
+     <property name="text">
+      <string>Transform ▸</string>
+     </property>
+     <property name="checkable">
+      <bool>true</bool>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QWidget" name="transformContainer" native="true">
+     <property name="visible">
+      <bool>false</bool>
+     </property>
+     <layout class="QFormLayout" name="transformForm">
+      <property name="spacing">
+       <number>2</number>
+      </property>
+      <property name="leftMargin">
+       <number>0</number>
+      </property>
+      <property name="topMargin">
+       <number>0</number>
+      </property>
+      <property name="rightMargin">
+       <number>0</number>
+      </property>
+      <property name="bottomMargin">
+       <number>0</number>
+      </property>
+      <item row="0" column="0">
+       <widget class="QLabel" name="labelX">
+        <property name="text">
+         <string>X%</string>
+        </property>
+        <property name="styleSheet">
+         <string notr="true">font-size: 8px; color: #888;</string>
+        </property>
+       </widget>
+      </item>
+      <item row="0" column="1">
+       <widget class="QDoubleSpinBox" name="transformXSpin">
+        <property name="maximumSize">
+         <size>
+          <width>16777215</width>
+          <height>18</height>
+         </size>
+        </property>
+        <property name="styleSheet">
+         <string notr="true">font-size: 9px; min-height: 0; height: 18px;</string>
+        </property>
+        <property name="suffix">
+         <string>%</string>
+        </property>
+        <property name="decimals">
+         <number>1</number>
+        </property>
+        <property name="maximum">
+         <double>100.000000000000000</double>
+        </property>
+       </widget>
+      </item>
+      <item row="1" column="0">
+       <widget class="QLabel" name="labelY">
+        <property name="text">
+         <string>Y%</string>
+        </property>
+        <property name="styleSheet">
+         <string notr="true">font-size: 8px; color: #888;</string>
+        </property>
+       </widget>
+      </item>
+      <item row="1" column="1">
+       <widget class="QDoubleSpinBox" name="transformYSpin">
+        <property name="maximumSize">
+         <size>
+          <width>16777215</width>
+          <height>18</height>
+         </size>
+        </property>
+        <property name="styleSheet">
+         <string notr="true">font-size: 9px; min-height: 0; height: 18px;</string>
+        </property>
+        <property name="suffix">
+         <string>%</string>
+        </property>
+        <property name="decimals">
+         <number>1</number>
+        </property>
+        <property name="maximum">
+         <double>100.000000000000000</double>
+        </property>
+       </widget>
+      </item>
+      <item row="2" column="0">
+       <widget class="QLabel" name="labelW">
+        <property name="text">
+         <string>W%</string>
+        </property>
+        <property name="styleSheet">
+         <string notr="true">font-size: 8px; color: #888;</string>
+        </property>
+       </widget>
+      </item>
+      <item row="2" column="1">
+       <widget class="QDoubleSpinBox" name="transformWSpin">
+        <property name="maximumSize">
+         <size>
+          <width>16777215</width>
+          <height>18</height>
+         </size>
+        </property>
+        <property name="styleSheet">
+         <string notr="true">font-size: 9px; min-height: 0; height: 18px;</string>
+        </property>
+        <property name="suffix">
+         <string>%</string>
+        </property>
+        <property name="decimals">
+         <number>1</number>
+        </property>
+        <property name="minimum">
+         <double>0.100000000000000</double>
+        </property>
+        <property name="maximum">
+         <double>100.000000000000000</double>
+        </property>
+        <property name="value">
+         <double>100.000000000000000</double>
+        </property>
+       </widget>
+      </item>
+      <item row="3" column="0">
+       <widget class="QLabel" name="labelH">
+        <property name="text">
+         <string>H%</string>
+        </property>
+        <property name="styleSheet">
+         <string notr="true">font-size: 8px; color: #888;</string>
+        </property>
+       </widget>
+      </item>
+      <item row="3" column="1">
+       <widget class="QDoubleSpinBox" name="transformHSpin">
+        <property name="maximumSize">
+         <size>
+          <width>16777215</width>
+          <height>18</height>
+         </size>
+        </property>
+        <property name="styleSheet">
+         <string notr="true">font-size: 9px; min-height: 0; height: 18px;</string>
+        </property>
+        <property name="suffix">
+         <string>%</string>
+        </property>
+        <property name="decimals">
+         <number>1</number>
+        </property>
+        <property name="minimum">
+         <double>0.100000000000000</double>
+        </property>
+        <property name="maximum">
+         <double>100.000000000000000</double>
+        </property>
+        <property name="value">
+         <double>100.000000000000000</double>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
     <widget class="QWidget" name="abRow" native="true">
      <layout class="QHBoxLayout" name="abLayout">
       <property name="spacing">
@@ -141,6 +324,25 @@ QPushButton:pressed { background-color: #1a3d45; }</string>
       <property name="bottomMargin">
        <number>0</number>
       </property>
+      <item>
+       <widget class="QPushButton" name="setOutputBtn">
+        <property name="visible">
+         <bool>false</bool>
+        </property>
+        <property name="maximumSize">
+         <size>
+          <width>16777215</width>
+          <height>20</height>
+         </size>
+        </property>
+        <property name="styleSheet">
+         <string notr="true">font-size: 9px; min-height: 0; height: 20px;</string>
+        </property>
+        <property name="text">
+         <string>Set output</string>
+        </property>
+       </widget>
+      </item>
       <item>
        <widget class="QPushButton" name="aBtn">
         <property name="maximumSize">

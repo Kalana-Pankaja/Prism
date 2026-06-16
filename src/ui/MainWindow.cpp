@@ -413,11 +413,15 @@ void MainWindow::onNodeAButtonClicked(NodeId nodeId) {
     auto *node = m_clipNodeEditor->nodeAt(nodeId);
     if (!node || !node->hasSource()) return;
 
-    if (m_deckController->activeNodeA())
-        if (auto *old = m_clipNodeEditor->nodeAt(m_deckController->activeNodeA()))
-            old->setASelected(false);
+    if (m_deckController->activeNodeA()) {
+        if (auto *old = m_clipNodeEditor->nodeAt(m_deckController->activeNodeA())) {
+            if (!old->isGroupMember())
+                old->setASelected(false);
+        }
+    }
     m_deckController->setActiveNodeA(nodeId);
-    node->setASelected(true);
+    if (!node->isGroupMember())
+        node->setASelected(true);
 
     int canvasW = 0, canvasH = 0;
     m_clipNodeEditor->contextCanvasSize(nodeId, canvasW, canvasH);
@@ -435,11 +439,15 @@ void MainWindow::onNodeBButtonClicked(NodeId nodeId) {
     auto *node = m_clipNodeEditor->nodeAt(nodeId);
     if (!node || !node->hasSource()) return;
 
-    if (m_deckController->activeNodeB())
-        if (auto *old = m_clipNodeEditor->nodeAt(m_deckController->activeNodeB()))
-            old->setBSelected(false);
+    if (m_deckController->activeNodeB()) {
+        if (auto *old = m_clipNodeEditor->nodeAt(m_deckController->activeNodeB())) {
+            if (!old->isGroupMember())
+                old->setBSelected(false);
+        }
+    }
     m_deckController->setActiveNodeB(nodeId);
-    node->setBSelected(true);
+    if (!node->isGroupMember())
+        node->setBSelected(true);
 
     int canvasW = 0, canvasH = 0;
     m_clipNodeEditor->contextCanvasSize(nodeId, canvasW, canvasH);
@@ -836,8 +844,16 @@ void MainWindow::onAddElementCamera() {
     desc.path        = entry.id;
     desc.displayName = entry.isDefault ? "Default Camera"
                      : entry.label.section("  [", 0, 0).trimmed();
-    if (desc.displayName.isEmpty()) desc.displayName = entry.id;
-    desc.cameraIndex = idx;
+    if (desc.displayName.isEmpty()) desc.displayName = entry.id.isEmpty() ? "Default Camera" : entry.id;
+    desc.cameraIndex = 0;
+    if (!entry.isDefault) {
+        for (int i = 0; i < qtDevices.size(); ++i) {
+            if (QString::fromUtf8(qtDevices[i].id()) == entry.id) {
+                desc.cameraIndex = i;
+                break;
+            }
+        }
+    }
 
     addElementNode(desc, ThumbHelper::makeIconThumb("📷"));
 }

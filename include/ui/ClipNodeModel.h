@@ -63,10 +63,21 @@ public:
     bool isASelected() const { return m_card->isASelected(); }
     bool isBSelected() const { return m_card->isBSelected(); }
 
+    void setCardMode(ClipCard::CardMode mode) { m_card->setCardMode(mode); }
+    bool isGroupMember() const {
+        return m_card && m_card->cardMode() == ClipCard::CardMode::GroupMember;
+    }
+    void setOutputSelected(bool selected) { m_card->setOutputSelected(selected); }
+
+    void setTransform(float x, float y, float w, float h) { m_card->setTransform(x, y, w, h); }
+    void transform(float &x, float &y, float &w, float &h) const { m_card->transform(x, y, w, h); }
+
 signals:
     void aButtonClicked();
     void bButtonClicked();
     void removeRequested();
+    void transformChanged(float x, float y, float w, float h);
+    void setOutputClicked();
     void sourceDescriptorChanged(const SourceDescriptor &desc);
 
 private:

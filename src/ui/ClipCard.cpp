@@ -29,6 +29,7 @@
 #include <QCapturableWindow>
 #include <QWindowCapture>
 #include <QApplication>
+#include <QDoubleSpinBox>
 #include <numeric>
 
 // When the card is embedded in a QGraphicsProxyWidget (node editor), parenting a
@@ -64,7 +65,17 @@ ClipCard::ClipCard(int index, QWidget *parent)
     connect(ui->editBtn,    &QPushButton::clicked, this, &ClipCard::onEditClicked);
     connect(ui->aBtn,       &QPushButton::clicked, this, &ClipCard::onAButtonClicked);
     connect(ui->bBtn,       &QPushButton::clicked, this, &ClipCard::onBButtonClicked);
+    connect(ui->setOutputBtn, &QPushButton::clicked, this, &ClipCard::onSetOutputClicked);
     connect(ui->removeBtn,  &QPushButton::clicked, this, &ClipCard::onRemoveClicked);
+    connect(ui->transformToggleBtn, &QPushButton::toggled, this, &ClipCard::onTransformToggle);
+    connect(ui->transformXSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
+            this, [this](double) { onTransformSpinChanged(); });
+    connect(ui->transformYSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
+            this, [this](double) { onTransformSpinChanged(); });
+    connect(ui->transformWSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
+            this, [this](double) { onTransformSpinChanged(); });
+    connect(ui->transformHSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
+            this, [this](double) { onTransformSpinChanged(); });
 
     clearClip();
 }
@@ -154,6 +165,8 @@ void ClipCard::clearClip() {
     ui->aBtn->setEnabled(false);
     ui->bBtn->setEnabled(false);
     ui->ovlBtn->setVisible(false);
+    setCardMode(CardMode::Deck);
+    setOutputSelected(false);
     setActive(false);
     setASelected(false);
     setBSelected(false);
@@ -284,9 +297,18 @@ void ClipCard::onEditClicked() {
         dlg.setMinimumWidth(360);
 
         auto *combo = new QComboBox(&dlg);
-        for (const auto &cam : cameras)
-            combo->addItem(cam.description());
-        combo->setCurrentIndex(qBound(0, m_sourceDesc.cameraIndex, cameras.size() - 1));
+        int currentIdx = 0;
+        for (int i = 0; i < cameras.size(); ++i) {
+            const auto &cam = cameras[i];
+            const QString id = QString::fromUtf8(cam.id());
+            const QString label = cam.description().isEmpty() ? id : cam.description();
+            combo->addItem(label);
+            if (!m_sourceDesc.path.isEmpty() && id == m_sourceDesc.path)
+                currentIdx = i;
+            else if (m_sourceDesc.path.isEmpty() && i == m_sourceDesc.cameraIndex)
+                currentIdx = i;
+        }
+        combo->setCurrentIndex(qBound(0, currentIdx, cameras.size() - 1));
 
         auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
         connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
@@ -298,8 +320,11 @@ void ClipCard::onEditClicked() {
         layout->addWidget(buttons);
 
         if (dlg.exec() == QDialog::Accepted) {
-            m_sourceDesc.cameraIndex  = combo->currentIndex();
-            m_sourceDesc.displayName  = cameras[combo->currentIndex()].description();
+            const auto &cam = cameras[combo->currentIndex()];
+            m_sourceDesc.cameraIndex = combo->currentIndex();
+            m_sourceDesc.path = QString::fromUtf8(cam.id());
+            const QString desc = cam.description();
+            m_sourceDesc.displayName = desc.isEmpty() ? m_sourceDesc.path : desc;
             QFontMetrics fm(ui->titleLabel->font());
             ui->titleLabel->setText(fm.elidedText(m_sourceDesc.displayName, Qt::ElideRight, 108));
             ui->titleLabel->setToolTip(m_sourceDesc.displayName);
@@ -516,4 +541,92 @@ void ClipCard::onAButtonClicked() {
 void ClipCard::onBButtonClicked() {
     if (!hasSource()) return;
     emit bButtonClicked(m_index);
+}
+
+void ClipCard::setCardMode(CardMode mode) {
+    if (m_cardMode == mode) {
+        const bool groupMember = (mode == CardMode::GroupMember);
+        ui->aBtn->setVisible(!groupMember);
+        ui->bBtn->setVisible(!groupMember);
+        ui->setOutputBtn->setVisible(groupMember);
+        return;
+    }
+    m_cardMode = mode;
+    const bool groupMember = (mode == CardMode::GroupMember);
+    ui->aBtn->setVisible(!groupMember);
+    ui->bBtn->setVisible(!groupMember);
+    ui->setOutputBtn->setVisible(groupMember);
+    if (groupMember) {
+        setASelected(false);
+        setBSelected(false);
+    } else {
+        setOutputSelected(false);
+    }
+}
+
+void ClipCard::setOutputSelected(bool selected) {
+    m_outputSelected = selected;
+    if (selected) {
+        ui->setOutputBtn->setStyleSheet(
+            "QPushButton { background-color: #2a5c66; color: #FFFFFF; font-weight: bold; "
+            "font-size: 9px; min-height: 0; height: 20px; border-radius: 4px; }");
+    } else {
+        ui->setOutputBtn->setStyleSheet("font-size: 9px; min-height: 0; height: 20px;");
+    }
+}
+
+void ClipCard::setTransform(float x, float y, float w, float h) {
+    m_transformX = x;
+    m_transformY = y;
+    m_transformW = w;
+    m_transformH = h;
+    m_blockTransformSignal = true;
+    ui->transformXSpin->setValue(x * 100.0);
+    ui->transformYSpin->setValue(y * 100.0);
+    ui->transformWSpin->setValue(w * 100.0);
+    ui->transformHSpin->setValue(h * 100.0);
+    m_blockTransformSignal = false;
+}
+
+void ClipCard::transform(float &x, float &y, float &w, float &h) const {
+    x = m_transformX;
+    y = m_transformY;
+    w = m_transformW;
+    h = m_transformH;
+}
+
+void ClipCard::onSetOutputClicked() {
+    if (!hasSource()) return;
+    emit setOutputClicked(m_index);
+}
+
+bool ClipCard::hasSource() const {
+    if (!m_clipPath.isEmpty()) return true;
+    if (m_sourceDesc.isFileSource()) return !m_sourceDesc.path.isEmpty();
+    return m_sourceDesc.isLiveSource();
+}
+
+void ClipCard::onTransformToggle(bool expanded) {
+    ui->transformContainer->setVisible(expanded);
+    updateTransformToggleLabel();
+    adjustSize();
+    emit preferredHeightChanged(heightForWidth(width()));
+}
+
+void ClipCard::updateTransformToggleLabel() {
+    ui->transformToggleBtn->setText(
+        ui->transformToggleBtn->isChecked() ? "Transform ▾" : "Transform ▸");
+}
+
+void ClipCard::onTransformSpinChanged() {
+    if (m_blockTransformSignal) return;
+    m_transformX = (float)(ui->transformXSpin->value() / 100.0);
+    m_transformY = (float)(ui->transformYSpin->value() / 100.0);
+    m_transformW = (float)(ui->transformWSpin->value() / 100.0);
+    m_transformH = (float)(ui->transformHSpin->value() / 100.0);
+    emitTransformChanged();
+}
+
+void ClipCard::emitTransformChanged() {
+    emit transformChanged(m_index, m_transformX, m_transformY, m_transformW, m_transformH);
 }
