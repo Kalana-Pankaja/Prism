@@ -3,6 +3,7 @@
 #include <QWidget>
 #include <QVector>
 #include <QMap>
+#include <QJsonObject>
 #include "core/SourceDescriptor.h"
 #include "ui/ClipNodeModel.h"
 
@@ -42,6 +43,10 @@ public:
     QVector<NodeId> clipsForContextOrdered(NodeId contextId) const;
     bool contextCanvasSize(NodeId clipId, int &w, int &h) const;
 
+    // ── Session persistence ──────────────────────────────────────────────────
+    QJsonObject saveState() const;
+    void restoreState(const QJsonObject &state);
+
 signals:
     void clipChainChanged();
     void deckAClipChanged(NodeId clipId);
@@ -64,6 +69,9 @@ private:
     void connectNodeSignals(ClipNodeModel *model, NodeId id);
     void disconnectNodeSignals(ClipNodeModel *model);
     QVector<ClipNodeModel *> traverseUpstream(NodeId clipId) const;
+
+    // Finds a port of the given kind on the node with the given ID.
+    class PortItem *findPort(NodeId nodeId, int portKindInt) const;
 
     ClipNodeScene *m_scene  = nullptr;
     QGraphicsView *m_view   = nullptr;

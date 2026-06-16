@@ -53,6 +53,11 @@ public:
     float  cropH()     const { return m_settings.cropH; }
     const QList<OverlayItem> &overlays() const { return m_settings.overlays; }
 
+    // Session restore: programmatically apply settings and toggle states.
+    void applySettings(const ClipSettings &s) { m_settings = s; }
+    void setRepeat(bool r);
+    void setMuted(bool m);
+
 signals:
     void triggered(int index);
     void aButtonClicked(int index);

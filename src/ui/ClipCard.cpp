@@ -196,14 +196,22 @@ void ClipCard::setBSelected(bool selected) {
     }
 }
 
-void ClipCard::onMuteClicked() {
-    m_muted = !m_muted;
+void ClipCard::setRepeat(bool r) {
+    m_repeat = r;
+    ui->repeatBtn->setText(m_repeat ? "↺  On" : "↺  Off");
+}
+
+void ClipCard::setMuted(bool m) {
+    m_muted = m;
     ui->muteBtn->setText(m_muted ? "🔇" : "🔊");
 }
 
+void ClipCard::onMuteClicked() {
+    setMuted(!m_muted);
+}
+
 void ClipCard::onRepeatClicked() {
-    m_repeat = !m_repeat;
-    ui->repeatBtn->setText(m_repeat ? "↺  On" : "↺  Off");
+    setRepeat(!m_repeat);
 }
 
 void ClipCard::onEditClicked() {

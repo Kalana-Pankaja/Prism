@@ -48,6 +48,10 @@ private slots:
     void onNodeBButtonClicked(NodeId nodeId);
     void onNodeRemoveRequested(NodeId nodeId);
 
+    // ── Session persistence ───────────────────────────────────────────────────
+    void onSaveSessionClicked();
+    void onLoadSessionClicked();
+
     // ── Add Element handlers ──────────────────────────────────────────────────
     void onAddElementSlideshow();
     void onAddElementCamera();

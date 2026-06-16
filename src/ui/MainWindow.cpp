@@ -43,6 +43,9 @@
 #include <QEasingCurve>
 #include <QDoubleSpinBox>
 #include <QWebEngineView>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QJsonArray>
 #include <algorithm>
 #include <numeric>
 
@@ -229,6 +232,21 @@ void MainWindow::setupConnections() {
     connect(ui->actionAddFolder,  &QAction::triggered, this, &MainWindow::onAddFolderClicked);
     connect(ui->actionAddFiles,   &QAction::triggered, this, &MainWindow::onAddFilesClicked);
     connect(ui->actionClearAll,   &QAction::triggered, this, &MainWindow::onClearAllClicked);
+
+    // ── Session save / load ───────────────────────────────────────────────────
+    ui->menuMedia->addSeparator();
+    {
+        auto *saveAct = new QAction("💾  Save Session…", this);
+        saveAct->setShortcut(QKeySequence::Save);
+        connect(saveAct, &QAction::triggered, this, &MainWindow::onSaveSessionClicked);
+        ui->menuMedia->addAction(saveAct);
+
+        auto *loadAct = new QAction("📂  Load Session…", this);
+        loadAct->setShortcut(QKeySequence::Open);
+        connect(loadAct, &QAction::triggered, this, &MainWindow::onLoadSessionClicked);
+        ui->menuMedia->addAction(loadAct);
+    }
+
     connect(ui->actionShowOutput, &QAction::triggered, this, [this]() {
         outputWindow->show();
         outputWindow->raise();
@@ -1602,5 +1620,178 @@ void MainWindow::onCutTransitionClicked() {
     ui->crossfaderSlider->setValue(targetVal);
 }
 
+
+// ── Session save / load ───────────────────────────────────────────────────────
+
+void MainWindow::onSaveSessionClicked() {
+    QString path = QFileDialog::getSaveFileName(
+        this, "Save Session", QString(), "SwitchX Session (*.sxs);;All Files (*)");
+    if (path.isEmpty()) return;
+    if (!path.endsWith(".sxs", Qt::CaseInsensitive))
+        path += ".sxs";
+
+    QJsonObject root;
+    root["version"]            = 1;
+    root["crossfader"]         = ui->crossfaderSlider->value();
+    root["transitionMode"]     = m_transitionCombo ? m_transitionCombo->currentIndex() : 0;
+    root["transitionDuration"] = m_durationSpin    ? m_durationSpin->value()           : 1.0;
+    root["activeNodeA"]        = (qint64)m_aClipNodeId;
+    root["activeNodeB"]        = (qint64)m_bClipNodeId;
+
+    // Save hotkeys: nodeId → key code (int)
+    QJsonArray hotkeys;
+    for (auto it = m_nodeHotkeys.cbegin(); it != m_nodeHotkeys.cend(); ++it) {
+        QJsonObject hk;
+        hk["nodeId"] = (qint64)it.key();
+        hk["key"]    = (int)it.value();
+        hotkeys.append(hk);
+    }
+    root["hotkeys"] = hotkeys;
+
+    root["graph"] = m_clipNodeEditor->saveState();
+
+    QFile file(path);
+    if (!file.open(QIODevice::WriteOnly)) {
+        QMessageBox::warning(this, "Save Session",
+                             QString("Cannot write to file:\n%1").arg(path));
+        return;
+    }
+    file.write(QJsonDocument(root).toJson(QJsonDocument::Indented));
+}
+
+void MainWindow::onLoadSessionClicked() {
+    QString path = QFileDialog::getOpenFileName(
+        this, "Load Session", QString(), "SwitchX Session (*.sxs);;All Files (*)");
+    if (path.isEmpty()) return;
+
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly)) {
+        QMessageBox::warning(this, "Load Session",
+                             QString("Cannot open file:\n%1").arg(path));
+        return;
+    }
+    QJsonParseError err;
+    const QJsonDocument doc = QJsonDocument::fromJson(file.readAll(), &err);
+    if (doc.isNull()) {
+        QMessageBox::warning(this, "Load Session",
+                             QString("Invalid session file:\n%1").arg(err.errorString()));
+        return;
+    }
+    const QJsonObject root = doc.object();
+    if (root["version"].toInt() != 1) {
+        QMessageBox::warning(this, "Load Session",
+                             "Unsupported session version.");
+        return;
+    }
+
+    // Tear down current state ──────────────────────────────────────────────────
+    clipManager.clear();
+    outputWindow->videoWidget()->setSourceA(nullptr);
+    outputWindow->videoWidget()->setSourceB(nullptr);
+    outputWindow->videoWidget()->setNodeChainA({});
+    outputWindow->videoWidget()->setNodeChainB({});
+    m_aClipNodeId = 0;
+    m_bClipNodeId = 0;
+
+    // Block auto-hotkey assignment while we restore nodes.
+    disconnect(m_clipNodeEditor, &ClipNodeEditor::nodeAdded,
+               this, &MainWindow::assignHotkeyToNode);
+
+    m_clipNodeEditor->restoreState(root["graph"].toObject());
+
+    // Re-wire nodeAdded after restore.
+    connect(m_clipNodeEditor, &ClipNodeEditor::nodeAdded,
+            this, &MainWindow::assignHotkeyToNode);
+
+    m_stackWidget->setCurrentWidget(m_clipNodeEditor);
+
+    // Re-generate thumbnails for every restored node ───────────────────────────
+    for (ClipNodeModel *model : m_clipNodeEditor->allNodes()) {
+        const SourceDescriptor &desc = model->sourceDescriptor();
+        using Kind = SourceDescriptor::Kind;
+        QPixmap thumb;
+        switch (desc.kind) {
+        case Kind::VideoFile:
+        case Kind::Image:
+            thumb = ThumbnailExtractor::extract(desc.path, 110, 65);
+            break;
+        case Kind::Slideshow: {
+            QDir dir(desc.path);
+            QStringList imgs = dir.entryList({"*.png","*.jpg","*.jpeg","*.bmp","*.webp"},
+                                             QDir::Files, QDir::Name);
+            if (!imgs.isEmpty())
+                thumb = ThumbnailExtractor::extract(dir.absoluteFilePath(imgs.first()), 110, 65);
+            if (thumb.isNull()) thumb = makeIconThumb("📁");
+            break;
+        }
+        case Kind::Camera:  thumb = makeIconThumb("📷");  break;
+        case Kind::Screen:  thumb = makeIconThumb("🖥");   break;
+        case Kind::Window:  thumb = makeIconThumb("🪟");   break;
+        case Kind::Canvas:
+            thumb = makeCanvasThumb(
+                QString("%1x%2").arg(desc.canvasWidth).arg(desc.canvasHeight),
+                desc.canvasFill, desc.color);
+            break;
+        case Kind::Shader:  thumb = makeShaderThumb(desc.shaderCode);           break;
+        case Kind::Html:    thumb = makeHtmlThumb(desc.htmlContent, desc.path); break;
+        }
+        if (!thumb.isNull()) {
+            if (desc.kind == Kind::VideoFile || desc.kind == Kind::Image)
+                model->loadClip(desc.path, thumb);
+            else
+                model->loadSource(desc, thumb);
+            // Re-apply settings that loadClip/loadSource would reset.
+            model->applySettings(model->settings());
+        }
+    }
+
+    // Restore hotkeys ─────────────────────────────────────────────────────────
+    // Clear any stale mappings first.
+    for (NodeId id : m_nodeHotkeys.keys()) releaseHotkeyForNode(id);
+
+    const QJsonArray hotkeys = root["hotkeys"].toArray();
+    for (const auto &hkVal : hotkeys) {
+        const QJsonObject hk = hkVal.toObject();
+        const NodeId nodeId  = (NodeId)hk["nodeId"].toInteger();
+        const Qt::Key key    = (Qt::Key)hk["key"].toInt();
+
+        ClipNodeModel *node = m_clipNodeEditor->nodeAt(nodeId);
+        if (!node) continue;
+        if (m_keyToNode.contains(key)) continue; // already taken
+
+        m_nodeHotkeys[nodeId] = key;
+        m_keyToNode[key]      = nodeId;
+
+        auto *scA = new QShortcut(QKeySequence(key), this);
+        scA->setContext(Qt::ApplicationShortcut);
+        connect(scA, &QShortcut::activated, this, [this, key]() {
+            NodeId id = m_keyToNode.value(key, 0);
+            if (id) onNodeAButtonClicked(id);
+        });
+
+        auto *scB = new QShortcut(QKeySequence(Qt::SHIFT | key), this);
+        scB->setContext(Qt::ApplicationShortcut);
+        connect(scB, &QShortcut::activated, this, [this, key]() {
+            NodeId id = m_keyToNode.value(key, 0);
+            if (id) onNodeBButtonClicked(id);
+        });
+
+        m_nodeShortcuts[nodeId] = {scA, scB};
+        node->setHotkeyLabel(QKeySequence(key).toString());
+    }
+
+    // Restore crossfader and transition settings ───────────────────────────────
+    ui->crossfaderSlider->setValue(root["crossfader"].toInt(50));
+    if (m_transitionCombo)
+        m_transitionCombo->setCurrentIndex(root["transitionMode"].toInt(0));
+    if (m_durationSpin)
+        m_durationSpin->setValue(root["transitionDuration"].toDouble(1.0));
+
+    // Restore active deck assignments ──────────────────────────────────────────
+    const NodeId savedA = (NodeId)root["activeNodeA"].toInteger();
+    const NodeId savedB = (NodeId)root["activeNodeB"].toInteger();
+    if (savedA) onNodeAButtonClicked(savedA);
+    if (savedB) onNodeBButtonClicked(savedB);
+}
 
 // ── Card management (obsolete methods removed - now handled by ClipNodeEditor) ──

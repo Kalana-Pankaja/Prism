@@ -1,5 +1,7 @@
 #include "ui/ClipNodeEditor.h"
 #include "ui/TransformEditorDialog.h"
+#include <QJsonArray>
+#include <QJsonObject>
 #include <QGraphicsScene>
 #include <QGraphicsView>
 #include <QGraphicsItem>
@@ -533,6 +535,18 @@ public:
         createConnection(outPort, inPort, kind);
     }
 
+    QJsonArray edgesToJson() const {
+        QJsonArray arr;
+        for (const auto &e : m_edges) {
+            QJsonObject obj;
+            obj["from"] = (qint64)e.fromNodeId;
+            obj["to"]   = (qint64)e.toNodeId;
+            obj["kind"] = (int)e.edgeKind;
+            arr.append(obj);
+        }
+        return arr;
+    }
+
 private:
     struct Edge {
         NodeId fromNodeId;
@@ -1062,4 +1076,230 @@ bool ClipNodeEditor::contextCanvasSize(NodeId clipId, int &w, int &h) const {
         }
     }
     return false;
+}
+
+// ── Session persistence ───────────────────────────────────────────────────────
+
+static QJsonObject descriptorToJson(const SourceDescriptor &d) {
+    QJsonObject o;
+    o["kind"]               = (int)d.kind;
+    o["path"]               = d.path;
+    o["displayName"]        = d.displayName;
+    o["color"]              = d.color.name(QColor::HexArgb);
+    o["cameraIndex"]        = d.cameraIndex;
+    o["screenIndex"]        = d.screenIndex;
+    o["windowIndex"]        = d.windowIndex;
+    o["slideshowIntervalMs"]= d.slideshowIntervalMs;
+    o["canvasWidth"]        = d.canvasWidth;
+    o["canvasHeight"]       = d.canvasHeight;
+    o["canvasFill"]         = (int)d.canvasFill;
+    o["shaderCode"]         = d.shaderCode;
+    o["htmlContent"]        = d.htmlContent;
+    return o;
+}
+
+static SourceDescriptor descriptorFromJson(const QJsonObject &o) {
+    SourceDescriptor d;
+    d.kind               = (SourceDescriptor::Kind)o["kind"].toInt();
+    d.path               = o["path"].toString();
+    d.displayName        = o["displayName"].toString();
+    d.color              = QColor(o["color"].toString("#ffffffff"));
+    d.cameraIndex        = o["cameraIndex"].toInt();
+    d.screenIndex        = o["screenIndex"].toInt();
+    d.windowIndex        = o["windowIndex"].toInt();
+    d.slideshowIntervalMs= o["slideshowIntervalMs"].toInt(3000);
+    d.canvasWidth        = o["canvasWidth"].toInt(1280);
+    d.canvasHeight       = o["canvasHeight"].toInt(720);
+    d.canvasFill         = (SourceDescriptor::CanvasFill)o["canvasFill"].toInt();
+    d.shaderCode         = o["shaderCode"].toString();
+    d.htmlContent        = o["htmlContent"].toString();
+    return d;
+}
+
+QJsonObject ClipNodeEditor::saveState() const {
+    QJsonObject root;
+    root["nextId"] = (qint64)m_nextId;
+
+    // ── Clip nodes ────────────────────────────────────────────────────────────
+    QJsonArray clipNodes;
+    for (auto it = m_nodeMap.cbegin(); it != m_nodeMap.cend(); ++it) {
+        const NodeId       id    = it.key();
+        const ClipNodeModel *model = it.value();
+        QJsonObject nodeObj;
+        nodeObj["id"] = (qint64)id;
+
+        // Scene position
+        for (auto *item : m_scene->items()) {
+            if (auto *ci = dynamic_cast<ClipNodeItem *>(item)) {
+                if (ci->nodeId() == id) {
+                    nodeObj["posX"] = ci->pos().x();
+                    nodeObj["posY"] = ci->pos().y();
+                    break;
+                }
+            }
+        }
+
+        // Paired transform node
+        const NodeId transId = m_scene->transformNodeForClip(id);
+        nodeObj["transformId"] = (qint64)transId;
+        auto tit = m_transformNodes.find(transId);
+        if (tit != m_transformNodes.end()) {
+            auto *tn = static_cast<TransformNodeItem *>(*tit);
+            nodeObj["transformPosX"] = tn->pos().x();
+            nodeObj["transformPosY"] = tn->pos().y();
+            nodeObj["transformX"]    = (double)tn->x();
+            nodeObj["transformY"]    = (double)tn->y();
+            nodeObj["transformW"]    = (double)tn->w();
+            nodeObj["transformH"]    = (double)tn->h();
+        }
+
+        nodeObj["source"]   = descriptorToJson(model->sourceDescriptor());
+        nodeObj["settings"] = model->settings().toJson();
+        nodeObj["repeat"]   = model->isRepeat();
+        nodeObj["muted"]    = model->isMuted();
+
+        clipNodes.append(nodeObj);
+    }
+    root["clipNodes"] = clipNodes;
+
+    // ── Context nodes ─────────────────────────────────────────────────────────
+    QJsonArray contextNodes;
+    for (auto it = m_contextNodes.cbegin(); it != m_contextNodes.cend(); ++it) {
+        auto *cn = static_cast<TransformContextNodeItem *>(*it);
+        QJsonObject obj;
+        obj["id"]      = (qint64)cn->nodeId();
+        obj["posX"]    = cn->pos().x();
+        obj["posY"]    = cn->pos().y();
+        obj["canvasW"] = cn->canvasW();
+        obj["canvasH"] = cn->canvasH();
+        contextNodes.append(obj);
+    }
+    root["contextNodes"] = contextNodes;
+
+    // ── All edges (chain + transform + context wires) ─────────────────────────
+    root["connections"] = m_scene->edgesToJson();
+
+    return root;
+}
+
+PortItem *ClipNodeEditor::findPort(NodeId nodeId, int portKindInt) const {
+    const PortKind kind = (PortKind)portKindInt;
+    for (auto *item : m_scene->items()) {
+        if (auto *ci = dynamic_cast<ClipNodeItem *>(item)) {
+            if (ci->nodeId() != nodeId) continue;
+            if (kind == PortKind::ChainIn)       return ci->chainInPort();
+            if (kind == PortKind::ChainOut)      return ci->chainOutPort();
+            if (kind == PortKind::ClipTransform) return ci->transformPort();
+        }
+        if (auto *ti = dynamic_cast<TransformNodeItem *>(item)) {
+            if (ti->nodeId() != nodeId) continue;
+            if (kind == PortKind::TransformClip)    return ti->clipPort();
+            if (kind == PortKind::TransformContext)  return ti->contextPort();
+        }
+        if (auto *xi = dynamic_cast<TransformContextNodeItem *>(item)) {
+            if (xi->nodeId() != nodeId) continue;
+            if (kind == PortKind::ContextHub) return xi->hubPort();
+        }
+    }
+    return nullptr;
+}
+
+void ClipNodeEditor::restoreState(const QJsonObject &state) {
+    clearAllNodes();
+
+    // ── Clip nodes ────────────────────────────────────────────────────────────
+    const QJsonArray clipNodes = state["clipNodes"].toArray();
+    for (const auto &val : clipNodes) {
+        const QJsonObject obj = val.toObject();
+        const NodeId clipId  = (NodeId)obj["id"].toInteger();
+        const NodeId transId = (NodeId)obj["transformId"].toInteger();
+
+        // Create clip node item with the saved ID.
+        m_nextId = clipId;
+        const NodeId id = m_nextId++;
+
+        auto *model    = new ClipNodeModel(this);
+        auto *nodeItem = new ClipNodeItem(model, id);
+        nodeItem->setPos(obj["posX"].toDouble(), obj["posY"].toDouble());
+        m_scene->addItem(nodeItem);
+        m_nodeMap[id] = model;
+
+        // Restore source
+        const SourceDescriptor desc = descriptorFromJson(obj["source"].toObject());
+        model->setNodeId(id);
+        using Kind = SourceDescriptor::Kind;
+        if (desc.kind == Kind::VideoFile || desc.kind == Kind::Image)
+            model->loadClip(desc.path, QPixmap{});
+        else
+            model->loadSource(desc, QPixmap{});
+
+        // Restore clip settings, repeat, mute
+        if (obj.contains("settings"))
+            model->applySettings(ClipSettings::fromJson(obj["settings"].toObject()));
+        if (obj["repeat"].toBool()) model->setRepeat(true);
+        if (obj["muted"].toBool())  model->setMuted(true);
+
+        connectNodeSignals(model, id);
+
+        // Create paired transform node with saved ID.
+        m_nextId = transId;
+        auto *tn = new TransformNodeItem(m_nextId++,
+            (float)obj["transformX"].toDouble(0.0),
+            (float)obj["transformY"].toDouble(0.0),
+            (float)obj["transformW"].toDouble(1.0),
+            (float)obj["transformH"].toDouble(1.0));
+        tn->setPos(obj["transformPosX"].toDouble(), obj["transformPosY"].toDouble());
+        tn->onEditRequested = [this](NodeId tid) { onEditTransformNode(tid); };
+        m_scene->addItem(tn);
+        m_transformNodes[transId] = static_cast<void *>(tn);
+
+        // Wire clip ↔ transform (ClipToTransform edge).
+        m_scene->createConnectionManually(nodeItem->transformPort(), tn->clipPort(),
+                                          ConnectionItem::ClipToTransform);
+
+        emit nodeAdded(id);
+    }
+
+    // ── Context nodes ─────────────────────────────────────────────────────────
+    const QJsonArray contextNodes = state["contextNodes"].toArray();
+    for (const auto &val : contextNodes) {
+        const QJsonObject obj = val.toObject();
+        const NodeId ctxId = (NodeId)obj["id"].toInteger();
+        m_nextId = ctxId;
+        auto *cn = new TransformContextNodeItem(m_nextId++,
+            obj["canvasW"].toInt(1280), obj["canvasH"].toInt(720));
+        cn->setPos(obj["posX"].toDouble(), obj["posY"].toDouble());
+        cn->onEditRequested        = [this](NodeId cid) { onEditContextNode(cid); };
+        cn->onOpenEditorRequested  = [this](NodeId cid) { onOpenTransformEditor(cid); };
+        m_scene->addItem(cn);
+        m_contextNodes[ctxId] = static_cast<void *>(cn);
+    }
+
+    // ── Extra edges (chain + transform-to-context; skip ClipToTransform already wired) ──
+    const QJsonArray conns = state["connections"].toArray();
+    for (const auto &val : conns) {
+        const QJsonObject obj = val.toObject();
+        const NodeId from = (NodeId)obj["from"].toInteger();
+        const NodeId to   = (NodeId)obj["to"].toInteger();
+        const int    kind = obj["kind"].toInt();
+
+        if (kind == ConnectionItem::ClipToTransform) continue;
+
+        PortItem *fromPort = nullptr, *toPort = nullptr;
+        if (kind == ConnectionItem::Chain) {
+            fromPort = findPort(from, (int)PortKind::ChainOut);
+            toPort   = findPort(to,   (int)PortKind::ChainIn);
+        } else {
+            fromPort = findPort(from, (int)PortKind::TransformContext);
+            toPort   = findPort(to,   (int)PortKind::ContextHub);
+        }
+        if (fromPort && toPort)
+            m_scene->createConnectionManually(fromPort, toPort,
+                                              (ConnectionItem::EdgeKind)kind);
+    }
+
+    // Advance nextId past all IDs used in this session.
+    const qint64 savedNext = state["nextId"].toInteger(0);
+    if (savedNext > (qint64)m_nextId)
+        m_nextId = (NodeId)savedNext;
 }
