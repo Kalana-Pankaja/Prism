@@ -10,6 +10,12 @@
 class ClipNodeScene;
 class QGraphicsView;
 
+enum class AudioPlaybackMode {
+    DeckAOnly = 0,
+    DeckBOnly = 1,
+    Always = 2
+};
+
 class ClipNodeEditor : public QWidget {
     Q_OBJECT
 
@@ -42,6 +48,7 @@ public:
     QVector<NodeId> clipsForContext(NodeId contextId) const;
     QVector<NodeId> clipsForContextOrdered(NodeId contextId) const;
     bool contextCanvasSize(NodeId clipId, int &w, int &h) const;
+    bool audioSettingsForClip(NodeId clipId, int &volume, bool &muted, bool &routedToMaster, AudioPlaybackMode &playbackMode, int &delayMs) const;
 
     // ── Session persistence ──────────────────────────────────────────────────
     QJsonObject saveState() const;
@@ -53,6 +60,8 @@ signals:
     void deckBClipChanged(NodeId clipId);
     void nodeAdded(NodeId nodeId);
     void nodeRemoved(NodeId nodeId);
+    void audioGraphChanged();
+    void audioControllerChanged(NodeId clipId);
 
 private slots:
     void onNodeAButtonClicked(NodeId nodeId);
@@ -60,9 +69,11 @@ private slots:
     void onNodeRemoveRequested(NodeId nodeId);
     void onCanvasContextMenu();
     void onAddTransformContext();
+    void onAddMasterAudioOutput();
     void onEditTransformNode(NodeId nodeId);
     void onEditContextNode(NodeId nodeId);
     void onOpenTransformEditor(NodeId contextId);
+    void onEditAudioNode(NodeId nodeId);
 
 private:
     ClipNodeModel *createAndAddNode(NodeId nodeId);
@@ -79,6 +90,8 @@ private:
     QMap<NodeId, ClipNodeModel *> m_nodeMap;
     QMap<NodeId, void *> m_transformNodes;
     QMap<NodeId, void *> m_contextNodes;
+    QMap<NodeId, void *> m_audioNodes;
+    QMap<NodeId, void *> m_masterAudioNodes;
     NodeId m_activeClipA = 0;
     NodeId m_activeClipB = 0;
     NodeId m_nextId      = 1;

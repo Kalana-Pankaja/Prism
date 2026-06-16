@@ -1,9 +1,9 @@
 #pragma once
 
 #include <QMainWindow>
-#include <QJsonObject>
 #include <QVector>
 #include <QMap>
+#include <memory>
 #include "ui/ClipNodeEditor.h"
 #include "ui/OutputWindow.h"
 #include "core/ClipManager.h"
@@ -17,6 +17,7 @@ class QPushButton;
 class QLabel;
 class QDoubleSpinBox;
 class QVariantAnimation;
+class AudioPlayer;
 
 namespace Ui { class MainWindow; }
 
@@ -31,7 +32,6 @@ protected:
     void dragEnterEvent(QDragEnterEvent *event) override;
     void dropEvent(QDropEvent *event) override;
     void resizeEvent(QResizeEvent *event) override;
-    void closeEvent(QCloseEvent *event) override;
 
 private slots:
     void onLoadFolderClicked();
@@ -101,6 +101,9 @@ private:
 
     // Update deck UI state after a source is assigned.
     void updateDeckUI(bool deckA, const QString &name, bool hasTimeline);
+    void updateDeckAudio(bool deckA, NodeId clipId, const ClipNodeModel *node, double currentTimeHint = -1.0, bool forceSeek = false);
+    void applyAudioControllerToDeck(bool deckA, NodeId clipId);
+    void stopDeckAudio(bool deckA);
 
     void setupConnections();
     void applyTheme();
@@ -127,6 +130,10 @@ private:
     QPushButton *m_autoBtn = nullptr;
     QPushButton *m_cutBtn = nullptr;
     QVariantAnimation *m_transitionAnimation = nullptr;
+    std::unique_ptr<AudioPlayer> m_audioPlayerA;
+    std::unique_ptr<AudioPlayer> m_audioPlayerB;
+    double m_lastTimeA = 0.0;
+    double m_lastTimeB = 0.0;
 
 
     static QPixmap makeIconThumb(const QString &glyph, int w = 110, int h = 65);
@@ -138,10 +145,4 @@ private:
     static QPixmap makeHtmlThumb(const QString &html, const QString &filePath, int w = 110, int h = 65);
     static QPixmap makeQmlThumb(const QString &code, int w = 110, int h = 65); // kept for ABI compat
     static QString formatTimeShort(double secs);
-
-    // ── Session persistence helpers ───────────────────────────────────────────
-    QJsonObject sessionToJson() const;
-    bool saveSessionToFile(const QString &path) const;
-    bool loadSessionFromFile(const QString &path, bool showErrors = true);
-    static QString autosaveSessionPath();
 };

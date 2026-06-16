@@ -10,6 +10,7 @@
 #include "core/ImageSource.h"
 #include "core/ShaderSource.h"
 #include "core/HtmlSource.h"
+#include "core/AudioPlayer.h"
 #include "ui/ShaderEditDialog.h"
 #include "ui/HtmlEditDialog.h"
 #include <QApplication>
@@ -46,8 +47,6 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonArray>
-#include <QCloseEvent>
-#include <QStandardPaths>
 #include <algorithm>
 #include <numeric>
 
@@ -226,20 +225,13 @@ MainWindow::MainWindow(QWidget *parent)
     connect(updateTimer, &QTimer::timeout, this, &MainWindow::onTimerUpdate);
     updateTimer->start(100);
 
-    const QString autosave = autosaveSessionPath();
-    if (QFile::exists(autosave))
-        loadSessionFromFile(autosave, false);
-
     qDebug() << "SwitchX initialized - Live Media Control Mode";
 }
 
 MainWindow::~MainWindow() {
+    stopDeckAudio(true);
+    stopDeckAudio(false);
     delete ui;
-}
-
-void MainWindow::closeEvent(QCloseEvent *event) {
-    saveSessionToFile(autosaveSessionPath());
-    QMainWindow::closeEvent(event);
 }
 
 void MainWindow::setupConnections() {
@@ -312,6 +304,14 @@ void MainWindow::setupConnections() {
     connect(m_clipNodeEditor, &ClipNodeEditor::deckBClipChanged, this, &MainWindow::onNodeBButtonClicked);
     connect(m_clipNodeEditor, &ClipNodeEditor::nodeAdded,   this, &MainWindow::assignHotkeyToNode);
     connect(m_clipNodeEditor, &ClipNodeEditor::nodeRemoved, this, &MainWindow::onNodeRemoveRequested);
+    connect(m_clipNodeEditor, &ClipNodeEditor::audioGraphChanged, this, [this]() {
+        if (m_aClipNodeId) applyAudioControllerToDeck(true, m_aClipNodeId);
+        if (m_bClipNodeId) applyAudioControllerToDeck(false, m_bClipNodeId);
+    });
+    connect(m_clipNodeEditor, &ClipNodeEditor::audioControllerChanged, this, [this](NodeId clipId) {
+        if (clipId == m_aClipNodeId) applyAudioControllerToDeck(true, clipId);
+        if (clipId == m_bClipNodeId) applyAudioControllerToDeck(false, clipId);
+    });
 
     // ── Transition combobox & buttons ─────────────────────────────────────────
     if (m_transitionCombo) {
@@ -346,6 +346,10 @@ void MainWindow::setupConnections() {
         if (dur > 0) {
             double t = ui->aProgressSlider->value() / 1000.0 * dur;
             out->seekA(t);
+            if (m_aClipNodeId) {
+                if (auto *node = m_clipNodeEditor->nodeAt(m_aClipNodeId))
+                    updateDeckAudio(true, m_aClipNodeId, node, t, true);
+            }
         }
     });
     connect(ui->aProgressSlider, &QSlider::sliderMoved, this, [this](int value) {
@@ -363,6 +367,10 @@ void MainWindow::setupConnections() {
         if (dur > 0) {
             double t = ui->bProgressSlider->value() / 1000.0 * dur;
             out->seekB(t);
+            if (m_bClipNodeId) {
+                if (auto *node = m_clipNodeEditor->nodeAt(m_bClipNodeId))
+                    updateDeckAudio(false, m_bClipNodeId, node, t, true);
+            }
         }
     });
     connect(ui->bProgressSlider, &QSlider::sliderMoved, this, [this](int value) {
@@ -380,6 +388,8 @@ void MainWindow::onLoadFolderClicked() {
     clipManager.loadFolder(path);
     m_aClipNodeId = 0;
     m_bClipNodeId = 0;
+    stopDeckAudio(true);
+    stopDeckAudio(false);
     outputWindow->videoWidget()->setNodeChainA({});
     outputWindow->videoWidget()->setNodeChainB({});
     for (int i = 0; i < clipManager.getClipCount(); ++i) {
@@ -425,6 +435,8 @@ void MainWindow::onClearAllClicked() {
     m_clipNodeEditor->clearAllNodes();
     m_aClipNodeId = 0;
     m_bClipNodeId = 0;
+    stopDeckAudio(true);
+    stopDeckAudio(false);
     outputWindow->videoWidget()->setNodeChainA({});
     outputWindow->videoWidget()->setNodeChainB({});
     m_clipNodeEditor->hide();
@@ -474,6 +486,76 @@ void MainWindow::updateDeckUI(bool deckA, const QString &name, bool hasTimeline)
         ui->bDeckPlayBtn->setEnabled(true);
         if (!hasTimeline) { ui->bProgressSlider->setValue(0); ui->bTimeLabel->setText("—"); }
     }
+}
+
+void MainWindow::stopDeckAudio(bool deckA) {
+    auto &player = deckA ? m_audioPlayerA : m_audioPlayerB;
+    if (player) player->stop();
+}
+
+void MainWindow::updateDeckAudio(bool deckA, NodeId clipId, const ClipNodeModel *node, double currentTimeHint, bool forceSeek) {
+    if (!node || node->sourceDescriptor().kind != SourceDescriptor::Kind::VideoFile) {
+        stopDeckAudio(deckA);
+        return;
+    }
+
+    int volume = 100;
+    bool muted = false;
+    bool routedToMaster = false;
+    AudioPlaybackMode playbackMode = AudioPlaybackMode::Always;
+    int audioDelayMs = 0;
+    if (!m_clipNodeEditor->audioSettingsForClip(clipId, volume, muted, routedToMaster, playbackMode, audioDelayMs) || !routedToMaster) {
+        stopDeckAudio(deckA);
+        return;
+    }
+
+    auto &player = deckA ? m_audioPlayerA : m_audioPlayerB;
+    if (!player) player = std::make_unique<AudioPlayer>(this);
+
+    player->setDelayMs(audioDelayMs);
+
+    const QString &path = node->sourceDescriptor().path;
+    if (player->currentFilePath() != path) {
+        const double startTime = (currentTimeHint >= 0.0) ? currentTimeHint : node->startTime();
+        if (!player->start(path, startTime)) {
+            stopDeckAudio(deckA);
+            return;
+        }
+    } else if (forceSeek && currentTimeHint >= 0.0) {
+        player->seek(currentTimeHint);
+    }
+
+    auto *out = outputWindow->videoWidget();
+    const float mixB = out->crossfade();
+
+    float volumeFactor = 1.0f;
+    if (playbackMode == AudioPlaybackMode::DeckAOnly) {
+        volumeFactor = 1.0f - mixB;
+    } else if (playbackMode == AudioPlaybackMode::DeckBOnly) {
+        volumeFactor = mixB;
+    } else {
+        volumeFactor = 1.0f;
+    }
+
+    int adjustedVolume = static_cast<int>(volume * volumeFactor);
+    player->setVolumePercent(adjustedVolume);
+    player->setMuted(muted);
+
+    const bool deckPlaying = deckA ? out->isPlayingA() : out->isPlayingB();
+    if (deckPlaying) player->resume();
+    else             player->pause();
+}
+
+void MainWindow::applyAudioControllerToDeck(bool deckA, NodeId clipId) {
+    auto *node = m_clipNodeEditor->nodeAt(clipId);
+    if (!node || node->sourceDescriptor().kind != SourceDescriptor::Kind::VideoFile) {
+        stopDeckAudio(deckA);
+        return;
+    }
+
+    auto *out = outputWindow->videoWidget();
+    const double t = deckA ? out->getCurrentTimeA() : out->getCurrentTimeB();
+    updateDeckAudio(deckA, clipId, node, t, true);
 }
 
 QPixmap MainWindow::makeIconThumb(const QString &glyph, int w, int h) {
@@ -552,6 +634,8 @@ QPixmap MainWindow::makeQmlThumb(const QString &, int w, int h) {
 
 void MainWindow::onCrossfaderMoved(int value) {
     outputWindow->videoWidget()->setCrossfade(value / 100.f);
+    if (m_aClipNodeId) applyAudioControllerToDeck(true, m_aClipNodeId);
+    if (m_bClipNodeId) applyAudioControllerToDeck(false, m_bClipNodeId);
 }
 
 void MainWindow::onADeckPlayClicked() {
@@ -560,6 +644,11 @@ void MainWindow::onADeckPlayClicked() {
         output->pauseA();
     else
         output->playA();
+
+    if (m_audioPlayerA) {
+        if (output->isPlayingA()) m_audioPlayerA->resume();
+        else                      m_audioPlayerA->pause();
+    }
 }
 
 void MainWindow::onBDeckPlayClicked() {
@@ -568,6 +657,11 @@ void MainWindow::onBDeckPlayClicked() {
         output->pauseB();
     else
         output->playB();
+
+    if (m_audioPlayerB) {
+        if (output->isPlayingB()) m_audioPlayerB->resume();
+        else                      m_audioPlayerB->pause();
+    }
 }
 
 void MainWindow::onADeckSpeedChanged(int value) {
@@ -590,6 +684,16 @@ void MainWindow::onTimerUpdate() {
             ui->aProgressSlider->blockSignals(false);
         }
         ui->aTimeLabel->setText(formatTimeShort(timeA) + " / " + formatTimeShort(durA));
+
+        // Sync/restart audio on loop/backward jump
+        if (timeA < m_lastTimeA - 0.2) {
+            if (m_aClipNodeId) {
+                if (auto *node = m_clipNodeEditor->nodeAt(m_aClipNodeId)) {
+                    updateDeckAudio(true, m_aClipNodeId, node, timeA, true);
+                }
+            }
+        }
+        m_lastTimeA = timeA;
     }
     ui->aDeckPlayBtn->setText(out->isPlayingA() ? "⏸" : "▶");
 
@@ -607,6 +711,16 @@ void MainWindow::onTimerUpdate() {
             ui->bProgressSlider->blockSignals(false);
         }
         ui->bTimeLabel->setText(formatTimeShort(timeB) + " / " + formatTimeShort(durB));
+
+        // Sync/restart audio on loop/backward jump
+        if (timeB < m_lastTimeB - 0.2) {
+            if (m_bClipNodeId) {
+                if (auto *node = m_clipNodeEditor->nodeAt(m_bClipNodeId)) {
+                    updateDeckAudio(false, m_bClipNodeId, node, timeB, true);
+                }
+            }
+        }
+        m_lastTimeB = timeB;
     }
     ui->bDeckPlayBtn->setText(out->isPlayingB() ? "⏸" : "▶");
 
@@ -897,6 +1011,7 @@ void MainWindow::assignNodeToDeck(ClipNodeModel *node, NodeId nodeId, bool deckA
         if (!m_clipNodeEditor->clipTransform(nodeId, baseX, baseY, baseW, baseH)) {
             if (deckA) out->setSourceA(nullptr);
             else       out->setSourceB(nullptr);
+            stopDeckAudio(deckA);
             return;
         }
 
@@ -919,6 +1034,7 @@ void MainWindow::assignNodeToDeck(ClipNodeModel *node, NodeId nodeId, bool deckA
             if (node->startTime() > 0) out->seekB(node->startTime());
             out->playB();
         }
+        updateDeckAudio(deckA, nodeId, node, node->startTime(), true);
         double dur = deckA ? out->getDurationA() : out->getDurationB();
         progressSlider->setRange(0, 1000);
         progressSlider->setValue(0);
@@ -1277,6 +1393,8 @@ void MainWindow::onNodeRemoveRequested(NodeId nodeId) {
     auto *out = outputWindow->videoWidget();
     if (m_aClipNodeId == nodeId) { m_aClipNodeId = 0; out->setNodeChainA({}); }
     if (m_bClipNodeId == nodeId) { m_bClipNodeId = 0; out->setNodeChainB({}); }
+    if (m_aClipNodeId == 0) stopDeckAudio(true);
+    if (m_bClipNodeId == 0) stopDeckAudio(false);
     if (m_clipNodeEditor->allNodes().isEmpty()) {
         m_clipNodeEditor->hide();
         m_emptyPlaceholder->show();
@@ -1639,13 +1757,13 @@ void MainWindow::onCutTransitionClicked() {
 
 // ── Session save / load ───────────────────────────────────────────────────────
 
-QString MainWindow::autosaveSessionPath() {
-    const QString dir = QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation);
-    QDir().mkpath(dir);
-    return QDir(dir).filePath("session.sxs");
-}
+void MainWindow::onSaveSessionClicked() {
+    QString path = QFileDialog::getSaveFileName(
+        this, "Save Session", QString(), "SwitchX Session (*.sxs);;All Files (*)");
+    if (path.isEmpty()) return;
+    if (!path.endsWith(".sxs", Qt::CaseInsensitive))
+        path += ".sxs";
 
-QJsonObject MainWindow::sessionToJson() const {
     QJsonObject root;
     root["version"]            = 1;
     root["crossfader"]         = ui->crossfaderSlider->value();
@@ -1654,6 +1772,7 @@ QJsonObject MainWindow::sessionToJson() const {
     root["activeNodeA"]        = (qint64)m_aClipNodeId;
     root["activeNodeB"]        = (qint64)m_bClipNodeId;
 
+    // Save hotkeys: nodeId → key code (int)
     QJsonArray hotkeys;
     for (auto it = m_nodeHotkeys.cbegin(); it != m_nodeHotkeys.cend(); ++it) {
         QJsonObject hk;
@@ -1662,43 +1781,41 @@ QJsonObject MainWindow::sessionToJson() const {
         hotkeys.append(hk);
     }
     root["hotkeys"] = hotkeys;
+
     root["graph"] = m_clipNodeEditor->saveState();
-    return root;
-}
 
-bool MainWindow::saveSessionToFile(const QString &path) const {
     QFile file(path);
-    if (!file.open(QIODevice::WriteOnly))
-        return false;
-    file.write(QJsonDocument(sessionToJson()).toJson(QJsonDocument::Indented));
-    return true;
+    if (!file.open(QIODevice::WriteOnly)) {
+        QMessageBox::warning(this, "Save Session",
+                             QString("Cannot write to file:\n%1").arg(path));
+        return;
+    }
+    file.write(QJsonDocument(root).toJson(QJsonDocument::Indented));
 }
 
-bool MainWindow::loadSessionFromFile(const QString &path, bool showErrors) {
+void MainWindow::onLoadSessionClicked() {
+    QString path = QFileDialog::getOpenFileName(
+        this, "Load Session", QString(), "SwitchX Session (*.sxs);;All Files (*)");
+    if (path.isEmpty()) return;
+
     QFile file(path);
     if (!file.open(QIODevice::ReadOnly)) {
-        if (showErrors) {
-            QMessageBox::warning(this, "Load Session",
-                                 QString("Cannot open file:\n%1").arg(path));
-        }
-        return false;
+        QMessageBox::warning(this, "Load Session",
+                             QString("Cannot open file:\n%1").arg(path));
+        return;
     }
     QJsonParseError err;
     const QJsonDocument doc = QJsonDocument::fromJson(file.readAll(), &err);
     if (doc.isNull()) {
-        if (showErrors) {
-            QMessageBox::warning(this, "Load Session",
-                                 QString("Invalid session file:\n%1").arg(err.errorString()));
-        }
-        return false;
+        QMessageBox::warning(this, "Load Session",
+                             QString("Invalid session file:\n%1").arg(err.errorString()));
+        return;
     }
     const QJsonObject root = doc.object();
     if (root["version"].toInt() != 1) {
-        if (showErrors) {
-            QMessageBox::warning(this, "Load Session",
-                                 "Unsupported session version.");
-        }
-        return false;
+        QMessageBox::warning(this, "Load Session",
+                             "Unsupported session version.");
+        return;
     }
 
     // Tear down current state ──────────────────────────────────────────────────
@@ -1707,6 +1824,8 @@ bool MainWindow::loadSessionFromFile(const QString &path, bool showErrors) {
     outputWindow->videoWidget()->setSourceB(nullptr);
     outputWindow->videoWidget()->setNodeChainA({});
     outputWindow->videoWidget()->setNodeChainB({});
+    stopDeckAudio(true);
+    stopDeckAudio(false);
     m_aClipNodeId = 0;
     m_bClipNodeId = 0;
 
@@ -1809,27 +1928,6 @@ bool MainWindow::loadSessionFromFile(const QString &path, bool showErrors) {
     const NodeId savedB = (NodeId)root["activeNodeB"].toInteger();
     if (savedA) onNodeAButtonClicked(savedA);
     if (savedB) onNodeBButtonClicked(savedB);
-    return true;
-}
-
-void MainWindow::onSaveSessionClicked() {
-    QString path = QFileDialog::getSaveFileName(
-        this, "Save Session", QString(), "SwitchX Session (*.sxs);;All Files (*)");
-    if (path.isEmpty()) return;
-    if (!path.endsWith(".sxs", Qt::CaseInsensitive))
-        path += ".sxs";
-
-    if (!saveSessionToFile(path)) {
-        QMessageBox::warning(this, "Save Session",
-                             QString("Cannot write to file:\n%1").arg(path));
-    }
-}
-
-void MainWindow::onLoadSessionClicked() {
-    QString path = QFileDialog::getOpenFileName(
-        this, "Load Session", QString(), "SwitchX Session (*.sxs);;All Files (*)");
-    if (path.isEmpty()) return;
-    loadSessionFromFile(path);
 }
 
 // ── Card management (obsolete methods removed - now handled by ClipNodeEditor) ──

@@ -196,6 +196,23 @@ QSize VideoPlayer::getFrameSize() const {
     return QSize(getWidth(), getHeight());
 }
 
+bool VideoPlayer::fileHasAudio(const QString &filePath) {
+    const QByteArray utf8Path = filePath.toUtf8();
+    AVFormatContext *ctx = nullptr;
+    if (avformat_open_input(&ctx, utf8Path.constData(), nullptr, nullptr) < 0)
+        return false;
+    avformat_find_stream_info(ctx, nullptr);
+    bool found = false;
+    for (unsigned i = 0; i < ctx->nb_streams; ++i) {
+        if (ctx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_AUDIO) {
+            found = true;
+            break;
+        }
+    }
+    avformat_close_input(&ctx);
+    return found;
+}
+
 void VideoPlayer::seek(double seconds) {
     if (!formatContext || videoStreamIndex < 0) {
         return;

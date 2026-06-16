@@ -31,6 +31,8 @@ public:
 
     void seek(double seconds);
 
+    static bool fileHasAudio(const QString &filePath);
+
 private:
     AVFormatContext *formatContext = nullptr;
     AVStream *videoStream = nullptr;

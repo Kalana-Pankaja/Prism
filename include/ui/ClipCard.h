@@ -39,8 +39,6 @@ public:
     void setHotkeyLabel(const QString &key);
     QString hotkeyLabel() const { return m_hotkeyBadge->text(); }
 
-    bool isMuted()   const { return m_muted; }
-    int  volume()    const;
     bool isRepeat()  const { return m_repeat; }
 
     // Expose full settings (trim + crop + overlays) — valid for file sources only.
@@ -56,7 +54,6 @@ public:
     // Session restore: programmatically apply settings and toggle states.
     void applySettings(const ClipSettings &s) { m_settings = s; }
     void setRepeat(bool r);
-    void setMuted(bool m);
 
 signals:
     void triggered(int index);
@@ -67,7 +64,6 @@ signals:
     void sourceDescriptorChanged(int index, const SourceDescriptor &desc);
 
 private slots:
-    void onMuteClicked();
     void onRepeatClicked();
     void onEditClicked();
     void onAButtonClicked();
@@ -79,7 +75,6 @@ private:
     int               m_index;
     QString           m_clipPath;
     SourceDescriptor  m_sourceDesc;
-    bool              m_muted      = false;
     bool              m_repeat     = false;
     bool              m_aSelected  = false;
     bool              m_bSelected  = false;

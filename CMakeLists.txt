@@ -18,13 +18,15 @@ pkg_check_modules(GSTREAMER_APP REQUIRED gstreamer-app-1.0)
 
 # FFmpeg
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/CMakeModules")
-find_package(FFmpeg REQUIRED COMPONENTS avcodec avformat avutil swscale)
+find_package(FFmpeg REQUIRED COMPONENTS avcodec avformat avutil swscale swresample)
 
 
 set(SOURCES
     src/main.cpp
     src/core/VideoPlayer.cpp
     src/core/VideoFileSource.cpp
+    src/core/AudioDecoder.cpp
+    src/core/AudioPlayer.cpp
     src/core/ImageSource.cpp
     src/core/SlideshowSource.cpp
     src/core/CanvasSource.cpp
@@ -56,6 +58,8 @@ set(HEADERS
     include/core/SourceDescriptor.h
     include/core/VideoPlayer.h
     include/core/VideoFileSource.h
+    include/core/AudioDecoder.h
+    include/core/AudioPlayer.h
     include/core/ImageSource.h
     include/core/SlideshowSource.h
     include/core/CanvasSource.h

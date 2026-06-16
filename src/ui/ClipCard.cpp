@@ -60,7 +60,6 @@ ClipCard::ClipCard(int index, QWidget *parent)
     connect(ui->thumbnailBtn, &QPushButton::clicked, this, [this]() {
         if (!m_clipPath.isEmpty()) emit triggered(m_index);
     });
-    connect(ui->muteBtn,    &QPushButton::clicked, this, &ClipCard::onMuteClicked);
     connect(ui->repeatBtn,  &QPushButton::clicked, this, &ClipCard::onRepeatClicked);
     connect(ui->editBtn,    &QPushButton::clicked, this, &ClipCard::onEditClicked);
     connect(ui->aBtn,       &QPushButton::clicked, this, &ClipCard::onAButtonClicked);
@@ -84,10 +83,6 @@ void ClipCard::setHotkeyLabel(const QString &key) {
         m_hotkeyBadge->show();
         m_hotkeyBadge->raise();
     }
-}
-
-int ClipCard::volume() const {
-    return ui->volumeSlider->value();
 }
 
 void ClipCard::loadClip(const QString &path, const QPixmap &thumbnail) {
@@ -116,8 +111,6 @@ void ClipCard::loadClip(const QString &path, const QPixmap &thumbnail) {
 
     ui->repeatBtn->setEnabled(true);
     ui->editBtn->setEnabled(true);
-    ui->muteBtn->setEnabled(true);
-    ui->volumeSlider->setEnabled(true);
     ui->aBtn->setEnabled(true);
     ui->bBtn->setEnabled(true);
     setActive(false);
@@ -143,8 +136,6 @@ void ClipCard::loadSource(const SourceDescriptor &desc, const QPixmap &thumbnail
     // Repeat only makes sense for slideshows; edit available for all non-empty sources.
     ui->repeatBtn->setEnabled(desc.kind == SourceDescriptor::Kind::Slideshow);
     ui->editBtn->setEnabled(true);
-    ui->muteBtn->setEnabled(false);
-    ui->volumeSlider->setEnabled(false);
     ui->aBtn->setEnabled(true);
     ui->bBtn->setEnabled(true);
     ui->ovlBtn->setVisible(false);
@@ -160,8 +151,6 @@ void ClipCard::clearClip() {
     ui->titleLabel->setToolTip({});
     ui->repeatBtn->setEnabled(false);
     ui->editBtn->setEnabled(false);
-    ui->muteBtn->setEnabled(false);
-    ui->volumeSlider->setEnabled(false);
     ui->aBtn->setEnabled(false);
     ui->bBtn->setEnabled(false);
     ui->ovlBtn->setVisible(false);
@@ -199,15 +188,6 @@ void ClipCard::setBSelected(bool selected) {
 void ClipCard::setRepeat(bool r) {
     m_repeat = r;
     ui->repeatBtn->setText(m_repeat ? "↺  On" : "↺  Off");
-}
-
-void ClipCard::setMuted(bool m) {
-    m_muted = m;
-    ui->muteBtn->setText(m_muted ? "🔇" : "🔊");
-}
-
-void ClipCard::onMuteClicked() {
-    setMuted(!m_muted);
 }
 
 void ClipCard::onRepeatClicked() {

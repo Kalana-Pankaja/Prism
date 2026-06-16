@@ -44,12 +44,9 @@ public:
     QString sourceName() const { return m_card->sourceName(); }
     const SourceDescriptor &sourceDescriptor() const { return m_card->sourceDescriptor(); }
 
-    bool isMuted() const { return m_card->isMuted(); }
-    int volume() const { return m_card->volume(); }
     bool isRepeat() const { return m_card->isRepeat(); }
     void applySettings(const ClipSettings &s) { m_card->applySettings(s); }
     void setRepeat(bool r) { m_card->setRepeat(r); }
-    void setMuted(bool m)  { m_card->setMuted(m); }
 
     const ClipSettings &settings() const { return m_card->settings(); }
     double startTime() const { return m_card->startTime(); }

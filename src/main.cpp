@@ -9,8 +9,6 @@ int main(int argc, char *argv[]) {
     qputenv("QTWEBENGINE_CHROMIUM_FLAGS", "--disable-gpu");
 
     QApplication app(argc, argv);
-    app.setOrganizationName("SwitchX");
-    app.setApplicationName("SwitchX");
     app.setStyle("fusion");
 
     MainWindow window;
