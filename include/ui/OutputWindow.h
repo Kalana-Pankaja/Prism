@@ -14,6 +14,9 @@ public:
 
     VideoWidget *videoWidget() const;
 
+protected:
+    void keyPressEvent(QKeyEvent *event) override;
+
 private:
     Ui::OutputWindow *ui;
 

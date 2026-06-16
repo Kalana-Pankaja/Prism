@@ -11,7 +11,7 @@ void ClipManager::appendFromFolder(const QString &folderPath) {
     if (!dir.exists()) { qWarning() << "Folder does not exist:" << folderPath; return; }
 
     QStringList filters = {"*.mp4","*.avi","*.mov","*.mkv","*.webm",
-                           "*.png","*.jpg","*.jpeg"};
+                           "*.png","*.jpg","*.jpeg","*.bmp","*.webp","*.gif"};
     dir.setNameFilters(filters);
     dir.setFilter(QDir::Files | QDir::NoDotAndDotDot);
 
@@ -56,5 +56,6 @@ bool ClipManager::isMediaFile(const QString &path) const {
     QString l = path.toLower();
     return l.endsWith(".mp4") || l.endsWith(".avi")  || l.endsWith(".mov")  ||
            l.endsWith(".mkv") || l.endsWith(".webm") || l.endsWith(".png")  ||
-           l.endsWith(".jpg") || l.endsWith(".jpeg");
+           l.endsWith(".jpg") || l.endsWith(".jpeg") || l.endsWith(".bmp")  ||
+           l.endsWith(".webp") || l.endsWith(".gif");
 }

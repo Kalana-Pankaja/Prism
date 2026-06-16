@@ -392,7 +392,7 @@ void MainWindow::onAddFolderClicked() {
 void MainWindow::onAddFilesClicked() {
     QStringList files = QFileDialog::getOpenFileNames(
         this, "Add Media Files", "",
-        "Media Files (*.mp4 *.avi *.mov *.mkv *.webm *.png *.jpg *.jpeg)");
+        "Media Files (*.mp4 *.avi *.mov *.mkv *.webm *.png *.jpg *.jpeg *.bmp *.webp *.gif)");
     if (files.isEmpty()) return;
     const QStringList before = clipManager.getClips();
     clipManager.addFiles(files);
