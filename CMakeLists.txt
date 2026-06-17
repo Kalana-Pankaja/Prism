@@ -55,6 +55,7 @@ set(SOURCES
     src/core/ClipManager.cpp
     src/core/ThumbnailExtractor.cpp
     src/core/OverlayItem.cpp
+    src/core/AssetPathResolver.cpp
     src/core/ShaderSource.cpp
     src/core/HtmlSource.cpp
     src/core/NdiLibrary.cpp
@@ -105,6 +106,7 @@ set(HEADERS
     include/core/ClipManager.h
     include/core/ThumbnailExtractor.h
     include/core/OverlayItem.h
+    include/core/AssetPathResolver.h
     include/core/ShaderSource.h
     include/core/HtmlSource.h
     include/core/NdiLibrary.h

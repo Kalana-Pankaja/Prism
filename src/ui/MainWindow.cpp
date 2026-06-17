@@ -235,7 +235,8 @@ void MainWindow::closeEvent(QCloseEvent *event) {
             m_transitionCtrl->currentDurationSecs(),
             m_deckController->activeNodeA(),
             m_deckController->activeNodeB(),
-            m_hotkeyManager->nodeHotkeys());
+            m_hotkeyManager->nodeHotkeys(),
+            SessionManager::autosavePath());
         file.write(QJsonDocument(json).toJson(QJsonDocument::Indented));
     }
     QMainWindow::closeEvent(event);
@@ -1085,7 +1086,8 @@ void MainWindow::onSaveSessionClicked() {
         m_transitionCtrl->currentDurationSecs(),
         m_deckController->activeNodeA(),
         m_deckController->activeNodeB(),
-        m_hotkeyManager->nodeHotkeys());
+        m_hotkeyManager->nodeHotkeys(),
+        path);
     file.write(QJsonDocument(json).toJson(QJsonDocument::Indented));
 }
 
