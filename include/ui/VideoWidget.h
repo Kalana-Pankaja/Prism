@@ -110,6 +110,18 @@ public:
 
     QSize sizeHint() const override { return QSize(1280, 720); }
 
+    // ── Program output (offscreen compositor) ─────────────────────────────────
+    // The A/B mix is rendered to a fixed-size FBO; the widget displays a scaled
+    // blit. Future outputs (NDI, recording, second monitor) read the same FBO.
+    static constexpr int kProgramWidth  = 1280;
+    static constexpr int kProgramHeight = 720;
+
+    GLuint programColorTexture() const { return m_programColorTex; }
+    QSize  programFrameSize()    const { return {kProgramWidth, kProgramHeight}; }
+
+signals:
+    void programFrameReady();
+
 protected:
     void initializeGL()           override;
     void resizeGL(int w, int h)   override;
@@ -198,4 +210,19 @@ private:
                           int canvasW, int canvasH);
     void advanceChainSources(std::vector<NodeChainSource> &chain,
                              std::vector<GLuint> &texList, bool &anyDecoded);
+
+    // Composition dimensions — set during FBO render, fallback to widget size.
+    int renderW() const { return m_compW > 0 ? m_compW : width(); }
+    int renderH() const { return m_compH > 0 ? m_compH : height(); }
+
+    void ensureProgramFbo();
+    void destroyProgramFbo();
+    void renderCompositionGL();
+    void blitProgramToScreen();
+    QRectF scaleRectToWidget(const QRectF &programRect) const;
+
+    GLuint m_programFbo      = 0;
+    GLuint m_programColorTex = 0;
+    int    m_compW           = 0;
+    int    m_compH           = 0;
 };

@@ -25,6 +25,7 @@ VideoWidget::VideoWidget(QWidget *parent)
 VideoWidget::~VideoWidget() {
     m_frameTimer->stop();
     makeCurrent();
+    destroyProgramFbo();
     if (m_textureA)       glDeleteTextures(1, &m_textureA);
     if (m_textureB)       glDeleteTextures(1, &m_textureB);
     if (m_textureOverlay) glDeleteTextures(1, &m_textureOverlay);
@@ -84,6 +85,29 @@ std::pair<float,float> VideoWidget::computeDeckAlphas() const {
 }
 
 void VideoWidget::paintGL() {
+    ensureProgramFbo();
+
+    // Compose the program mix at fixed resolution (single source of truth).
+    m_compW = kProgramWidth;
+    m_compH = kProgramHeight;
+    glBindFramebuffer(GL_FRAMEBUFFER, m_programFbo);
+    glViewport(0, 0, m_compW, m_compH);
+    glMatrixMode(GL_PROJECTION);
+    glLoadIdentity();
+    glOrtho(0, m_compW, m_compH, 0, -1, 1);
+    glMatrixMode(GL_MODELVIEW);
+    glLoadIdentity();
+    renderCompositionGL();
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+    m_compW = 0;
+    m_compH = 0;
+
+    blitProgramToScreen();
+    emit programFrameReady();
+}
+
+void VideoWidget::renderCompositionGL() {
     if (m_transitionMode == TransitionMode::DipToWhite) {
         glClearColor(1.0f, 1.0f, 1.0f, 1.0f);
     } else {
@@ -96,9 +120,6 @@ void VideoWidget::paintGL() {
 
     const float t = std::clamp(m_crossfadeB, 0.f, 1.f);
 
-    // A source may render its frame straight into a shared GL texture (e.g.
-    // SlideshowSource during a transition); bind that directly instead of the
-    // CPU-uploaded deck texture.
     const GLuint deckTexA = (m_sourceA && m_sourceA->glTexture())
                           ? m_sourceA->glTexture() : m_textureA;
     const GLuint deckTexB = (m_sourceB && m_sourceB->glTexture())
@@ -107,11 +128,6 @@ void VideoWidget::paintGL() {
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
-    // Draws one full side at the given alpha: the deck clip first, then its node
-    // chain sources composited on top, under whatever transform/scissor the
-    // calling transition has set up. The chain is drawn even when the deck has
-    // no main clip, so a side may consist of chain sources only. Sets outRect to
-    // the deck's video rect so paintEvent() can position text/image overlays.
     auto drawSide = [&](GLuint tex, MediaSource *src,
                         float cx, float cy, float cw, float ch,
                         float baseX, float baseY, float baseW, float baseH,
@@ -121,20 +137,21 @@ void VideoWidget::paintGL() {
         if (alpha <= 0.f) return;
 
         if (tex && src && src->isReady()) {
-            QRectF canvasBounds(0, 0, width(), height());
+            const int rw = renderW(), rh = renderH();
+            QRectF canvasBounds(0, 0, rw, rh);
             if (canvasW > 0 && canvasH > 0) {
                 float canvasAR = (float)canvasW / canvasH;
-                float windowAR = height() > 0.f ? (float)width() / height() : canvasAR;
+                float windowAR = rh > 0 ? (float)rw / rh : canvasAR;
 
                 float canvasRW, canvasRH;
                 if (canvasAR > windowAR) {
-                    canvasRW = width();
+                    canvasRW = rw;
                     canvasRH = canvasRW / canvasAR;
                 } else {
-                    canvasRH = height();
+                    canvasRH = rh;
                     canvasRW = canvasRH * canvasAR;
                 }
-                canvasBounds = QRectF((width() - canvasRW) / 2, (height() - canvasRH) / 2, canvasRW, canvasRH);
+                canvasBounds = QRectF((rw - canvasRW) / 2, (rh - canvasRH) / 2, canvasRW, canvasRH);
             }
 
             const QRectF bounds(canvasBounds.left() + baseX * canvasBounds.width(),
@@ -143,12 +160,8 @@ void VideoWidget::paintGL() {
                                 baseH * canvasBounds.height());
             outRect = bounds;
 
-            // Decorative frame border: only drawn for the Gallery3D transition,
-            // where the picture-frame effect is intentional. All other transitions
-            // render clips without any border.
             if (m_transitionMode == TransitionMode::Gallery3D) {
                 glDisable(GL_TEXTURE_2D);
-                // Outer light frame border
                 glColor4f(0.9f, 0.9f, 0.9f, alpha);
                 float bx = std::max(4.f, (float)bounds.width() * 0.015f);
                 float by = std::max(4.f, (float)bounds.height() * 0.015f);
@@ -159,7 +172,6 @@ void VideoWidget::paintGL() {
                 glVertex2f(bounds.x() - bx, bounds.y() + bounds.height() + by);
                 glEnd();
 
-                // Inner dark accent border
                 glColor4f(0.1f, 0.1f, 0.1f, alpha);
                 float ix = std::max(1.f, bx * 0.2f);
                 float iy = std::max(1.f, by * 0.2f);
@@ -194,37 +206,29 @@ void VideoWidget::paintGL() {
                  m_videoRectB, m_canvasWidthB, m_canvasHeightB, m_chainB, m_chainTexB);
     };
 
-    // Resolve outgoing/incoming decks and transition progress p (0 = fully
-    // outgoing, 1 = fully incoming) from the committed fader direction, so each
-    // transition strategy paints a correct entrance whichever deck is arriving.
     const bool inB = m_transitionTowardB;
     const float p  = inB ? t : 1.f - t;
 
     Transition::Context ctx;
-    ctx.width   = width();
-    ctx.height  = height();
+    ctx.width   = renderW();
+    ctx.height  = renderH();
     ctx.t       = t;
     ctx.p       = p;
     ctx.drawOut = [&](float a) { inB ? drawSideA(a) : drawSideB(a); };
     ctx.drawIn  = [&](float a) { inB ? drawSideB(a) : drawSideA(a); };
-    // Raw deck textures, for transitions that composite full frames themselves
-    // with their own projection (the 3D transitions).
     ctx.texA   = deckTexA;
     ctx.texB   = deckTexB;
     ctx.readyA = deckTexA && m_sourceA && m_sourceA->isReady();
     ctx.readyB = deckTexB && m_sourceB && m_sourceB->isReady();
     Transition::forMode(m_transitionMode).paint(ctx);
 
-    // Restore known-good 2D state after any transition (3D transitions in
-    // particular may leave depth test enabled or GL_TEXTURE_2D disabled).
     glDisable(GL_DEPTH_TEST);
     glEnable(GL_TEXTURE_2D);
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
-    // HTML overlay composited on top (RGBA, transparent parts show the A/B video)
     if (m_textureOverlay && m_htmlOverlay && m_htmlOverlay->isReady()) {
-        const QRectF screenBounds(0, 0, width(), height());
+        const QRectF screenBounds(0, 0, renderW(), renderH());
         QRectF ovlRect = computeContainedRect(m_htmlOverlay->frameSize(), 1, 1, screenBounds);
         glColor4f(1.f, 1.f, 1.f, 1.f);
         renderTexture(m_textureOverlay, 0, 0, 1, 1,
@@ -234,6 +238,66 @@ void VideoWidget::paintGL() {
 
     glDisable(GL_BLEND);
     glColor4f(1.f, 1.f, 1.f, 1.f);
+
+    // Scale video rects from program space to widget space for QPainter overlays.
+    m_videoRectA = scaleRectToWidget(m_videoRectA);
+    m_videoRectB = scaleRectToWidget(m_videoRectB);
+}
+
+void VideoWidget::ensureProgramFbo() {
+    if (m_programFbo) return;
+
+    glGenFramebuffers(1, &m_programFbo);
+    glGenTextures(1, &m_programColorTex);
+
+    glBindTexture(GL_TEXTURE_2D, m_programColorTex);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, kProgramWidth, kProgramHeight,
+                 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+    glBindTexture(GL_TEXTURE_2D, 0);
+
+    glBindFramebuffer(GL_FRAMEBUFFER, m_programFbo);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                           GL_TEXTURE_2D, m_programColorTex, 0);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+}
+
+void VideoWidget::destroyProgramFbo() {
+    if (m_programColorTex) { glDeleteTextures(1, &m_programColorTex); m_programColorTex = 0; }
+    if (m_programFbo)      { glDeleteFramebuffers(1, &m_programFbo); m_programFbo = 0; }
+}
+
+void VideoWidget::blitProgramToScreen() {
+    glViewport(0, 0, width(), height());
+    glMatrixMode(GL_PROJECTION);
+    glLoadIdentity();
+    glOrtho(0, width(), height(), 0, -1, 1);
+    glMatrixMode(GL_MODELVIEW);
+    glLoadIdentity();
+
+    glDisable(GL_BLEND);
+    glEnable(GL_TEXTURE_2D);
+    glColor4f(1.f, 1.f, 1.f, 1.f);
+    glBindTexture(GL_TEXTURE_2D, m_programColorTex);
+    glBegin(GL_QUADS);
+    glTexCoord2f(0.f, 0.f); glVertex2f(0.f,          0.f);
+    glTexCoord2f(1.f, 0.f); glVertex2f((float)width(), 0.f);
+    glTexCoord2f(1.f, 1.f); glVertex2f((float)width(), (float)height());
+    glTexCoord2f(0.f, 1.f); glVertex2f(0.f,          (float)height());
+    glEnd();
+    glBindTexture(GL_TEXTURE_2D, 0);
+}
+
+QRectF VideoWidget::scaleRectToWidget(const QRectF &programRect) const {
+    if (programRect.isEmpty() || width() <= 0 || height() <= 0)
+        return programRect;
+    const double sx = (double)width()  / kProgramWidth;
+    const double sy = (double)height() / kProgramHeight;
+    return QRectF(programRect.x() * sx, programRect.y() * sy,
+                  programRect.width() * sx, programRect.height() * sy);
 }
 
 void VideoWidget::paintEvent(QPaintEvent *e) {
@@ -581,21 +645,21 @@ void VideoWidget::drawChainSources(std::vector<NodeChainSource> &chain,
         canvasH = chain[0].canvasHeight;
     }
 
-    // Compute canvas bounds relative to the window — same logic as drawDeck — so
-    // chain sources are positioned in the same coordinate space as the deck clip.
-    QRectF canvasBounds(0, 0, width(), height());
+    // Compute canvas bounds relative to the render target — same logic as drawDeck.
+    const int rw = renderW(), rh = renderH();
+    QRectF canvasBounds(0, 0, rw, rh);
     if (canvasW > 0 && canvasH > 0) {
         float canvasAR = (float)canvasW / canvasH;
-        float windowAR = height() > 0.f ? (float)width() / height() : canvasAR;
+        float windowAR = rh > 0 ? (float)rw / rh : canvasAR;
         float cW, cH;
         if (canvasAR > windowAR) {
-            cW = width();
+            cW = rw;
             cH = cW / canvasAR;
         } else {
-            cH = height();
+            cH = rh;
             cW = cH * canvasAR;
         }
-        canvasBounds = QRectF((width() - cW) / 2.f, (height() - cH) / 2.f, cW, cH);
+        canvasBounds = QRectF((rw - cW) / 2.f, (rh - cH) / 2.f, cW, cH);
     }
 
     for (size_t i = 0; i < chain.size() && i < texList.size(); ++i) {
