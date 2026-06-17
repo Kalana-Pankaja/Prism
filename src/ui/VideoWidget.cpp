@@ -110,6 +110,22 @@ void VideoWidget::paintGL() {
 }
 
 void VideoWidget::renderCompositionGL() {
+    if (m_panicOverlay == PanicOverlay::Blackout) {
+        glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        m_videoRectA = QRectF();
+        m_videoRectB = QRectF();
+        return;
+    }
+
+    if (m_panicOverlay == PanicOverlay::StayTuned) {
+        glClearColor(0.07f, 0.07f, 0.09f, 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        m_videoRectA = QRectF();
+        m_videoRectB = QRectF();
+        return;
+    }
+
     if (m_transitionMode == TransitionMode::DipToWhite) {
         glClearColor(1.0f, 1.0f, 1.0f, 1.0f);
     } else {
@@ -325,6 +341,27 @@ void VideoWidget::cacheProgramFrameFromFbo() {
 
 void VideoWidget::paintEvent(QPaintEvent *e) {
     QOpenGLWidget::paintEvent(e);
+
+    if (m_panicOverlay == PanicOverlay::StayTuned) {
+        QPainter p(this);
+        p.setRenderHint(QPainter::Antialiasing);
+        p.setRenderHint(QPainter::TextAntialiasing);
+
+        const QRect r = rect();
+        p.setPen(QPen(QColor(42, 140, 160, 120), 2));
+        p.setBrush(Qt::NoBrush);
+        p.drawRoundedRect(r.adjusted(24, 24, -24, -24), 12, 12);
+
+        p.setPen(QColor(230, 230, 235));
+        QFont titleFont(QStringLiteral("Segoe UI"), 42, QFont::Bold);
+        titleFont.setLetterSpacing(QFont::AbsoluteSpacing, 2);
+        p.setFont(titleFont);
+        p.drawText(r.adjusted(0, -20, 0, 0), Qt::AlignCenter, QStringLiteral("Stay Tuned"));
+        return;
+    }
+
+    if (m_panicOverlay != PanicOverlay::None)
+        return;
 
     const auto [alphaA, alphaB] = computeDeckAlphas();
     if (alphaA <= 0.f && m_overlaysA.isEmpty()) {
@@ -760,6 +797,18 @@ void VideoWidget::setCrossfade(float mixB) {
     update();
 }
 
+void VideoWidget::setPanicOverlay(PanicOverlay overlay) {
+    if (m_panicOverlay == overlay) return;
+    m_panicOverlay = overlay;
+    update();
+}
+
+void VideoWidget::setOutputFrozen(bool frozen) {
+    if (m_outputFrozen == frozen) return;
+    m_outputFrozen = frozen;
+    update();
+}
+
 QImage VideoWidget::getFrameA() const {
     if (!m_sourceA || !m_sourceA->isReady()) return {};
     QSize sz = m_sourceA->frameSize();
@@ -849,6 +898,8 @@ bool VideoWidget::advanceSource(MediaSource *source, bool &playing, bool repeat,
 }
 
 void VideoWidget::updateFrame() {
+    if (m_outputFrozen) return;
+
     const bool hasChainA = !m_chainA.empty();
     const bool hasChainB = !m_chainB.empty();
     if (!m_playingA && !m_playingB && !m_playingOverlay && !hasChainA && !hasChainB) return;

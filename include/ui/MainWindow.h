@@ -18,6 +18,8 @@
 
 namespace Ui { class MainWindow; }
 
+class QPushButton;
+
 class MainWindow : public QMainWindow {
     Q_OBJECT
 
@@ -71,6 +73,10 @@ private slots:
     void onBDeckSpeedChanged(int value);
     void onTimerUpdate();
 
+    void onPanicBlackoutClicked(bool checked);
+    void onPanicPauseClicked(bool checked);
+    void onPanicStayTunedClicked(bool checked);
+
 private:
     Ui::MainWindow *ui;
     OutputWindow   *m_outputWindow   = nullptr;
@@ -103,4 +109,7 @@ private:
     void appendClipsToEditor(const QStringList &clipPaths);
 
     void buildEmptyPlaceholder();
+    void syncPanicButtons(QPushButton *activeBtn);
+    void applyPanicFromButtons();
+    void clearPanicState();
 };

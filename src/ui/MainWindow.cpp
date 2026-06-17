@@ -22,6 +22,7 @@
 #include <QDir>
 #include <QEventLoop>
 #include <QShortcut>
+#include <QKeySequence>
 #include <glob.h>
 #include <QFileDialog>
 #include <QTimer>
@@ -387,6 +388,23 @@ void MainWindow::setupConnections() {
     connect(ui->crossfaderSlider, &QSlider::valueChanged,
             this, &MainWindow::onCrossfaderMoved);
 
+    connect(ui->panicBlackoutBtn,   &QPushButton::toggled, this, &MainWindow::onPanicBlackoutClicked);
+    connect(ui->panicPauseBtn,      &QPushButton::toggled, this, &MainWindow::onPanicPauseClicked);
+    connect(ui->panicStayTunedBtn,  &QPushButton::toggled, this, &MainWindow::onPanicStayTunedClicked);
+
+    ui->panicBlackoutBtn->setToolTip(tr("Cut program output to black (%1)").arg(
+        QKeySequence(Qt::Key_B).toString(QKeySequence::NativeText)));
+    ui->panicPauseBtn->setToolTip(tr("Freeze the program output on the current frame (%1)").arg(
+        QKeySequence(Qt::Key_P).toString(QKeySequence::NativeText)));
+
+    auto *blackoutShortcut = new QShortcut(QKeySequence(Qt::Key_B), this);
+    blackoutShortcut->setContext(Qt::ApplicationShortcut);
+    connect(blackoutShortcut, &QShortcut::activated, ui->panicBlackoutBtn, &QPushButton::toggle);
+
+    auto *pauseShortcut = new QShortcut(QKeySequence(Qt::Key_P), this);
+    pauseShortcut->setContext(Qt::ApplicationShortcut);
+    connect(pauseShortcut, &QShortcut::activated, ui->panicPauseBtn, &QPushButton::toggle);
+
     // Progress sliders — A deck
     connect(ui->aProgressSlider, &QSlider::sliderPressed,  this, [this]() { m_aSliderDragging = true;  });
     connect(ui->aProgressSlider, &QSlider::sliderReleased, this, [this]() {
@@ -619,6 +637,68 @@ void MainWindow::onADeckSpeedChanged(int value) {
 
 void MainWindow::onBDeckSpeedChanged(int value) {
     qDebug() << "B Deck Speed:" << value << "%";
+}
+
+void MainWindow::syncPanicButtons(QPushButton *activeBtn) {
+    for (QPushButton *btn : {ui->panicBlackoutBtn, ui->panicPauseBtn, ui->panicStayTunedBtn}) {
+        if (btn == activeBtn) continue;
+        btn->blockSignals(true);
+        btn->setChecked(false);
+        btn->blockSignals(false);
+    }
+}
+
+void MainWindow::clearPanicState() {
+    auto *out = m_outputWindow->videoWidget();
+    out->setPanicOverlay(VideoWidget::PanicOverlay::None);
+    out->setOutputFrozen(false);
+    if (m_deckController->activeNodeA())
+        m_deckController->applyAudioControllerToDeck(true,  m_deckController->activeNodeA());
+    if (m_deckController->activeNodeB())
+        m_deckController->applyAudioControllerToDeck(false, m_deckController->activeNodeB());
+}
+
+void MainWindow::applyPanicFromButtons() {
+    auto *out = m_outputWindow->videoWidget();
+
+    if (ui->panicBlackoutBtn->isChecked()) {
+        out->setOutputFrozen(false);
+        out->setPanicOverlay(VideoWidget::PanicOverlay::Blackout);
+        m_deckController->stopDeckAudio(true);
+        m_deckController->stopDeckAudio(false);
+        return;
+    }
+    if (ui->panicStayTunedBtn->isChecked()) {
+        out->setOutputFrozen(false);
+        out->setPanicOverlay(VideoWidget::PanicOverlay::StayTuned);
+        m_deckController->stopDeckAudio(true);
+        m_deckController->stopDeckAudio(false);
+        return;
+    }
+    if (ui->panicPauseBtn->isChecked()) {
+        out->setPanicOverlay(VideoWidget::PanicOverlay::None);
+        out->setOutputFrozen(true);
+        m_deckController->stopDeckAudio(true);
+        m_deckController->stopDeckAudio(false);
+        return;
+    }
+
+    clearPanicState();
+}
+
+void MainWindow::onPanicBlackoutClicked(bool checked) {
+    if (checked) syncPanicButtons(ui->panicBlackoutBtn);
+    applyPanicFromButtons();
+}
+
+void MainWindow::onPanicPauseClicked(bool checked) {
+    if (checked) syncPanicButtons(ui->panicPauseBtn);
+    applyPanicFromButtons();
+}
+
+void MainWindow::onPanicStayTunedClicked(bool checked) {
+    if (checked) syncPanicButtons(ui->panicStayTunedBtn);
+    applyPanicFromButtons();
 }
 
 // ── Timer update (preview labels + progress sliders) ─────────────────────────
@@ -956,6 +1036,31 @@ void MainWindow::applyTheme() {
         QPushButton[text*="Play"]:hover, QPushButton[text*="Fullscreen"]:hover {
             background-color: qlineargradient(x1:0,y1:0,x2:1,y2:1,stop:0 #4a7f8c,stop:1 #2a5c66);
             color: #FFFFFF;
+        }
+        QPushButton#panicBlackoutBtn, QPushButton#panicPauseBtn, QPushButton#panicStayTunedBtn {
+            font-size: 10px;
+            font-weight: bold;
+            padding: 6px 4px;
+            min-height: 26px;
+            border-radius: 4px;
+            color: #ffc8bc;
+            background-color: qlineargradient(x1:0,y1:0,x2:1,y2:1,stop:0 #3a2422,stop:1 #2a1816);
+            border-top: 1px solid #6a3830;
+            border-left: 1px solid #6a3830;
+            border-bottom: 1px solid #1a0e0c;
+            border-right: 1px solid #1a0e0c;
+        }
+        QPushButton#panicBlackoutBtn:hover, QPushButton#panicPauseBtn:hover, QPushButton#panicStayTunedBtn:hover {
+            background-color: qlineargradient(x1:0,y1:0,x2:1,y2:1,stop:0 #4a2c28,stop:1 #3a201c);
+            color: #ffe8e0;
+        }
+        QPushButton#panicBlackoutBtn:checked, QPushButton#panicPauseBtn:checked, QPushButton#panicStayTunedBtn:checked {
+            background-color: qlineargradient(x1:0,y1:0,x2:1,y2:1,stop:0 #8b2820,stop:1 #5a1814);
+            color: #FFFFFF;
+            border-top: 1px solid #c04030;
+            border-left: 1px solid #c04030;
+            border-bottom: 1px solid #3a100c;
+            border-right: 1px solid #3a100c;
         }
     )");
 }

@@ -85,6 +85,16 @@ public:
     void  setCrossfade(float mixB);
     float crossfade() const { return m_crossfadeB; }
 
+    // ── Panic / emergency output controls ─────────────────────────────────────
+    enum class PanicOverlay { None, Blackout, StayTuned };
+
+    void setPanicOverlay(PanicOverlay overlay);
+    PanicOverlay panicOverlay() const { return m_panicOverlay; }
+
+    /// Freeze program output on the current frame (does not change deck play state).
+    void setOutputFrozen(bool frozen);
+    bool isOutputFrozen() const { return m_outputFrozen; }
+
     // ── Transition mode ───────────────────────────────────────────────────────
     // Transition strategies live in Transition.h; the enum is aliased here so
     // existing call sites can keep using VideoWidget::TransitionMode.
@@ -183,6 +193,9 @@ private:
     std::vector<GLuint>          m_chainTexB;
 
     TransitionMode m_transitionMode = TransitionMode::Crossfade;
+
+    PanicOverlay m_panicOverlay = PanicOverlay::None;
+    bool         m_outputFrozen = false;
 
     QTimer *m_frameTimer = nullptr;
     QRectF  m_videoRectA;

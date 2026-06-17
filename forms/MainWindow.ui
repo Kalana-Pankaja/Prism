@@ -526,6 +526,88 @@ Split 4-Corner: split into 4 quadrants sliding outwards
         </widget>
        </item>
        <item>
+        <widget class="QGroupBox" name="panicGroup">
+         <property name="title">
+          <string>Panic</string>
+         </property>
+         <property name="maximumSize">
+          <size>
+           <width>110</width>
+           <height>16777215</height>
+          </size>
+         </property>
+         <layout class="QVBoxLayout" name="panicLayout">
+          <property name="spacing">
+           <number>6</number>
+          </property>
+          <property name="leftMargin">
+           <number>8</number>
+          </property>
+          <property name="topMargin">
+           <number>8</number>
+          </property>
+          <property name="rightMargin">
+           <number>8</number>
+          </property>
+          <property name="bottomMargin">
+           <number>8</number>
+          </property>
+          <item>
+           <widget class="QPushButton" name="panicBlackoutBtn">
+            <property name="toolTip">
+             <string>Cut program output to black</string>
+            </property>
+            <property name="text">
+             <string>BLACKOUT</string>
+            </property>
+            <property name="checkable">
+             <bool>true</bool>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QPushButton" name="panicPauseBtn">
+            <property name="toolTip">
+             <string>Freeze the program output on the current frame</string>
+            </property>
+            <property name="text">
+             <string>PAUSE</string>
+            </property>
+            <property name="checkable">
+             <bool>true</bool>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QPushButton" name="panicStayTunedBtn">
+            <property name="toolTip">
+             <string>Show a &quot;Stay Tuned&quot; holding screen on program output</string>
+            </property>
+            <property name="text">
+             <string>STAY TUNED</string>
+            </property>
+            <property name="checkable">
+             <bool>true</bool>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <spacer name="panicSpacer">
+            <property name="orientation">
+             <enum>Qt::Vertical</enum>
+            </property>
+            <property name="sizeHint" stdset="0">
+             <size>
+              <width>20</width>
+              <height>40</height>
+             </size>
+            </property>
+           </spacer>
+          </item>
+         </layout>
+        </widget>
+       </item>
+       <item>
         <widget class="QGroupBox" name="bDeckGroup">
          <property name="title">
           <string>B Deck</string>
