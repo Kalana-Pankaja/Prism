@@ -20,7 +20,7 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: |
           sudo apt update
-          sudo apt install -y qt6-base-dev qt6-tools-dev libgl1-mesa-dev
+          sudo apt install -y qt6-base-dev qt6-tools-dev libgl1-mesa-dev qt6-websockets-dev
 
       - name: Install FFmpeg (Linux)
         if: matrix.os == 'ubuntu-latest'

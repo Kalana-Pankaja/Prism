@@ -142,6 +142,15 @@ void ClipCard::setDisplayName(const QString &name) {
     emit sourceDescriptorChanged(m_index, m_sourceDesc);
 }
 
+void ClipCard::setObsSceneName(const QString &sceneName) {
+    m_sourceDesc.obsSceneName = sceneName;
+    QString tip = m_sourceDesc.displayName;
+    if (!sceneName.isEmpty())
+        tip += tr("\nOBS scene: %1").arg(sceneName);
+    ui->titleLabel->setToolTip(tip);
+    emit sourceDescriptorChanged(m_index, m_sourceDesc);
+}
+
 void ClipCard::loadSource(const SourceDescriptor &desc, const QPixmap &thumbnail) {
     m_clipPath.clear();
     m_sourceDesc = desc;
@@ -157,7 +166,10 @@ void ClipCard::loadSource(const SourceDescriptor &desc, const QPixmap &thumbnail
 
     QFontMetrics fm(ui->titleLabel->font());
     ui->titleLabel->setText(fm.elidedText(desc.displayName, Qt::ElideRight, 108));
-    ui->titleLabel->setToolTip(desc.displayName);
+    QString tip = desc.displayName;
+    if (!desc.obsSceneName.isEmpty())
+        tip += tr("\nOBS scene: %1").arg(desc.obsSceneName);
+    ui->titleLabel->setToolTip(tip);
 
     // Repeat only makes sense for slideshows; edit available for all non-empty sources.
     ui->repeatBtn->setEnabled(desc.kind == SourceDescriptor::Kind::Slideshow);

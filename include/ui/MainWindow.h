@@ -11,6 +11,7 @@
 #include "ui/TransitionController.h"
 #include "ui/DeckController.h"
 #include "ui/OutputHub.h"
+#include "ui/ObsIntegration.h"
 #include "core/ClipManager.h"
 #include "core/SourceDescriptor.h"
 #include "core/MediaSource.h"
@@ -58,6 +59,10 @@ private slots:
     void onAddElementDynamicInterface();
     void onAddElementNdi();
 
+    void onConnectObs();
+    void onLinkClipObsScene();
+    void rebuildObsScenesMenu(const QStringList &scenes);
+
     // ── Deck controls ─────────────────────────────────────────────────────────
     void onCrossfaderMoved(int value);
     void onADeckPlayClicked();
@@ -86,6 +91,8 @@ private:
     TransitionController *m_transitionCtrl   = nullptr;
     DeckController     *m_deckController     = nullptr;
     OutputHub          *m_outputHub          = nullptr;
+    ObsIntegration     *m_obsIntegration     = nullptr;
+    class QMenu        *m_obsScenesMenu      = nullptr;
 
     // ── Helpers ───────────────────────────────────────────────────────────────
     void setupConnections();

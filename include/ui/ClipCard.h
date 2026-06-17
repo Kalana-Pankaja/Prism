@@ -45,6 +45,7 @@ public:
     void setDisplayName(const QString &name);
     QString displayName() const { return m_sourceDesc.displayName; }
     const SourceDescriptor &sourceDescriptor() const { return m_sourceDesc; }
+    void setObsSceneName(const QString &sceneName);
 
     // Hotkey badge — shows the assigned key letter over the thumbnail.
     void setHotkeyLabel(const QString &key);

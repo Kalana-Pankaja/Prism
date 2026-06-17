@@ -9,6 +9,13 @@ set(CMAKE_AUTOUIC ON)
 
 # Qt
 find_package(Qt6 REQUIRED COMPONENTS Core Widgets OpenGL OpenGLWidgets Gui Multimedia WebEngineWidgets DBus)
+find_package(Qt6 QUIET COMPONENTS WebSockets)
+if(TARGET Qt6::WebSockets)
+    set(SWITCHX_HAVE_OBS_WS TRUE)
+    message(STATUS "Qt WebSockets found — OBS integration enabled")
+else()
+    message(STATUS "Qt6 WebSockets not found — OBS integration disabled (install qt6-websockets)")
+endif()
 find_package(re2 REQUIRED)
 
 # GStreamer (for ScreenSource PipeWire frame capture)
@@ -68,6 +75,8 @@ set(SOURCES
     src/ui/MirrorOutputWindow.cpp
     src/ui/OutputHub.cpp
     src/ui/NdiProgramSink.cpp
+    src/ui/ObsWebSocketClient.cpp
+    src/ui/ObsIntegration.cpp
     src/ui/ShaderEditDialog.cpp
     src/ui/HtmlEditDialog.cpp
     # Extracted helper / controller classes
@@ -115,6 +124,8 @@ set(HEADERS
     include/ui/MirrorOutputWindow.h
     include/ui/OutputHub.h
     include/ui/NdiProgramSink.h
+    include/ui/ObsWebSocketClient.h
+    include/ui/ObsIntegration.h
     include/ui/ProgramOutputSink.h
     include/ui/ShaderEditDialog.h
     include/ui/HtmlEditDialog.h
@@ -176,6 +187,11 @@ if(SWITCHX_HAVE_NDI)
     target_compile_definitions(Prism PRIVATE SWITCHX_HAVE_NDI)
     target_include_directories(Prism PRIVATE ${NDI_INCLUDE_DIRS})
     target_link_libraries(Prism PRIVATE ${NDI_LIBRARIES})
+endif()
+
+if(SWITCHX_HAVE_OBS_WS)
+    target_compile_definitions(Prism PRIVATE SWITCHX_HAVE_OBS_WS)
+    target_link_libraries(Prism PRIVATE Qt6::WebSockets)
 endif()
 
 # Enable testing

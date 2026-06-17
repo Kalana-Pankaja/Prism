@@ -14,6 +14,7 @@
 #include "core/ShaderSource.h"
 #include "core/HtmlSource.h"
 #include "core/NdiSource.h"
+#include "ui/ObsWebSocketClient.h"
 #include "ui/ShaderEditDialog.h"
 #include "ui/HtmlEditDialog.h"
 #include <QApplication>
@@ -31,6 +32,7 @@
 #include <QFileInfo>
 #include <QPixmap>
 #include <QPainter>
+#include <QMenu>
 #include <QMenu>
 #include <QInputDialog>
 #include <QColorDialog>
@@ -63,6 +65,19 @@ MainWindow::MainWindow(QWidget *parent)
 
     m_outputHub = new OutputHub(this);
     m_outputHub->setProgramSource(m_outputWindow->videoWidget());
+
+    m_obsIntegration = new ObsIntegration(this);
+    m_obsScenesMenu = new QMenu(tr("OBS Scenes"), this);
+    ui->menuView->insertMenu(ui->actionStayOnTop, m_obsScenesMenu);
+    m_obsScenesMenu->setEnabled(false);
+    rebuildObsScenesMenu({});
+    ui->actionConnectObs->setEnabled(ObsWebSocketClient::isAvailable());
+    ui->actionLinkClipObsScene->setEnabled(ObsWebSocketClient::isAvailable());
+    if (!ObsWebSocketClient::isAvailable()) {
+        const QString tip = tr("Requires qt6-websockets at build time");
+        ui->actionConnectObs->setToolTip(tip);
+        ui->actionLinkClipObsScene->setToolTip(tip);
+    }
 
     ui->actionNdiOutput->setEnabled(m_outputHub->ndiAvailable());
     if (!m_outputHub->ndiAvailable()) {
@@ -202,6 +217,7 @@ void MainWindow::buildEmptyPlaceholder() {
 
 MainWindow::~MainWindow() {
     m_outputHub->setNdiOutputEnabled(false);
+    m_obsIntegration->disconnectFromObs();
     m_deckController->stopDeckAudio(true);
     m_deckController->stopDeckAudio(false);
     delete ui;
@@ -286,6 +302,14 @@ void MainWindow::setupConnections() {
         ui->actionNdiOutput->setChecked(on);
         ui->actionNdiOutput->blockSignals(false);
     });
+    connect(ui->actionConnectObs, &QAction::triggered, this, &MainWindow::onConnectObs);
+    connect(ui->actionLinkClipObsScene, &QAction::triggered, this, &MainWindow::onLinkClipObsScene);
+    connect(m_obsIntegration, &ObsIntegration::connectedChanged, this, [this](bool on) {
+        m_obsScenesMenu->setEnabled(on);
+        if (!on) rebuildObsScenesMenu({});
+    });
+    connect(m_obsIntegration, &ObsIntegration::sceneListUpdated,
+            this, &MainWindow::rebuildObsScenesMenu);
     connect(ui->actionStayOnTop, &QAction::toggled, this, [this](bool on) {
         Qt::WindowFlags flags = m_outputWindow->windowFlags();
         if (on) flags |= Qt::WindowStaysOnTopHint;
@@ -484,6 +508,7 @@ void MainWindow::onNodeAButtonClicked(NodeId nodeId) {
         ui->aProgressSlider, ui->aDeckPlayBtn, ui->aSelectedLabel, ui->aTimeLabel);
     out->setNodeChainA(SourceFactory::buildChain(
         m_clipNodeEditor->getClipChain(nodeId), m_clipNodeEditor, canvasW, canvasH));
+    m_obsIntegration->onClipTriggered(node->sourceDescriptor());
 }
 
 void MainWindow::onNodeBButtonClicked(NodeId nodeId) {
@@ -510,6 +535,7 @@ void MainWindow::onNodeBButtonClicked(NodeId nodeId) {
         ui->bProgressSlider, ui->bDeckPlayBtn, ui->bSelectedLabel, ui->bTimeLabel);
     out->setNodeChainB(SourceFactory::buildChain(
         m_clipNodeEditor->getClipChain(nodeId), m_clipNodeEditor, canvasW, canvasH));
+    m_obsIntegration->onClipTriggered(node->sourceDescriptor());
 }
 
 void MainWindow::onNodeRemoveRequested(NodeId nodeId) {
@@ -1043,4 +1069,62 @@ void MainWindow::onAddElementNdi() {
     desc.displayName = chosen;
 
     addElementNode(desc, ThumbHelper::makeIconThumb(QStringLiteral("📡")));
+}
+
+void MainWindow::onConnectObs() {
+    m_obsIntegration->showConnectDialog(this);
+}
+
+void MainWindow::onLinkClipObsScene() {
+    const QVector<ClipNodeModel *> nodes = m_clipNodeEditor->allNodes();
+    QStringList labels;
+    QList<NodeId> ids;
+    for (ClipNodeModel *model : nodes) {
+        if (!model || !model->hasSource()) continue;
+        labels << model->sourceName();
+        ids << model->nodeId();
+    }
+    if (labels.isEmpty()) {
+        QMessageBox::information(this, tr("OBS Scene Link"),
+                                 tr("Add a clip with a source first."));
+        return;
+    }
+
+    bool ok = false;
+    const QString picked = QInputDialog::getItem(this, tr("Select Clip"),
+                                                 tr("Clip to link:"), labels, 0, false, &ok);
+    if (!ok) return;
+
+    const int idx = labels.indexOf(picked);
+    if (idx < 0 || idx >= ids.size()) return;
+
+    auto *node = m_clipNodeEditor->nodeAt(ids[idx]);
+    if (!node) return;
+
+    const auto result = m_obsIntegration->promptLinkClipObsScene(
+        this, node->sourceName(), node->sourceDescriptor().obsSceneName);
+    if (!result.has_value()) return;
+
+    node->setObsSceneName(*result);
+}
+
+void MainWindow::rebuildObsScenesMenu(const QStringList &scenes) {
+    m_obsScenesMenu->clear();
+    if (scenes.isEmpty()) {
+        m_obsScenesMenu->addAction(tr("(Not connected)"))->setEnabled(false);
+        return;
+    }
+
+    auto *refresh = m_obsScenesMenu->addAction(tr("Refresh Scene List"));
+    connect(refresh, &QAction::triggered, this, [this]() {
+        m_obsIntegration->refreshScenes();
+    });
+    m_obsScenesMenu->addSeparator();
+
+    for (const QString &scene : scenes) {
+        auto *action = m_obsScenesMenu->addAction(scene);
+        connect(action, &QAction::triggered, this, [this, scene]() {
+            m_obsIntegration->switchProgramScene(scene);
+        });
+    }
 }

@@ -737,6 +737,9 @@ Split 4-Corner: split into 4 quadrants sliding outwards
     <addaction name="actionShowPreview"/>
     <addaction name="separator"/>
     <addaction name="actionNdiOutput"/>
+    <addaction name="separator"/>
+    <addaction name="actionConnectObs"/>
+    <addaction name="actionLinkClipObsScene"/>
     <addaction name="actionStayOnTop"/>
    </widget>
    <addaction name="menuMedia"/>
@@ -878,6 +881,22 @@ Split 4-Corner: split into 4 quadrants sliding outwards
    </property>
    <property name="checkable">
     <bool>true</bool>
+   </property>
+  </action>
+  <action name="actionConnectObs">
+   <property name="text">
+    <string>Connect to OBS…</string>
+   </property>
+   <property name="toolTip">
+    <string>Connect to OBS Studio via obs-websocket (port 4455)</string>
+   </property>
+  </action>
+  <action name="actionLinkClipObsScene">
+   <property name="text">
+    <string>Link Clip to OBS Scene…</string>
+   </property>
+   <property name="toolTip">
+    <string>When a clip is sent to a deck, also switch OBS to a linked scene</string>
    </property>
   </action>
   <action name="actionStayOnTop">

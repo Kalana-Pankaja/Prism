@@ -2109,6 +2109,7 @@ static QJsonObject descriptorToJson(const SourceDescriptor &d) {
     o["canvasFill"]         = (int)d.canvasFill;
     o["shaderCode"]         = d.shaderCode;
     o["htmlContent"]        = d.htmlContent;
+    o["obsSceneName"]       = d.obsSceneName;
     return o;
 }
 
@@ -2129,6 +2130,7 @@ static SourceDescriptor descriptorFromJson(const QJsonObject &o) {
     d.canvasFill         = (SourceDescriptor::CanvasFill)o["canvasFill"].toInt();
     d.shaderCode         = o["shaderCode"].toString();
     d.htmlContent        = o["htmlContent"].toString();
+    d.obsSceneName       = o["obsSceneName"].toString();
     return d;
 }
 
