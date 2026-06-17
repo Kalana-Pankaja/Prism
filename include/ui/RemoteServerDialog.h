@@ -13,6 +13,8 @@ class RemoteServerDialog : public QDialog {
     Q_OBJECT
 public:
     explicit RemoteServerDialog(RemoteControlServer *server, QWidget *parent = nullptr);
+    void accept() override;
+    void reject() override;
 
 private slots:
     void onStartStopClicked();

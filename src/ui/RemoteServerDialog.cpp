@@ -15,6 +15,7 @@ RemoteServerDialog::RemoteServerDialog(RemoteControlServer *server, QWidget *par
 {
     setWindowTitle(tr("Remote Control Server Settings"));
     setMinimumWidth(400);
+    setWindowFlags(windowFlags() | Qt::WindowMinimizeButtonHint);
 
     QVBoxLayout *mainLayout = new QVBoxLayout(this);
 
@@ -122,4 +123,18 @@ void RemoteServerDialog::onStartStopClicked() {
         }
     }
     updateUiState();
+}
+
+void RemoteServerDialog::accept() {
+    if (m_server && m_server->isRunning()) {
+        m_server->stopServer();
+    }
+    QDialog::accept();
+}
+
+void RemoteServerDialog::reject() {
+    if (m_server && m_server->isRunning()) {
+        m_server->stopServer();
+    }
+    QDialog::reject();
 }
