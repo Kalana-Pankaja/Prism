@@ -15,8 +15,11 @@
 #include "core/HtmlSource.h"
 #include "core/NdiSource.h"
 #include "ui/ObsWebSocketClient.h"
+#include "ui/HotkeyEditorDialog.h"
 #include "ui/ShaderEditDialog.h"
 #include "ui/HtmlEditDialog.h"
+#include "ui/RemoteControlServer.h"
+#include "ui/RemoteServerDialog.h"
 #include <QApplication>
 #include <QCoreApplication>
 #include <QDir>
@@ -126,6 +129,8 @@ MainWindow::MainWindow(QWidget *parent)
         ui->crossfaderSlider,
         this);
     m_transitionCtrl->setupConnections();
+
+    m_remoteServer = new RemoteControlServer(this, m_transitionCtrl, ui->crossfaderSlider, this);
 
     setupConnections();
     applyTheme();
@@ -342,6 +347,7 @@ void MainWindow::setupConnections() {
     auto *markerShortcut = new QShortcut(QKeySequence(Qt::CTRL | Qt::Key_M), this);
     connect(markerShortcut, &QShortcut::activated, ui->actionDropMarker, &QAction::trigger);
     connect(ui->actionConnectObs, &QAction::triggered, this, &MainWindow::onConnectObs);
+    connect(ui->actionEditHotkeys, &QAction::triggered, this, &MainWindow::onEditHotkeys);
     connect(ui->actionLinkClipObsScene, &QAction::triggered, this, &MainWindow::onLinkClipObsScene);
     connect(m_obsIntegration, &ObsIntegration::connectedChanged, this, [this](bool on) {
         m_obsScenesMenu->setEnabled(on);
@@ -356,6 +362,8 @@ void MainWindow::setupConnections() {
         m_outputWindow->setWindowFlags(flags);
         m_outputWindow->show();
     });
+
+    connect(ui->actionStartRemoteControl, &QAction::triggered, this, &MainWindow::onStartRemoteControl);
 
     // ClipNodeEditor signals
     connect(m_clipNodeEditor, &ClipNodeEditor::deckAClipChanged,
@@ -1367,6 +1375,11 @@ void MainWindow::onConnectObs() {
     m_obsIntegration->showConnectDialog(this);
 }
 
+void MainWindow::onEditHotkeys() {
+    HotkeyEditorDialog dlg(m_hotkeyManager, m_clipNodeEditor, this);
+    dlg.exec();
+}
+
 void MainWindow::onLinkClipObsScene() {
     const QVector<ClipNodeModel *> nodes = m_clipNodeEditor->allNodes();
     QStringList labels;
@@ -1419,4 +1432,41 @@ void MainWindow::rebuildObsScenesMenu(const QStringList &scenes) {
             m_obsIntegration->switchProgramScene(scene);
         });
     }
+}
+
+void MainWindow::onStartRemoteControl() {
+    RemoteServerDialog dlg(m_remoteServer, this);
+    dlg.exec();
+}
+
+void MainWindow::selectNodeA(NodeId nodeId) {
+    onNodeAButtonClicked(nodeId);
+}
+
+void MainWindow::selectNodeB(NodeId nodeId) {
+    onNodeBButtonClicked(nodeId);
+}
+
+void MainWindow::togglePlayA() {
+    onADeckPlayClicked();
+}
+
+void MainWindow::togglePlayB() {
+    onBDeckPlayClicked();
+}
+
+bool MainWindow::isPlayingA() const {
+    return m_outputWindow && m_outputWindow->videoWidget() && m_outputWindow->videoWidget()->isPlayingA();
+}
+
+bool MainWindow::isPlayingB() const {
+    return m_outputWindow && m_outputWindow->videoWidget() && m_outputWindow->videoWidget()->isPlayingB();
+}
+
+NodeId MainWindow::activeNodeA() const {
+    return m_deckController ? m_deckController->activeNodeA() : 0;
+}
+
+NodeId MainWindow::activeNodeB() const {
+    return m_deckController ? m_deckController->activeNodeB() : 0;
 }

@@ -8,7 +8,7 @@ set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
 # Qt
-find_package(Qt6 REQUIRED COMPONENTS Core Widgets OpenGL OpenGLWidgets Gui Multimedia WebEngineWidgets DBus)
+find_package(Qt6 REQUIRED COMPONENTS Core Widgets OpenGL OpenGLWidgets Gui Multimedia WebEngineWidgets DBus Network)
 find_package(Qt6 QUIET COMPONENTS WebSockets)
 if(TARGET Qt6::WebSockets)
     set(SWITCHX_HAVE_OBS_WS TRUE)
@@ -96,10 +96,13 @@ set(SOURCES
     # Extracted helper / controller classes
     src/ui/ThumbHelper.cpp
     src/ui/HotkeyManager.cpp
+    src/ui/HotkeyEditorDialog.cpp
     src/ui/SessionManager.cpp
     src/ui/TransitionController.cpp
     src/ui/DeckController.cpp
     src/ui/SourceFactory.cpp
+    src/ui/RemoteControlServer.cpp
+    src/ui/RemoteServerDialog.cpp
 )
 
 set(HEADERS
@@ -149,10 +152,13 @@ set(HEADERS
     # Extracted helper / controller headers
     include/ui/ThumbHelper.h
     include/ui/HotkeyManager.h
+    include/ui/HotkeyEditorDialog.h
     include/ui/SessionManager.h
     include/ui/TransitionController.h
     include/ui/DeckController.h
     include/ui/SourceFactory.h
+    include/ui/RemoteControlServer.h
+    include/ui/RemoteServerDialog.h
 )
 
 set(UI_FILES
@@ -194,6 +200,7 @@ target_link_libraries(Prism PRIVATE
     Qt6::Multimedia
     Qt6::WebEngineWidgets
     Qt6::DBus
+    Qt6::Network
     re2::re2
     ${FFMPEG_LIBRARIES}
     ${GSTREAMER_LIBRARIES}

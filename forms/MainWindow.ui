@@ -818,6 +818,8 @@ Split 4-Corner: split into 4 quadrants sliding outwards
     <addaction name="actionShowOutput"/>
     <addaction name="actionShowPreview"/>
     <addaction name="separator"/>
+    <addaction name="actionEditHotkeys"/>
+    <addaction name="separator"/>
     <addaction name="actionNdiOutput"/>
     <addaction name="actionRecordProgram"/>
     <addaction name="actionDropMarker"/>
@@ -826,8 +828,15 @@ Split 4-Corner: split into 4 quadrants sliding outwards
     <addaction name="actionLinkClipObsScene"/>
     <addaction name="actionStayOnTop"/>
    </widget>
+   <widget class="QMenu" name="menuRun">
+    <property name="title">
+     <string>Run</string>
+    </property>
+    <addaction name="actionStartRemoteControl"/>
+   </widget>
    <addaction name="menuMedia"/>
    <addaction name="menuView"/>
+   <addaction name="menuRun"/>
   </widget>
   <!-- ── Actions ──────────────────────────────────────────────────────── -->
   <action name="actionLoadFolder">
@@ -989,6 +998,17 @@ Split 4-Corner: split into 4 quadrants sliding outwards
     <bool>false</bool>
    </property>
   </action>
+  <action name="actionEditHotkeys">
+   <property name="text">
+    <string>Edit Hotkeys…</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+Shift+K</string>
+   </property>
+   <property name="toolTip">
+    <string>Assign and manage keyboard triggers for deck clips</string>
+   </property>
+  </action>
   <action name="actionConnectObs">
    <property name="text">
     <string>Connect to OBS…</string>
@@ -1014,6 +1034,14 @@ Split 4-Corner: split into 4 quadrants sliding outwards
    </property>
    <property name="checkable">
     <bool>true</bool>
+   </property>
+  </action>
+  <action name="actionStartRemoteControl">
+   <property name="text">
+    <string>Start Remote Control Server…</string>
+   </property>
+   <property name="toolTip">
+    <string>Start a remote control web server to manage mixing, fader, cut, and auto remotely</string>
    </property>
   </action>
  </widget>

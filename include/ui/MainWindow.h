@@ -17,6 +17,7 @@
 #include "core/MediaSource.h"
 
 namespace Ui { class MainWindow; }
+class RemoteControlServer;
 
 class QPushButton;
 
@@ -26,6 +27,17 @@ class MainWindow : public QMainWindow {
 public:
     explicit MainWindow(QWidget *parent = nullptr);
     ~MainWindow();
+
+    // ── Remote API helpers ────────────────────────────────────────────────────
+    void selectNodeA(NodeId nodeId);
+    void selectNodeB(NodeId nodeId);
+    void togglePlayA();
+    void togglePlayB();
+    bool isPlayingA() const;
+    bool isPlayingB() const;
+    NodeId activeNodeA() const;
+    NodeId activeNodeB() const;
+    ClipNodeEditor* clipNodeEditor() const { return m_clipNodeEditor; }
 
 protected:
     void dragEnterEvent(QDragEnterEvent *event) override;
@@ -63,6 +75,8 @@ private slots:
 
     void onConnectObs();
     void onLinkClipObsScene();
+    void onEditHotkeys();
+    void onStartRemoteControl();
     void rebuildObsScenesMenu(const QStringList &scenes);
 
     // ── Deck controls ─────────────────────────────────────────────────────────
@@ -98,7 +112,8 @@ private:
     DeckController     *m_deckController     = nullptr;
     OutputHub          *m_outputHub          = nullptr;
     ObsIntegration     *m_obsIntegration     = nullptr;
-    class QMenu        *m_obsScenesMenu      = nullptr;
+    QMenu              *m_obsScenesMenu      = nullptr;
+    RemoteControlServer *m_remoteServer      = nullptr;
 
     // ── Helpers ───────────────────────────────────────────────────────────────
     void setupConnections();
