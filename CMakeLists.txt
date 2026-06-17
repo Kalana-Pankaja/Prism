@@ -98,6 +98,7 @@ set(SOURCES
     src/ui/HotkeyManager.cpp
     src/ui/HotkeyEditorDialog.cpp
     src/ui/SessionManager.cpp
+    src/ui/SessionRecoveryDialog.cpp
     src/ui/TransitionController.cpp
     src/ui/DeckController.cpp
     src/ui/SourceFactory.cpp
@@ -154,6 +155,7 @@ set(HEADERS
     include/ui/HotkeyManager.h
     include/ui/HotkeyEditorDialog.h
     include/ui/SessionManager.h
+    include/ui/SessionRecoveryDialog.h
     include/ui/TransitionController.h
     include/ui/DeckController.h
     include/ui/SourceFactory.h

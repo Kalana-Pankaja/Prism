@@ -16,6 +16,7 @@
 #include "core/NdiSource.h"
 #include "ui/ObsWebSocketClient.h"
 #include "ui/HotkeyEditorDialog.h"
+#include "ui/SessionRecoveryDialog.h"
 #include "ui/ShaderEditDialog.h"
 #include "ui/HtmlEditDialog.h"
 #include "ui/RemoteControlServer.h"
@@ -144,9 +145,13 @@ MainWindow::MainWindow(QWidget *parent)
     connect(updateTimer, &QTimer::timeout, this, &MainWindow::onTimerUpdate);
     updateTimer->start(100);
 
-    const QString autosave = SessionManager::autosavePath();
-    if (QFile::exists(autosave))
-        loadFromFile(autosave, false);  // will call m_sessionManager->loadFromFile
+    handleStartupRecovery();
+
+    m_autosaveTimer = new QTimer(this);
+    connect(m_autosaveTimer, &QTimer::timeout, this, &MainWindow::performAutosave);
+    m_autosaveTimer->start(SessionManager::kDefaultAutosaveIntervalMs);
+
+    SessionManager::markRunning();
 
     qDebug() << "SwitchX initialized - Live Media Control Mode";
 }
@@ -231,20 +236,59 @@ MainWindow::~MainWindow() {
 }
 
 void MainWindow::closeEvent(QCloseEvent *event) {
-    // Build session JSON from current state and save.
-    QFile file(SessionManager::autosavePath());
-    if (file.open(QIODevice::WriteOnly)) {
-        auto json = m_sessionManager->buildJson(
-            ui->crossfaderSlider->value(),
-            m_transitionCtrl->currentModeIndex(),
-            m_transitionCtrl->currentDurationSecs(),
-            m_deckController->activeNodeA(),
-            m_deckController->activeNodeB(),
-            m_hotkeyManager->nodeHotkeys(),
-            SessionManager::autosavePath());
-        file.write(QJsonDocument(json).toJson(QJsonDocument::Indented));
-    }
+    performAutosave();
+    SessionManager::markCleanExit();
     QMainWindow::closeEvent(event);
+}
+
+QJsonObject MainWindow::currentSessionJson() const {
+    return currentSessionJson(SessionManager::autosavePath());
+}
+
+QJsonObject MainWindow::currentSessionJson(const QString &sessionFilePath) const {
+    return m_sessionManager->buildJson(
+        ui->crossfaderSlider->value(),
+        m_transitionCtrl->currentModeIndex(),
+        m_transitionCtrl->currentDurationSecs(),
+        m_deckController->activeNodeA(),
+        m_deckController->activeNodeB(),
+        m_hotkeyManager->nodeHotkeys(),
+        sessionFilePath);
+}
+
+void MainWindow::performAutosave() {
+    if (!m_sessionManager)
+        return;
+    m_sessionManager->saveAutosave(currentSessionJson());
+}
+
+void MainWindow::handleStartupRecovery() {
+    const SessionManager::RecoveryInfo recovery = SessionManager::checkRecovery();
+    if (recovery.uncleanShutdown) {
+        SessionRecoveryDialog dlg(recovery.autosavePath, recovery.backupPaths, this);
+        if (dlg.exec() != QDialog::Accepted)
+            return;
+
+        switch (dlg.choice()) {
+        case SessionRecoveryDialog::Choice::RecoverAutosave:
+            if (QFile::exists(recovery.autosavePath))
+                loadFromFile(recovery.autosavePath, false);
+            break;
+        case SessionRecoveryDialog::Choice::RecoverBackup: {
+            const QString path = dlg.selectedBackupPath();
+            if (!path.isEmpty())
+                loadFromFile(path, false);
+            break;
+        }
+        case SessionRecoveryDialog::Choice::StartFresh:
+            break;
+        }
+        return;
+    }
+
+    const QString autosave = SessionManager::autosavePath();
+    if (QFile::exists(autosave))
+        loadFromFile(autosave, false);
 }
 
 // ── Signal wiring ─────────────────────────────────────────────────────────────
@@ -1083,21 +1127,10 @@ void MainWindow::onSaveSessionClicked() {
     if (path.isEmpty()) return;
     if (!path.endsWith(".sxs", Qt::CaseInsensitive)) path += ".sxs";
 
-    QFile file(path);
-    if (!file.open(QIODevice::WriteOnly)) {
+    if (!m_sessionManager->writeSessionFile(currentSessionJson(path), path)) {
         QMessageBox::warning(this, "Save Session",
                              QString("Cannot write to file:\n%1").arg(path));
-        return;
     }
-    auto json = m_sessionManager->buildJson(
-        ui->crossfaderSlider->value(),
-        m_transitionCtrl->currentModeIndex(),
-        m_transitionCtrl->currentDurationSecs(),
-        m_deckController->activeNodeA(),
-        m_deckController->activeNodeB(),
-        m_hotkeyManager->nodeHotkeys(),
-        path);
-    file.write(QJsonDocument(json).toJson(QJsonDocument::Indented));
 }
 
 void MainWindow::onLoadSessionClicked() {
