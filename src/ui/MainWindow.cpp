@@ -33,7 +33,7 @@
 #include <QPixmap>
 #include <QPainter>
 #include <QMenu>
-#include <QMenu>
+#include <QLineEdit>
 #include <QInputDialog>
 #include <QColorDialog>
 #include <QMessageBox>
@@ -216,6 +216,7 @@ void MainWindow::buildEmptyPlaceholder() {
 }
 
 MainWindow::~MainWindow() {
+    m_outputHub->setProgramRecordingEnabled(false);
     m_outputHub->setNdiOutputEnabled(false);
     m_obsIntegration->disconnectFromObs();
     m_deckController->stopDeckAudio(true);
@@ -302,6 +303,42 @@ void MainWindow::setupConnections() {
         ui->actionNdiOutput->setChecked(on);
         ui->actionNdiOutput->blockSignals(false);
     });
+    connect(ui->actionRecordProgram, &QAction::toggled, this, [this](bool on) {
+        if (!m_outputHub->setProgramRecordingEnabled(on)) {
+            ui->actionRecordProgram->blockSignals(true);
+            ui->actionRecordProgram->setChecked(false);
+            ui->actionRecordProgram->blockSignals(false);
+            if (on) {
+                QMessageBox::warning(this, tr("Recording"),
+                                     tr("Could not start program recording."));
+            }
+        }
+    });
+    connect(m_outputHub, &OutputHub::programRecordingChanged, this, [this](bool on) {
+        ui->actionRecordProgram->blockSignals(true);
+        ui->actionRecordProgram->setChecked(on);
+        ui->actionRecordProgram->blockSignals(false);
+        ui->actionDropMarker->setEnabled(on);
+        if (!on) {
+            const QString video = m_outputHub->recordingOutputPath();
+            if (!video.isEmpty()) {
+                QMessageBox::information(this, tr("Recording Saved"),
+                    tr("Video:\n%1\n\nMarkers:\n%2")
+                        .arg(video, m_outputHub->recordingMarkersPath()));
+            }
+        }
+    });
+    connect(ui->actionDropMarker, &QAction::triggered, this, [this]() {
+        if (!m_outputHub->isProgramRecording()) return;
+        bool ok = false;
+        const QString label = QInputDialog::getText(
+            this, tr("Drop Marker"), tr("Marker label:"),
+            QLineEdit::Normal, tr("Marker"), &ok);
+        if (ok && !label.isEmpty())
+            m_outputHub->addRecordingMarker(label);
+    });
+    auto *markerShortcut = new QShortcut(QKeySequence(Qt::CTRL | Qt::Key_M), this);
+    connect(markerShortcut, &QShortcut::activated, ui->actionDropMarker, &QAction::trigger);
     connect(ui->actionConnectObs, &QAction::triggered, this, &MainWindow::onConnectObs);
     connect(ui->actionLinkClipObsScene, &QAction::triggered, this, &MainWindow::onLinkClipObsScene);
     connect(m_obsIntegration, &ObsIntegration::connectedChanged, this, [this](bool on) {
@@ -509,6 +546,8 @@ void MainWindow::onNodeAButtonClicked(NodeId nodeId) {
     out->setNodeChainA(SourceFactory::buildChain(
         m_clipNodeEditor->getClipChain(nodeId), m_clipNodeEditor, canvasW, canvasH));
     m_obsIntegration->onClipTriggered(node->sourceDescriptor());
+    if (m_outputHub->isProgramRecording())
+        m_outputHub->addRecordingMarker(tr("Deck A: %1").arg(node->sourceName()));
 }
 
 void MainWindow::onNodeBButtonClicked(NodeId nodeId) {
@@ -536,6 +575,8 @@ void MainWindow::onNodeBButtonClicked(NodeId nodeId) {
     out->setNodeChainB(SourceFactory::buildChain(
         m_clipNodeEditor->getClipChain(nodeId), m_clipNodeEditor, canvasW, canvasH));
     m_obsIntegration->onClipTriggered(node->sourceDescriptor());
+    if (m_outputHub->isProgramRecording())
+        m_outputHub->addRecordingMarker(tr("Deck B: %1").arg(node->sourceName()));
 }
 
 void MainWindow::onNodeRemoveRequested(NodeId nodeId) {

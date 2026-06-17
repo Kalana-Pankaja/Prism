@@ -8,7 +8,10 @@
 OutputHub::OutputHub(QObject *parent)
     : QObject(parent)
     , m_ndiSink(std::make_unique<NdiProgramSink>())
+    , m_recorder(std::make_unique<ProgramRecorder>(this))
 {
+    connect(m_recorder.get(), &ProgramRecorder::recordingChanged,
+            this, &OutputHub::programRecordingChanged);
 }
 
 void OutputHub::setProgramSource(VideoWidget *source) {
@@ -73,6 +76,41 @@ bool OutputHub::setNdiOutputEnabled(bool enabled, const QString &streamName) {
     return true;
 }
 
+bool OutputHub::isProgramRecording() const {
+    return m_recorder && m_recorder->isRecording();
+}
+
+QString OutputHub::recordingOutputPath() const {
+    return m_recorder ? m_recorder->outputPath() : QString{};
+}
+
+QString OutputHub::recordingMarkersPath() const {
+    return m_recorder ? m_recorder->markersPath() : QString{};
+}
+
+bool OutputHub::setProgramRecordingEnabled(bool enabled, const QString &outputPath) {
+    if (!m_recorder) return false;
+
+    if (enabled == m_recorder->isRecording())
+        return true;
+
+    if (enabled) {
+        if (!m_recorder->startRecording(outputPath))
+            return false;
+        m_recorder->addMarker(tr("Recording started"));
+    } else {
+        m_recorder->stopRecording();
+    }
+
+    syncFrameConsumers();
+    return true;
+}
+
+void OutputHub::addRecordingMarker(const QString &label) {
+    if (m_recorder && m_recorder->isRecording())
+        m_recorder->addMarker(label);
+}
+
 void OutputHub::onProgramFrameReady() {
     if (!m_source) return;
 
@@ -87,6 +125,9 @@ void OutputHub::onProgramFrameReady() {
 
     if (m_ndiEnabled && m_ndiSink && m_ndiSink->isActive() && !frame.isNull())
         m_ndiSink->submitFrame(frame);
+
+    if (m_recorder && m_recorder->isRecording() && !frame.isNull())
+        m_recorder->submitFrame(frame);
 }
 
 void OutputHub::onMirrorDestroyed(QObject *obj) {
@@ -105,6 +146,8 @@ int OutputHub::activeFrameConsumerCount() const {
         if (mirror) ++count;
     }
     if (m_ndiEnabled)
+        ++count;
+    if (m_recorder && m_recorder->isRecording())
         ++count;
     return count;
 }

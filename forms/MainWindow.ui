@@ -737,6 +737,8 @@ Split 4-Corner: split into 4 quadrants sliding outwards
     <addaction name="actionShowPreview"/>
     <addaction name="separator"/>
     <addaction name="actionNdiOutput"/>
+    <addaction name="actionRecordProgram"/>
+    <addaction name="actionDropMarker"/>
     <addaction name="separator"/>
     <addaction name="actionConnectObs"/>
     <addaction name="actionLinkClipObsScene"/>
@@ -881,6 +883,28 @@ Split 4-Corner: split into 4 quadrants sliding outwards
    </property>
    <property name="checkable">
     <bool>true</bool>
+   </property>
+  </action>
+  <action name="actionRecordProgram">
+   <property name="text">
+    <string>Record Program Output</string>
+   </property>
+   <property name="toolTip">
+    <string>Record the final program mix to ~/Videos/SwitchX/ (H.264 MKV + markers file)</string>
+   </property>
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+  </action>
+  <action name="actionDropMarker">
+   <property name="text">
+    <string>Drop Marker</string>
+   </property>
+   <property name="toolTip">
+    <string>Timestamp a marker in the active recording (Ctrl+M)</string>
+   </property>
+   <property name="enabled">
+    <bool>false</bool>
    </property>
   </action>
   <action name="actionConnectObs">

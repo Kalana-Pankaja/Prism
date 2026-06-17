@@ -5,6 +5,7 @@
 #include <QPointer>
 #include <memory>
 #include "ui/NdiProgramSink.h"
+#include "ui/ProgramRecorder.h"
 
 class VideoWidget;
 class MirrorOutputWindow;
@@ -32,8 +33,17 @@ public:
     /// Start or stop NDI program output. Returns false if NDI is unavailable or start failed.
     bool setNdiOutputEnabled(bool enabled, const QString &streamName = {});
 
+    // ── Program recording ─────────────────────────────────────────────────────
+    bool isProgramRecording() const;
+    QString recordingOutputPath() const;
+    QString recordingMarkersPath() const;
+
+    bool setProgramRecordingEnabled(bool enabled, const QString &outputPath = {});
+    void addRecordingMarker(const QString &label);
+
 signals:
     void ndiOutputEnabledChanged(bool enabled);
+    void programRecordingChanged(bool recording);
 
 private slots:
     void onProgramFrameReady();
@@ -47,6 +57,7 @@ private:
     VideoWidget *m_source = nullptr;
     QList<QPointer<MirrorOutputWindow>> m_mirrors;
 
-    std::unique_ptr<NdiProgramSink> m_ndiSink;
+    std::unique_ptr<NdiProgramSink>   m_ndiSink;
+    std::unique_ptr<ProgramRecorder>  m_recorder;
     bool m_ndiEnabled = false;
 };
