@@ -98,6 +98,8 @@ void VideoWidget::paintGL() {
     glMatrixMode(GL_MODELVIEW);
     glLoadIdentity();
     renderCompositionGL();
+    if (m_programFrameConsumers > 0)
+        cacheProgramFrameFromFbo();
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
     m_compW = 0;
@@ -298,6 +300,23 @@ QRectF VideoWidget::scaleRectToWidget(const QRectF &programRect) const {
     const double sy = (double)height() / kProgramHeight;
     return QRectF(programRect.x() * sx, programRect.y() * sy,
                   programRect.width() * sx, programRect.height() * sy);
+}
+
+void VideoWidget::addProgramFrameConsumer() {
+    ++m_programFrameConsumers;
+}
+
+void VideoWidget::removeProgramFrameConsumer() {
+    m_programFrameConsumers = std::max(0, m_programFrameConsumers - 1);
+}
+
+void VideoWidget::cacheProgramFrameFromFbo() {
+    if (!m_programFbo) return;
+
+    m_programFrameCache = QImage(kProgramWidth, kProgramHeight, QImage::Format_RGBA8888);
+    glReadPixels(0, 0, kProgramWidth, kProgramHeight,
+                 GL_RGBA, GL_UNSIGNED_BYTE, m_programFrameCache.bits());
+    m_programFrameCache = m_programFrameCache.flipped(Qt::Vertical);
 }
 
 void VideoWidget::paintEvent(QPaintEvent *e) {

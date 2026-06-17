@@ -50,6 +50,9 @@ set(SOURCES
     src/ui/TransformEditorDialog.cpp
     src/ui/GroupEditorDialog.cpp
     src/ui/OutputWindow.cpp
+    src/ui/ProgramMirrorWidget.cpp
+    src/ui/MirrorOutputWindow.cpp
+    src/ui/OutputHub.cpp
     src/ui/ShaderEditDialog.cpp
     src/ui/HtmlEditDialog.cpp
     # Extracted helper / controller classes
@@ -91,6 +94,9 @@ set(HEADERS
     include/ui/TransformEditorDialog.h
     include/ui/GroupEditorDialog.h
     include/ui/OutputWindow.h
+    include/ui/ProgramMirrorWidget.h
+    include/ui/MirrorOutputWindow.h
+    include/ui/OutputHub.h
     include/ui/ShaderEditDialog.h
     include/ui/HtmlEditDialog.h
     # Extracted helper / controller headers

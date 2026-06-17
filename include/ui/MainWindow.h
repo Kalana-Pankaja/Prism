@@ -10,6 +10,7 @@
 #include "ui/SessionManager.h"
 #include "ui/TransitionController.h"
 #include "ui/DeckController.h"
+#include "ui/OutputHub.h"
 #include "core/ClipManager.h"
 #include "core/SourceDescriptor.h"
 #include "core/MediaSource.h"
@@ -83,6 +84,7 @@ private:
     SessionManager     *m_sessionManager     = nullptr;
     TransitionController *m_transitionCtrl   = nullptr;
     DeckController     *m_deckController     = nullptr;
+    OutputHub          *m_outputHub          = nullptr;
 
     // ── Helpers ───────────────────────────────────────────────────────────────
     void setupConnections();

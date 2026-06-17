@@ -1,6 +1,7 @@
 #include "ui/MainWindow.h"
 #include "ui_MainWindow.h"
 #include "ui/VideoWidget.h"
+#include "ui/MirrorOutputWindow.h"
 #include "ui/ThumbHelper.h"
 #include "ui/SourceFactory.h"
 #include "core/ThumbnailExtractor.h"
@@ -58,6 +59,9 @@ MainWindow::MainWindow(QWidget *parent)
 
     m_outputWindow = new OutputWindow(this);
     m_outputWindow->show();
+
+    m_outputHub = new OutputHub(this);
+    m_outputHub->setProgramSource(m_outputWindow->videoWidget());
 
     // ── Stacked widget (node editor vs empty placeholder) ─────────────────────
     m_stackWidget = new QStackedWidget(ui->gridWidget);
@@ -233,6 +237,21 @@ void MainWindow::setupConnections() {
         m_outputWindow->show();
         m_outputWindow->raise();
         m_outputWindow->activateWindow();
+    });
+    connect(ui->actionShowPreview, &QAction::triggered, this, [this]() {
+        for (const auto &mirror : m_outputHub->mirrorOutputs()) {
+            if (mirror) {
+                mirror->show();
+                mirror->raise();
+                mirror->activateWindow();
+                return;
+            }
+        }
+        auto *preview = m_outputHub->addMirrorOutput(tr("SwitchX - Preview Output"));
+        if (preview) {
+            preview->raise();
+            preview->activateWindow();
+        }
     });
     connect(ui->actionStayOnTop, &QAction::toggled, this, [this](bool on) {
         Qt::WindowFlags flags = m_outputWindow->windowFlags();

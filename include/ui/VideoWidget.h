@@ -119,6 +119,11 @@ public:
     GLuint programColorTexture() const { return m_programColorTex; }
     QSize  programFrameSize()    const { return {kProgramWidth, kProgramHeight}; }
 
+    /// Enable CPU readback of the program FBO for mirror outputs / recording.
+    void addProgramFrameConsumer();
+    void removeProgramFrameConsumer();
+    QImage programFrame() const { return m_programFrameCache; }
+
 signals:
     void programFrameReady();
 
@@ -219,10 +224,13 @@ private:
     void destroyProgramFbo();
     void renderCompositionGL();
     void blitProgramToScreen();
+    void cacheProgramFrameFromFbo();
     QRectF scaleRectToWidget(const QRectF &programRect) const;
 
     GLuint m_programFbo      = 0;
     GLuint m_programColorTex = 0;
     int    m_compW           = 0;
     int    m_compH           = 0;
+    int    m_programFrameConsumers = 0;
+    QImage m_programFrameCache;
 };
