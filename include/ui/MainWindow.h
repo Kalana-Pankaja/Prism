@@ -116,6 +116,9 @@ private:
 
     // ── Helpers ───────────────────────────────────────────────────────────────
     void setupConnections();
+    void setupPreviewSplitters();
+    void setupDeckPreviewSplitter(bool deckA);
+    void refreshPreviewPixmaps();
     void applyTheme();
 
     void loadFromFile(const QString &path, bool showErrors);

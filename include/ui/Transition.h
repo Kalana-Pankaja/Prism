@@ -57,6 +57,8 @@ public:
         GLuint texB   = 0;
         bool   readyA = false;
         bool   readyB = false;
+        // Deck FBO color textures are V-flipped vs. source textures.
+        bool   texFlipped = false;
     };
 
     virtual ~Transition() = default;

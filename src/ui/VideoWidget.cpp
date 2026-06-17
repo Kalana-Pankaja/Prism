@@ -1,5 +1,4 @@
 #include "ui/VideoWidget.h"
-#include "ui/FrameCaptureHelper.h"
 #include "core/ImageSource.h"
 #include "ui/Transition.h"
 #include "core/VideoFileSource.h"
@@ -88,10 +87,19 @@ std::pair<float,float> VideoWidget::computeDeckAlphas() const {
 
 void VideoWidget::paintGL() {
     ensureProgramFbo();
+    ensureDeckFbos();
 
-    // Compose the program mix at fixed resolution (single source of truth).
     m_compW = kProgramWidth;
     m_compH = kProgramHeight;
+
+    renderDeckToFbo(true);
+    renderDeckToFbo(false);
+
+    if (m_deckPreviewConsumers > 0) {
+        cacheDeckPreviewFromFbo(true);
+        cacheDeckPreviewFromFbo(false);
+    }
+
     glBindFramebuffer(GL_FRAMEBUFFER, m_programFbo);
     glViewport(0, 0, m_compW, m_compH);
     glMatrixMode(GL_PROJECTION);
@@ -109,6 +117,84 @@ void VideoWidget::paintGL() {
 
     blitProgramToScreen();
     emit programFrameReady();
+}
+
+void VideoWidget::renderDeckToFbo(bool deckA) {
+    const GLuint fbo = deckA ? m_deckFboA : m_deckFboB;
+    QRectF &outRect = deckA ? m_videoRectProgramA : m_videoRectProgramB;
+
+    glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+    glViewport(0, 0, kProgramWidth, kProgramHeight);
+    glMatrixMode(GL_PROJECTION);
+    glLoadIdentity();
+    glOrtho(0, kProgramWidth, kProgramHeight, 0, -1, 1);
+    glMatrixMode(GL_MODELVIEW);
+    glLoadIdentity();
+
+    glClearColor(0.f, 0.f, 0.f, 0.f);
+    glClear(GL_COLOR_BUFFER_BIT);
+    outRect = QRectF();
+
+    if (m_panicOverlay != PanicOverlay::None) {
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        return;
+    }
+
+    const GLuint deckTex = deckA
+        ? ((m_sourceA && m_sourceA->glTexture()) ? m_sourceA->glTexture() : m_textureA)
+        : ((m_sourceB && m_sourceB->glTexture()) ? m_sourceB->glTexture() : m_textureB);
+    MediaSource *src = deckA ? m_sourceA.get() : m_sourceB.get();
+    const float cx = deckA ? m_cropXA : m_cropXB;
+    const float cy = deckA ? m_cropYA : m_cropYB;
+    const float cw = deckA ? m_cropWA : m_cropWB;
+    const float ch = deckA ? m_cropHA : m_cropHB;
+    const float baseX = deckA ? m_baseXA : m_baseXB;
+    const float baseY = deckA ? m_baseYA : m_baseYB;
+    const float baseW = deckA ? m_baseWA : m_baseWB;
+    const float baseH = deckA ? m_baseHA : m_baseHB;
+    const int canvasW = deckA ? m_canvasWidthA : m_canvasWidthB;
+    const int canvasH = deckA ? m_canvasHeightA : m_canvasHeightB;
+    auto &chain = deckA ? m_chainA : m_chainB;
+    auto &chainTex = deckA ? m_chainTexA : m_chainTexB;
+
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+    if (deckTex && src && src->isReady()) {
+        const int rw = renderW(), rh = renderH();
+        QRectF canvasBounds(0, 0, rw, rh);
+        if (canvasW > 0 && canvasH > 0) {
+            float canvasAR = (float)canvasW / canvasH;
+            float windowAR = rh > 0 ? (float)rw / rh : canvasAR;
+
+            float canvasRW, canvasRH;
+            if (canvasAR > windowAR) {
+                canvasRW = rw;
+                canvasRH = canvasRW / canvasAR;
+            } else {
+                canvasRH = rh;
+                canvasRW = canvasRH * canvasAR;
+            }
+            canvasBounds = QRectF((rw - canvasRW) / 2, (rh - canvasRH) / 2, canvasRW, canvasRH);
+        }
+
+        const QRectF bounds(canvasBounds.left() + baseX * canvasBounds.width(),
+                            canvasBounds.top()  + baseY * canvasBounds.height(),
+                            baseW * canvasBounds.width(),
+                            baseH * canvasBounds.height());
+        outRect = bounds;
+
+        glColor4f(1.f, 1.f, 1.f, 1.f);
+        renderTexture(deckTex, cx, cy, cw, ch,
+                      (float)bounds.x(),     (float)bounds.y(),
+                      (float)bounds.width(), (float)bounds.height());
+    }
+
+    drawChainSources(chain, chainTex, 1.f, canvasW, canvasH);
+
+    glDisable(GL_BLEND);
+    glColor4f(1.f, 1.f, 1.f, 1.f);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
 void VideoWidget::renderCompositionGL() {
@@ -140,106 +226,35 @@ void VideoWidget::renderCompositionGL() {
 
     const float t = std::clamp(m_crossfadeB, 0.f, 1.f);
 
-    const GLuint deckTexA = (m_sourceA && m_sourceA->glTexture())
-                          ? m_sourceA->glTexture() : m_textureA;
-    const GLuint deckTexB = (m_sourceB && m_sourceB->glTexture())
-                          ? m_sourceB->glTexture() : m_textureB;
-
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
-    auto drawSide = [&](GLuint tex, MediaSource *src,
-                        float cx, float cy, float cw, float ch,
-                        float baseX, float baseY, float baseW, float baseH,
-                        float alpha, QRectF &outRect, int canvasW, int canvasH,
-                        std::vector<NodeChainSource> &chain,
-                        std::vector<GLuint> &chainTex) {
-        if (alpha <= 0.f) return;
-
-        if (tex && src && src->isReady()) {
-            const int rw = renderW(), rh = renderH();
-            QRectF canvasBounds(0, 0, rw, rh);
-            if (canvasW > 0 && canvasH > 0) {
-                float canvasAR = (float)canvasW / canvasH;
-                float windowAR = rh > 0 ? (float)rw / rh : canvasAR;
-
-                float canvasRW, canvasRH;
-                if (canvasAR > windowAR) {
-                    canvasRW = rw;
-                    canvasRH = canvasRW / canvasAR;
-                } else {
-                    canvasRH = rh;
-                    canvasRW = canvasRH * canvasAR;
-                }
-                canvasBounds = QRectF((rw - canvasRW) / 2, (rh - canvasRH) / 2, canvasRW, canvasRH);
-            }
-
-            const QRectF bounds(canvasBounds.left() + baseX * canvasBounds.width(),
-                                canvasBounds.top()  + baseY * canvasBounds.height(),
-                                baseW * canvasBounds.width(),
-                                baseH * canvasBounds.height());
-            outRect = bounds;
-
-            if (m_transitionMode == TransitionMode::Gallery3D) {
-                glDisable(GL_TEXTURE_2D);
-                glColor4f(0.9f, 0.9f, 0.9f, alpha);
-                float bx = std::max(4.f, (float)bounds.width() * 0.015f);
-                float by = std::max(4.f, (float)bounds.height() * 0.015f);
-                glBegin(GL_QUADS);
-                glVertex2f(bounds.x() - bx, bounds.y() - by);
-                glVertex2f(bounds.x() + bounds.width() + bx, bounds.y() - by);
-                glVertex2f(bounds.x() + bounds.width() + bx, bounds.y() + bounds.height() + by);
-                glVertex2f(bounds.x() - bx, bounds.y() + bounds.height() + by);
-                glEnd();
-
-                glColor4f(0.1f, 0.1f, 0.1f, alpha);
-                float ix = std::max(1.f, bx * 0.2f);
-                float iy = std::max(1.f, by * 0.2f);
-                glBegin(GL_QUADS);
-                glVertex2f(bounds.x() - ix, bounds.y() - iy);
-                glVertex2f(bounds.x() + bounds.width() + ix, bounds.y() - iy);
-                glVertex2f(bounds.x() + bounds.width() + ix, bounds.y() + bounds.height() + iy);
-                glVertex2f(bounds.x() - ix, bounds.y() + bounds.height() + iy);
-                glEnd();
-                glEnable(GL_TEXTURE_2D);
-            }
-
-            glColor4f(1.f, 1.f, 1.f, alpha);
-            renderTexture(tex, cx, cy, cw, ch,
-                          (float)bounds.x(),     (float)bounds.y(),
-                          (float)bounds.width(), (float)bounds.height());
-        }
-
-        drawChainSources(chain, chainTex, alpha, canvasW, canvasH);
+    const int rw = renderW(), rh = renderH();
+    auto drawDeckFbo = [&](GLuint deckTex, float alpha) {
+        if (alpha <= 0.f || !deckTex) return;
+        renderFboTexture(deckTex, 0.f, 0.f, (float)rw, (float)rh, alpha);
     };
 
-    auto drawSideA = [&](float alpha) {
-        drawSide(deckTexA, m_sourceA.get(),
-                 m_cropXA, m_cropYA, m_cropWA, m_cropHA,
-                 m_baseXA, m_baseYA, m_baseWA, m_baseHA, alpha,
-                 m_videoRectA, m_canvasWidthA, m_canvasHeightA, m_chainA, m_chainTexA);
-    };
-    auto drawSideB = [&](float alpha) {
-        drawSide(deckTexB, m_sourceB.get(),
-                 m_cropXB, m_cropYB, m_cropWB, m_cropHB,
-                 m_baseXB, m_baseYB, m_baseWB, m_baseHB, alpha,
-                 m_videoRectB, m_canvasWidthB, m_canvasHeightB, m_chainB, m_chainTexB);
-    };
+    auto drawSideA = [&](float alpha) { drawDeckFbo(m_deckColorTexA, alpha); };
+    auto drawSideB = [&](float alpha) { drawDeckFbo(m_deckColorTexB, alpha); };
 
     const bool inB = m_transitionTowardB;
     const float p  = inB ? t : 1.f - t;
 
     Transition::Context ctx;
-    ctx.width   = renderW();
-    ctx.height  = renderH();
+    ctx.width   = rw;
+    ctx.height  = rh;
     ctx.t       = t;
     ctx.p       = p;
     ctx.drawOut = [&](float a) { inB ? drawSideA(a) : drawSideB(a); };
     ctx.drawIn  = [&](float a) { inB ? drawSideB(a) : drawSideA(a); };
-    ctx.texA   = deckTexA;
-    ctx.texB   = deckTexB;
-    ctx.readyA = deckTexA && m_sourceA && m_sourceA->isReady();
-    ctx.readyB = deckTexB && m_sourceB && m_sourceB->isReady();
+    ctx.texA    = m_deckColorTexA;
+    ctx.texB    = m_deckColorTexB;
+    // Deck FBO upright sampling for 2D is handled in renderFboTexture(). 3D quads are
+    // Y-up (+Y = top), so use source-style V coords (texFlipped=false) — not the 2D flip.
+    ctx.texFlipped = false;
+    ctx.readyA  = m_deckColorTexA && m_sourceA && m_sourceA->isReady();
+    ctx.readyB  = m_deckColorTexB && m_sourceB && m_sourceB->isReady();
     Transition::forMode(m_transitionMode).paint(ctx);
 
     glDisable(GL_DEPTH_TEST);
@@ -260,8 +275,8 @@ void VideoWidget::renderCompositionGL() {
     glColor4f(1.f, 1.f, 1.f, 1.f);
 
     // Scale video rects from program space to widget space for QPainter overlays.
-    m_videoRectA = scaleRectToWidget(m_videoRectA);
-    m_videoRectB = scaleRectToWidget(m_videoRectB);
+    m_videoRectA = scaleRectToWidget(m_videoRectProgramA);
+    m_videoRectB = scaleRectToWidget(m_videoRectProgramB);
 }
 
 void VideoWidget::ensureProgramFbo() {
@@ -285,7 +300,37 @@ void VideoWidget::ensureProgramFbo() {
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
+void VideoWidget::ensureDeckFbos() {
+    if (m_deckFboA) return;
+
+    auto setupDeckFbo = [&](GLuint &fbo, GLuint &colorTex) {
+        glGenFramebuffers(1, &fbo);
+        glGenTextures(1, &colorTex);
+
+        glBindTexture(GL_TEXTURE_2D, colorTex);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, kProgramWidth, kProgramHeight,
+                     0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+        glBindTexture(GL_TEXTURE_2D, 0);
+
+        glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                               GL_TEXTURE_2D, colorTex, 0);
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    };
+
+    setupDeckFbo(m_deckFboA, m_deckColorTexA);
+    setupDeckFbo(m_deckFboB, m_deckColorTexB);
+}
+
 void VideoWidget::destroyProgramFbo() {
+    if (m_deckColorTexA) { glDeleteTextures(1, &m_deckColorTexA); m_deckColorTexA = 0; }
+    if (m_deckFboA)      { glDeleteFramebuffers(1, &m_deckFboA); m_deckFboA = 0; }
+    if (m_deckColorTexB) { glDeleteTextures(1, &m_deckColorTexB); m_deckColorTexB = 0; }
+    if (m_deckFboB)      { glDeleteFramebuffers(1, &m_deckFboB); m_deckFboB = 0; }
     if (m_programColorTex) { glDeleteTextures(1, &m_programColorTex); m_programColorTex = 0; }
     if (m_programFbo)      { glDeleteFramebuffers(1, &m_programFbo); m_programFbo = 0; }
 }
@@ -332,6 +377,18 @@ void VideoWidget::setProgramFrameConsumerCount(int count) {
     m_programFrameConsumers = std::max(0, count);
 }
 
+void VideoWidget::addDeckPreviewConsumer() {
+    ++m_deckPreviewConsumers;
+}
+
+void VideoWidget::removeDeckPreviewConsumer() {
+    m_deckPreviewConsumers = std::max(0, m_deckPreviewConsumers - 1);
+}
+
+void VideoWidget::setDeckPreviewConsumerCount(int count) {
+    m_deckPreviewConsumers = std::max(0, count);
+}
+
 void VideoWidget::cacheProgramFrameFromFbo() {
     if (!m_programFbo) return;
 
@@ -339,6 +396,22 @@ void VideoWidget::cacheProgramFrameFromFbo() {
     glReadPixels(0, 0, kProgramWidth, kProgramHeight,
                  GL_RGBA, GL_UNSIGNED_BYTE, m_programFrameCache.bits());
     m_programFrameCache = m_programFrameCache.flipped(Qt::Vertical);
+}
+
+void VideoWidget::cacheDeckPreviewFromFbo(bool deckA) {
+    const GLuint fbo = deckA ? m_deckFboA : m_deckFboB;
+    if (!fbo) return;
+
+    QImage full(kProgramWidth, kProgramHeight, QImage::Format_RGBA8888);
+    glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+    glReadPixels(0, 0, kProgramWidth, kProgramHeight,
+                 GL_RGBA, GL_UNSIGNED_BYTE, full.bits());
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+    full = full.flipped(Qt::Vertical);
+    QImage &cache = deckA ? m_deckPreviewA : m_deckPreviewB;
+    cache = full.scaled(kDeckPreviewWidth, kDeckPreviewHeight,
+                        Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
 }
 
 void VideoWidget::paintEvent(QPaintEvent *e) {
@@ -395,6 +468,20 @@ void VideoWidget::renderTexture(GLuint tex, float cx, float cy, float cw, float 
     glTexCoord2f(cx + cw, cy);      glVertex2f(dstX + dstW, dstY);
     glTexCoord2f(cx + cw, cy + ch); glVertex2f(dstX + dstW, dstY + dstH);
     glTexCoord2f(cx,      cy + ch); glVertex2f(dstX,        dstY + dstH);
+    glEnd();
+    glBindTexture(GL_TEXTURE_2D, 0);
+}
+
+void VideoWidget::renderFboTexture(GLuint tex, float dstX, float dstY, float dstW, float dstH,
+                                   float alpha) {
+    if (!tex || alpha <= 0.f) return;
+    glBindTexture(GL_TEXTURE_2D, tex);
+    glColor4f(1.f, 1.f, 1.f, alpha);
+    glBegin(GL_QUADS);
+    glTexCoord2f(0.f, 0.f); glVertex2f(dstX,      dstY);
+    glTexCoord2f(1.f, 0.f); glVertex2f(dstX + dstW, dstY);
+    glTexCoord2f(1.f, 1.f); glVertex2f(dstX + dstW, dstY + dstH);
+    glTexCoord2f(0.f, 1.f); glVertex2f(dstX,      dstY + dstH);
     glEnd();
     glBindTexture(GL_TEXTURE_2D, 0);
 }
@@ -814,9 +901,12 @@ void VideoWidget::setOutputFrozen(bool frozen) {
 QImage VideoWidget::captureProgramFrame() {
     makeCurrent();
     ensureProgramFbo();
+    ensureDeckFbos();
 
     m_compW = kProgramWidth;
     m_compH = kProgramHeight;
+    renderDeckToFbo(true);
+    renderDeckToFbo(false);
     glBindFramebuffer(GL_FRAMEBUFFER, m_programFbo);
     glViewport(0, 0, m_compW, m_compH);
     glMatrixMode(GL_PROJECTION);
@@ -868,12 +958,34 @@ void VideoWidget::holdLayerAsStill(bool deckA, int chainIndex, const QImage &fra
     update();
 }
 
+QImage VideoWidget::deckPreviewWithOverlays(bool deckA) const {
+    const QImage &base = deckA ? m_deckPreviewA : m_deckPreviewB;
+    if (base.isNull()) return {};
+
+    const QList<OverlayItem> &overlays = deckA ? m_overlaysA : m_overlaysB;
+    if (overlays.isEmpty()) return base;
+
+    QImage frame = base.copy();
+    QPainter p(&frame);
+    p.setRenderHint(QPainter::Antialiasing);
+
+    const QRectF &programRect = deckA ? m_videoRectProgramA : m_videoRectProgramB;
+    const double sx = (double)kDeckPreviewWidth  / kProgramWidth;
+    const double sy = (double)kDeckPreviewHeight / kProgramHeight;
+    const QRectF vr = programRect.isEmpty()
+        ? QRectF(0, 0, kDeckPreviewWidth, kDeckPreviewHeight)
+        : QRectF(programRect.x() * sx, programRect.y() * sy,
+                 programRect.width() * sx, programRect.height() * sy);
+    const_cast<VideoWidget *>(this)->renderOverlays(p, overlays, vr, 1.f);
+    return frame;
+}
+
 QImage VideoWidget::getFrameA() const {
-    return FrameCaptureHelper::frameFromSource(m_sourceA.get());
+    return deckPreviewWithOverlays(true);
 }
 
 QImage VideoWidget::getFrameB() const {
-    return FrameCaptureHelper::frameFromSource(m_sourceB.get());
+    return deckPreviewWithOverlays(false);
 }
 
 // ── GL helpers ────────────────────────────────────────────────────────────────

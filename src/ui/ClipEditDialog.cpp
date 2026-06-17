@@ -15,6 +15,7 @@ ClipEditDialog::ClipEditDialog(const QString &clipPath, const ClipSettings &sett
     , m_cropW(settings.cropW), m_cropH(settings.cropH)
 {
     ui->setupUi(this);
+    ui->preview->addDeckPreviewConsumer();
     setWindowTitle("Edit Clip — " + clipPath.section('/', -1));
 
     VideoPlayer tmp;

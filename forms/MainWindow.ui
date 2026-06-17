@@ -163,11 +163,11 @@
               <height>90</height>
              </size>
             </property>
-            <property name="maximumSize">
-             <size>
-              <width>160</width>
-              <height>90</height>
-             </size>
+            <property name="sizePolicy">
+             <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+              <horstretch>0</horstretch>
+              <verstretch>0</verstretch>
+             </sizepolicy>
             </property>
             <property name="styleSheet">
              <string notr="true">background-color: #18191b; border: 1px solid #2a2c30; border-radius: 4px;</string>
@@ -177,6 +177,9 @@
             </property>
             <property name="alignment">
              <set>Qt::AlignCenter</set>
+            </property>
+            <property name="scaledContents">
+             <bool>false</bool>
             </property>
            </widget>
           </item>
@@ -649,11 +652,11 @@ Split 4-Corner: split into 4 quadrants sliding outwards
               <height>90</height>
              </size>
             </property>
-            <property name="maximumSize">
-             <size>
-              <width>160</width>
-              <height>90</height>
-             </size>
+            <property name="sizePolicy">
+             <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+              <horstretch>0</horstretch>
+              <verstretch>0</verstretch>
+             </sizepolicy>
             </property>
             <property name="styleSheet">
              <string notr="true">background-color: #18191b; border: 1px solid #2a2c30; border-radius: 4px;</string>
@@ -663,6 +666,9 @@ Split 4-Corner: split into 4 quadrants sliding outwards
             </property>
             <property name="alignment">
              <set>Qt::AlignCenter</set>
+            </property>
+            <property name="scaledContents">
+             <bool>false</bool>
             </property>
            </widget>
           </item>

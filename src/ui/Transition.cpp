@@ -40,16 +40,23 @@ void end3D() {
 }
 
 // Draws a deck's full texture as a 3D quad spanning [-aspect, aspect] × [-1, 1].
-void draw3DDeck(GLuint tex, bool ready, float alpha, float aspect) {
+void draw3DDeck(GLuint tex, bool ready, float alpha, float aspect, bool texFlipped) {
     if (!tex || !ready || alpha <= 0.f) return;
     glEnable(GL_TEXTURE_2D);
     glBindTexture(GL_TEXTURE_2D, tex);
     glColor4f(1.f, 1.f, 1.f, alpha);
     glBegin(GL_QUADS);
-    glTexCoord2f(0.f, 1.f); glVertex3f(-aspect, -1.f, 0.f);
-    glTexCoord2f(1.f, 1.f); glVertex3f( aspect, -1.f, 0.f);
-    glTexCoord2f(1.f, 0.f); glVertex3f( aspect,  1.f, 0.f);
-    glTexCoord2f(0.f, 0.f); glVertex3f(-aspect,  1.f, 0.f);
+    if (texFlipped) {
+        glTexCoord2f(0.f, 0.f); glVertex3f(-aspect, -1.f, 0.f);
+        glTexCoord2f(1.f, 0.f); glVertex3f( aspect, -1.f, 0.f);
+        glTexCoord2f(1.f, 1.f); glVertex3f( aspect,  1.f, 0.f);
+        glTexCoord2f(0.f, 1.f); glVertex3f(-aspect,  1.f, 0.f);
+    } else {
+        glTexCoord2f(0.f, 1.f); glVertex3f(-aspect, -1.f, 0.f);
+        glTexCoord2f(1.f, 1.f); glVertex3f( aspect, -1.f, 0.f);
+        glTexCoord2f(1.f, 0.f); glVertex3f( aspect,  1.f, 0.f);
+        glTexCoord2f(0.f, 0.f); glVertex3f(-aspect,  1.f, 0.f);
+    }
     glEnd();
     glBindTexture(GL_TEXTURE_2D, 0);
 }
@@ -331,6 +338,7 @@ public:
         const float alphaA  = 1.f - t;
         const float alphaB  = t;
         const float aspect  = (float)c.width / c.height;
+        const bool  flip    = c.texFlipped;
 
         begin3D(aspect);
 
@@ -378,10 +386,17 @@ public:
             glBindTexture(GL_TEXTURE_2D, c.texA);
             glColor4f(0.35f, 0.35f, 0.35f, alphaA * 0.18f);
             glBegin(GL_QUADS);
-            glTexCoord2f(0.f, 1.f); glVertex3f(-1.f, -1.f, 0.f);
-            glTexCoord2f(1.f, 1.f); glVertex3f( 1.f, -1.f, 0.f);
-            glTexCoord2f(1.f, 0.f); glVertex3f( 1.f,  1.f, 0.f);
-            glTexCoord2f(0.f, 0.f); glVertex3f(-1.f,  1.f, 0.f);
+            if (flip) {
+                glTexCoord2f(0.f, 0.f); glVertex3f(-1.f, -1.f, 0.f);
+                glTexCoord2f(1.f, 0.f); glVertex3f( 1.f, -1.f, 0.f);
+                glTexCoord2f(1.f, 1.f); glVertex3f( 1.f,  1.f, 0.f);
+                glTexCoord2f(0.f, 1.f); glVertex3f(-1.f,  1.f, 0.f);
+            } else {
+                glTexCoord2f(0.f, 1.f); glVertex3f(-1.f, -1.f, 0.f);
+                glTexCoord2f(1.f, 1.f); glVertex3f( 1.f, -1.f, 0.f);
+                glTexCoord2f(1.f, 0.f); glVertex3f( 1.f,  1.f, 0.f);
+                glTexCoord2f(0.f, 0.f); glVertex3f(-1.f,  1.f, 0.f);
+            }
             glEnd();
             glPopMatrix();
         }
@@ -392,10 +407,17 @@ public:
             glBindTexture(GL_TEXTURE_2D, c.texB);
             glColor4f(0.35f, 0.35f, 0.35f, alphaB * 0.18f);
             glBegin(GL_QUADS);
-            glTexCoord2f(0.f, 1.f); glVertex3f(-1.f, -1.f, 0.f);
-            glTexCoord2f(1.f, 1.f); glVertex3f( 1.f, -1.f, 0.f);
-            glTexCoord2f(1.f, 0.f); glVertex3f( 1.f,  1.f, 0.f);
-            glTexCoord2f(0.f, 0.f); glVertex3f(-1.f,  1.f, 0.f);
+            if (flip) {
+                glTexCoord2f(0.f, 0.f); glVertex3f(-1.f, -1.f, 0.f);
+                glTexCoord2f(1.f, 0.f); glVertex3f( 1.f, -1.f, 0.f);
+                glTexCoord2f(1.f, 1.f); glVertex3f( 1.f,  1.f, 0.f);
+                glTexCoord2f(0.f, 1.f); glVertex3f(-1.f,  1.f, 0.f);
+            } else {
+                glTexCoord2f(0.f, 1.f); glVertex3f(-1.f, -1.f, 0.f);
+                glTexCoord2f(1.f, 1.f); glVertex3f( 1.f, -1.f, 0.f);
+                glTexCoord2f(1.f, 0.f); glVertex3f( 1.f,  1.f, 0.f);
+                glTexCoord2f(0.f, 0.f); glVertex3f(-1.f,  1.f, 0.f);
+            }
             glEnd();
             glPopMatrix();
         }
@@ -485,10 +507,17 @@ public:
             glBindTexture(GL_TEXTURE_2D, tex);
             glColor4f(1.f, 1.f, 1.f, alpha);
             glBegin(GL_QUADS);
-            glTexCoord2f(0.f, 1.f); glVertex3f(-aspect, -1.f, 0.f);
-            glTexCoord2f(1.f, 1.f); glVertex3f( aspect, -1.f, 0.f);
-            glTexCoord2f(1.f, 0.f); glVertex3f( aspect,  1.f, 0.f);
-            glTexCoord2f(0.f, 0.f); glVertex3f(-aspect,  1.f, 0.f);
+            if (flip) {
+                glTexCoord2f(0.f, 0.f); glVertex3f(-aspect, -1.f, 0.f);
+                glTexCoord2f(1.f, 0.f); glVertex3f( aspect, -1.f, 0.f);
+                glTexCoord2f(1.f, 1.f); glVertex3f( aspect,  1.f, 0.f);
+                glTexCoord2f(0.f, 1.f); glVertex3f(-aspect,  1.f, 0.f);
+            } else {
+                glTexCoord2f(0.f, 1.f); glVertex3f(-aspect, -1.f, 0.f);
+                glTexCoord2f(1.f, 1.f); glVertex3f( aspect, -1.f, 0.f);
+                glTexCoord2f(1.f, 0.f); glVertex3f( aspect,  1.f, 0.f);
+                glTexCoord2f(0.f, 0.f); glVertex3f(-aspect,  1.f, 0.f);
+            }
             glEnd();
             glBindTexture(GL_TEXTURE_2D, 0);
         };
@@ -550,14 +579,14 @@ public:
             glPushMatrix();
             glRotatef(-t * 90.f, 0.f, 1.f, 0.f);
             glTranslatef(0.f, 0.f, aspect);
-            draw3DDeck(c.texA, c.readyA, alphaA, aspect);
+            draw3DDeck(c.texA, c.readyA, alphaA, aspect, c.texFlipped);
             glPopMatrix();
         }
         if (alphaB > 0.f) {                       // face B rotates in from the right
             glPushMatrix();
             glRotatef(90.f - t * 90.f, 0.f, 1.f, 0.f);
             glTranslatef(0.f, 0.f, aspect);
-            draw3DDeck(c.texB, c.readyB, alphaB, aspect);
+            draw3DDeck(c.texB, c.readyB, alphaB, aspect, c.texFlipped);
             glPopMatrix();
         }
 
@@ -579,10 +608,10 @@ public:
         glPushMatrix();
         glRotatef(-t * 180.f, 0.f, 1.f, 0.f);     // flip the whole card
         if (t < 0.5f) {
-            draw3DDeck(c.texA, c.readyA, alphaA, aspect);
+            draw3DDeck(c.texA, c.readyA, alphaA, aspect, c.texFlipped);
         } else {
             glRotatef(180.f, 0.f, 1.f, 0.f);      // face the back card's texture forward
-            draw3DDeck(c.texB, c.readyB, alphaB, aspect);
+            draw3DDeck(c.texB, c.readyB, alphaB, aspect, c.texFlipped);
         }
         glPopMatrix();
 

@@ -127,6 +127,8 @@ public:
     // blit. Future outputs (NDI, recording, second monitor) read the same FBO.
     static constexpr int kProgramWidth  = 1280;
     static constexpr int kProgramHeight = 720;
+    static constexpr int kDeckPreviewWidth  = 640;
+    static constexpr int kDeckPreviewHeight = 360;
 
     GLuint programColorTexture() const { return m_programColorTex; }
     QSize  programFrameSize()    const { return {kProgramWidth, kProgramHeight}; }
@@ -136,6 +138,11 @@ public:
     void removeProgramFrameConsumer();
     void setProgramFrameConsumerCount(int count);
     QImage programFrame() const { return m_programFrameCache; }
+
+    /// Enable CPU readback of per-deck FBOs for A/B preview labels.
+    void addDeckPreviewConsumer();
+    void removeDeckPreviewConsumer();
+    void setDeckPreviewConsumerCount(int count);
 
     /// Read back the current program compositor frame (1280×720 RGBA).
     QImage captureProgramFrame();
@@ -220,6 +227,8 @@ private:
                                 const QRectF &bounds) const;
     void   renderTexture(GLuint tex, float cx, float cy, float cw, float ch,
                          float dstX, float dstY, float dstW, float dstH);
+    void   renderFboTexture(GLuint tex, float dstX, float dstY, float dstW, float dstH,
+                            float alpha);
     void   renderOverlays(QPainter &p, const QList<OverlayItem> &overlays,
                           const QRectF &videoRect, float globalAlpha);
     bool   advanceSource(MediaSource *source, bool &playing, bool repeat,
@@ -246,16 +255,29 @@ private:
     int renderH() const { return m_compH > 0 ? m_compH : height(); }
 
     void ensureProgramFbo();
+    void ensureDeckFbos();
     void destroyProgramFbo();
+    void renderDeckToFbo(bool deckA);
     void renderCompositionGL();
     void blitProgramToScreen();
     void cacheProgramFrameFromFbo();
+    void cacheDeckPreviewFromFbo(bool deckA);
     QRectF scaleRectToWidget(const QRectF &programRect) const;
+    QImage deckPreviewWithOverlays(bool deckA) const;
 
     GLuint m_programFbo      = 0;
     GLuint m_programColorTex = 0;
+    GLuint m_deckFboA        = 0;
+    GLuint m_deckColorTexA   = 0;
+    GLuint m_deckFboB        = 0;
+    GLuint m_deckColorTexB   = 0;
     int    m_compW           = 0;
     int    m_compH           = 0;
     int    m_programFrameConsumers = 0;
+    int    m_deckPreviewConsumers  = 0;
     QImage m_programFrameCache;
+    QImage m_deckPreviewA;
+    QImage m_deckPreviewB;
+    QRectF m_videoRectProgramA;
+    QRectF m_videoRectProgramB;
 };

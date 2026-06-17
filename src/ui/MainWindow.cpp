@@ -50,6 +50,7 @@
 #include <QDialog>
 #include <QStackedWidget>
 #include <QCloseEvent>
+#include <QSplitter>
 #include <QStandardPaths>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -68,8 +69,11 @@ MainWindow::MainWindow(QWidget *parent)
     m_outputWindow = new OutputWindow(this);
     m_outputWindow->show();
 
+    setupPreviewSplitters();
+
     m_outputHub = new OutputHub(this);
     m_outputHub->setProgramSource(m_outputWindow->videoWidget());
+    m_outputWindow->videoWidget()->addDeckPreviewConsumer();
 
     m_obsIntegration = new ObsIntegration(this);
     m_obsScenesMenu = new QMenu(tr("OBS Scenes"), this);
@@ -285,6 +289,128 @@ void MainWindow::handleStartupRecovery() {
     const QString autosave = SessionManager::autosavePath();
     if (QFile::exists(autosave))
         loadFromFile(autosave, false);
+}
+
+// ── Preview splitters (manual resize via dividers) ────────────────────────────
+
+void MainWindow::setupDeckPreviewSplitter(bool deckA) {
+    QVBoxLayout *deckLayout = deckA ? ui->aDeckLayout : ui->bDeckLayout;
+    QLabel *preview = deckA ? ui->aPreviewLabel : ui->bPreviewLabel;
+    QGroupBox *group = deckA ? ui->aDeckGroup : ui->bDeckGroup;
+
+    auto *controls = new QWidget(group);
+    auto *controlsLayout = new QVBoxLayout(controls);
+    controlsLayout->setContentsMargins(0, 0, 0, 0);
+    controlsLayout->setSpacing(4);
+
+    const int previewIndex = deckLayout->indexOf(preview);
+    while (deckLayout->count() > previewIndex + 1) {
+        QLayoutItem *item = deckLayout->takeAt(previewIndex + 1);
+        if (!item)
+            break;
+        if (QWidget *w = item->widget()) {
+            controlsLayout->addWidget(w);
+            delete item;
+        } else {
+            // Spacer (or other non-widget item): transfer ownership to the new layout.
+            controlsLayout->addItem(item);
+        }
+    }
+
+    if (QLayoutItem *previewItem = deckLayout->takeAt(previewIndex))
+        delete previewItem;
+
+    auto *vSplit = new QSplitter(Qt::Vertical, group);
+    vSplit->setObjectName(deckA ? QStringLiteral("aPreviewSplitter")
+                                : QStringLiteral("bPreviewSplitter"));
+    vSplit->setChildrenCollapsible(false);
+    vSplit->addWidget(preview);
+    vSplit->addWidget(controls);
+    vSplit->setStretchFactor(0, 0);
+    vSplit->setStretchFactor(1, 1);
+    vSplit->setSizes({120, 160});
+
+    deckLayout->addWidget(vSplit, 1);
+}
+
+void MainWindow::setupPreviewSplitters() {
+    auto *mainLayout = qobject_cast<QVBoxLayout *>(ui->centralwidget->layout());
+    if (!mainLayout)
+        return;
+
+    auto *mainSplitter = new QSplitter(Qt::Vertical);
+    mainSplitter->setObjectName(QStringLiteral("mainVerticalSplitter"));
+    mainSplitter->setChildrenCollapsible(false);
+
+    mainLayout->removeWidget(ui->gridGroup);
+    mainLayout->removeWidget(ui->controlGroup);
+    mainSplitter->addWidget(ui->gridGroup);
+    mainSplitter->addWidget(ui->controlGroup);
+    mainLayout->insertWidget(0, mainSplitter, 1);
+    mainSplitter->setStretchFactor(0, 1);
+    mainSplitter->setStretchFactor(1, 0);
+    mainSplitter->setSizes({700, 300});
+
+    while (ui->controlLayout->count() > 0) {
+        QLayoutItem *item = ui->controlLayout->takeAt(0);
+        delete item;
+    }
+
+    auto *centerWidget = new QWidget();
+    auto *centerLayout = new QVBoxLayout(centerWidget);
+    centerLayout->setContentsMargins(0, 0, 0, 0);
+    centerLayout->setSpacing(4);
+    centerLayout->addWidget(ui->faderGroup);
+    centerLayout->addWidget(ui->panicGroup);
+    centerLayout->addStretch(1);
+
+    auto *deckHSplitter = new QSplitter(Qt::Horizontal);
+    deckHSplitter->setObjectName(QStringLiteral("deckHorizontalSplitter"));
+    deckHSplitter->setChildrenCollapsible(false);
+    deckHSplitter->addWidget(ui->aDeckGroup);
+    deckHSplitter->addWidget(centerWidget);
+    deckHSplitter->addWidget(ui->bDeckGroup);
+    deckHSplitter->setStretchFactor(0, 0);
+    deckHSplitter->setStretchFactor(1, 1);
+    deckHSplitter->setStretchFactor(2, 0);
+    deckHSplitter->setSizes({220, 200, 220});
+    ui->controlLayout->addWidget(deckHSplitter);
+
+    setupDeckPreviewSplitter(true);
+    setupDeckPreviewSplitter(false);
+
+    const auto connectSplitter = [this](QSplitter *splitter) {
+        connect(splitter, &QSplitter::splitterMoved,
+                this, &MainWindow::refreshPreviewPixmaps);
+    };
+    connectSplitter(mainSplitter);
+    connectSplitter(deckHSplitter);
+    if (auto *s = findChild<QSplitter *>(QStringLiteral("aPreviewSplitter")))
+        connectSplitter(s);
+    if (auto *s = findChild<QSplitter *>(QStringLiteral("bPreviewSplitter")))
+        connectSplitter(s);
+}
+
+void MainWindow::refreshPreviewPixmaps() {
+    if (!m_outputWindow)
+        return;
+    auto *out = m_outputWindow->videoWidget();
+    if (!out)
+        return;
+
+    const QImage frameA = out->getFrameA();
+    if (!frameA.isNull()) {
+        ui->aPreviewLabel->setPixmap(QPixmap::fromImage(
+            frameA.scaled(ui->aPreviewLabel->size(), Qt::KeepAspectRatio,
+                          Qt::SmoothTransformation)));
+    }
+
+    const QImage frameB = out->getFrameB();
+    if (!frameB.isNull()) {
+        ui->bPreviewLabel->setPixmap(QPixmap::fromImage(
+            frameB.scaled(ui->bPreviewLabel->size(), Qt::KeepAspectRatio,
+                          Qt::SmoothTransformation)));
+    }
 }
 
 // ── Signal wiring ─────────────────────────────────────────────────────────────
@@ -793,11 +919,6 @@ void MainWindow::onTimerUpdate() {
     }
     ui->aDeckPlayBtn->setText(out->isPlayingA() ? "⏸" : "▶");
 
-    QImage frameA = out->getFrameA();
-    if (!frameA.isNull())
-        ui->aPreviewLabel->setPixmap(QPixmap::fromImage(
-            frameA.scaled(160, 90, Qt::KeepAspectRatio, Qt::FastTransformation)));
-
     // B deck
     double durB  = out->getDurationB();
     double timeB = out->getCurrentTimeB();
@@ -820,10 +941,7 @@ void MainWindow::onTimerUpdate() {
     }
     ui->bDeckPlayBtn->setText(out->isPlayingB() ? "⏸" : "▶");
 
-    QImage frameB = out->getFrameB();
-    if (!frameB.isNull())
-        ui->bPreviewLabel->setPixmap(QPixmap::fromImage(
-            frameB.scaled(160, 90, Qt::KeepAspectRatio, Qt::FastTransformation)));
+    refreshPreviewPixmaps();
 }
 
 // ── Drag & drop ───────────────────────────────────────────────────────────────
@@ -1125,6 +1243,18 @@ void MainWindow::applyTheme() {
             border-left: 1px solid #c04030;
             border-bottom: 1px solid #3a100c;
             border-right: 1px solid #3a100c;
+        }
+        QSplitter::handle {
+            background-color: #2a2c30;
+        }
+        QSplitter::handle:hover {
+            background-color: #2a8fa0;
+        }
+        QSplitter::handle:horizontal {
+            width: 5px;
+        }
+        QSplitter::handle:vertical {
+            height: 5px;
         }
     )");
 }
