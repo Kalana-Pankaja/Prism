@@ -8,6 +8,7 @@
 #include "ui/OutputWindow.h"
 #include "ui/HotkeyManager.h"
 #include "ui/SessionManager.h"
+#include <QJsonObject>
 #include "ui/TransitionController.h"
 #include "ui/DeckController.h"
 #include "ui/OutputHub.h"
@@ -105,6 +106,7 @@ private:
 
     ClipManager clipManager;
     QTimer     *updateTimer = nullptr;
+    QTimer     *m_autosaveTimer = nullptr;
 
     // ── Extracted controllers ─────────────────────────────────────────────────
     HotkeyManager      *m_hotkeyManager      = nullptr;
@@ -122,6 +124,10 @@ private:
     void applyTheme();
 
     void loadFromFile(const QString &path, bool showErrors);
+    void handleStartupRecovery();
+    void performAutosave();
+    QJsonObject currentSessionJson() const;
+    QJsonObject currentSessionJson(const QString &sessionFilePath) const;
     void addElementNode(const SourceDescriptor &desc, const QPixmap &thumb);
     void appendClipsToEditor(const QStringList &clipPaths);
 

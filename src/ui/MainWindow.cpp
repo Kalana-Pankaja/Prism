@@ -16,6 +16,7 @@
 #include "core/NdiSource.h"
 #include "ui/ObsWebSocketClient.h"
 #include "ui/HotkeyEditorDialog.h"
+#include "ui/SessionRecoveryDialog.h"
 #include "ui/ShaderEditDialog.h"
 #include "ui/HtmlEditDialog.h"
 #include "ui/RemoteControlServer.h"
@@ -88,6 +89,20 @@ MainWindow::MainWindow(QWidget *parent)
         ui->actionNdiOutput->setToolTip(
             tr("NDI SDK not found at build time. Install the NDI SDK and rebuild with -DNDI_ROOT=…"));
     }
+
+    ui->actionVirtualCameraOutput->setEnabled(m_outputHub->virtualCameraAvailable());
+    if (!m_outputHub->virtualCameraAvailable()) {
+        ui->actionVirtualCameraOutput->setToolTip(
+            tr("Virtual camera output is only available on Linux with v4l2loopback loaded "
+               "(sudo modprobe v4l2loopback)."));
+    } else {
+        const QString dev = m_outputHub->virtualCameraDevicePath();
+        ui->actionVirtualCameraOutput->setToolTip(
+            tr("Expose the program mix as a webcam via %1 (v4l2loopback). "
+               "Select as a camera source in OBS, Zoom, etc.")
+                .arg(dev.isEmpty() ? tr("a v4l2loopback device") : dev));
+    }
+
     ui->actionAddNdi->setEnabled(NdiSource::isAvailable());
     if (!NdiSource::isAvailable()) {
         ui->actionAddNdi->setToolTip(
@@ -144,9 +159,13 @@ MainWindow::MainWindow(QWidget *parent)
     connect(updateTimer, &QTimer::timeout, this, &MainWindow::onTimerUpdate);
     updateTimer->start(100);
 
-    const QString autosave = SessionManager::autosavePath();
-    if (QFile::exists(autosave))
-        loadFromFile(autosave, false);  // will call m_sessionManager->loadFromFile
+    handleStartupRecovery();
+
+    m_autosaveTimer = new QTimer(this);
+    connect(m_autosaveTimer, &QTimer::timeout, this, &MainWindow::performAutosave);
+    m_autosaveTimer->start(SessionManager::kDefaultAutosaveIntervalMs);
+
+    SessionManager::markRunning();
 
     qDebug() << "SwitchX initialized - Live Media Control Mode";
 }
@@ -224,6 +243,7 @@ void MainWindow::buildEmptyPlaceholder() {
 MainWindow::~MainWindow() {
     m_outputHub->setProgramRecordingEnabled(false);
     m_outputHub->setNdiOutputEnabled(false);
+    m_outputHub->setVirtualCameraEnabled(false);
     m_obsIntegration->disconnectFromObs();
     m_deckController->stopDeckAudio(true);
     m_deckController->stopDeckAudio(false);
@@ -231,20 +251,59 @@ MainWindow::~MainWindow() {
 }
 
 void MainWindow::closeEvent(QCloseEvent *event) {
-    // Build session JSON from current state and save.
-    QFile file(SessionManager::autosavePath());
-    if (file.open(QIODevice::WriteOnly)) {
-        auto json = m_sessionManager->buildJson(
-            ui->crossfaderSlider->value(),
-            m_transitionCtrl->currentModeIndex(),
-            m_transitionCtrl->currentDurationSecs(),
-            m_deckController->activeNodeA(),
-            m_deckController->activeNodeB(),
-            m_hotkeyManager->nodeHotkeys(),
-            SessionManager::autosavePath());
-        file.write(QJsonDocument(json).toJson(QJsonDocument::Indented));
-    }
+    performAutosave();
+    SessionManager::markCleanExit();
     QMainWindow::closeEvent(event);
+}
+
+QJsonObject MainWindow::currentSessionJson() const {
+    return currentSessionJson(SessionManager::autosavePath());
+}
+
+QJsonObject MainWindow::currentSessionJson(const QString &sessionFilePath) const {
+    return m_sessionManager->buildJson(
+        ui->crossfaderSlider->value(),
+        m_transitionCtrl->currentModeIndex(),
+        m_transitionCtrl->currentDurationSecs(),
+        m_deckController->activeNodeA(),
+        m_deckController->activeNodeB(),
+        m_hotkeyManager->nodeHotkeys(),
+        sessionFilePath);
+}
+
+void MainWindow::performAutosave() {
+    if (!m_sessionManager)
+        return;
+    m_sessionManager->saveAutosave(currentSessionJson());
+}
+
+void MainWindow::handleStartupRecovery() {
+    const SessionManager::RecoveryInfo recovery = SessionManager::checkRecovery();
+    if (recovery.uncleanShutdown) {
+        SessionRecoveryDialog dlg(recovery.autosavePath, recovery.backupPaths, this);
+        if (dlg.exec() != QDialog::Accepted)
+            return;
+
+        switch (dlg.choice()) {
+        case SessionRecoveryDialog::Choice::RecoverAutosave:
+            if (QFile::exists(recovery.autosavePath))
+                loadFromFile(recovery.autosavePath, false);
+            break;
+        case SessionRecoveryDialog::Choice::RecoverBackup: {
+            const QString path = dlg.selectedBackupPath();
+            if (!path.isEmpty())
+                loadFromFile(path, false);
+            break;
+        }
+        case SessionRecoveryDialog::Choice::StartFresh:
+            break;
+        }
+        return;
+    }
+
+    const QString autosave = SessionManager::autosavePath();
+    if (QFile::exists(autosave))
+        loadFromFile(autosave, false);
 }
 
 // ── Signal wiring ─────────────────────────────────────────────────────────────
@@ -309,6 +368,28 @@ void MainWindow::setupConnections() {
         ui->actionNdiOutput->blockSignals(true);
         ui->actionNdiOutput->setChecked(on);
         ui->actionNdiOutput->blockSignals(false);
+    });
+    connect(ui->actionVirtualCameraOutput, &QAction::toggled, this, [this](bool on) {
+        if (!m_outputHub->setVirtualCameraEnabled(on)) {
+            ui->actionVirtualCameraOutput->blockSignals(true);
+            ui->actionVirtualCameraOutput->setChecked(false);
+            ui->actionVirtualCameraOutput->blockSignals(false);
+            if (on) {
+                const QString dev = m_outputHub->virtualCameraDevicePath();
+                QMessageBox::warning(this, tr("Virtual Camera Output"),
+                    tr("Could not start virtual camera output on %1.\n\n"
+                       "Ensure v4l2loopback is loaded:\n"
+                       "  sudo modprobe v4l2loopback\n\n"
+                       "You may need to specify a device path in settings if the "
+                       "loopback device is not at the default location.")
+                        .arg(dev.isEmpty() ? tr("(unknown device)") : dev));
+            }
+        }
+    });
+    connect(m_outputHub, &OutputHub::virtualCameraEnabledChanged, this, [this](bool on) {
+        ui->actionVirtualCameraOutput->blockSignals(true);
+        ui->actionVirtualCameraOutput->setChecked(on);
+        ui->actionVirtualCameraOutput->blockSignals(false);
     });
     connect(ui->actionRecordProgram, &QAction::toggled, this, [this](bool on) {
         if (!m_outputHub->setProgramRecordingEnabled(on)) {
@@ -1083,21 +1164,10 @@ void MainWindow::onSaveSessionClicked() {
     if (path.isEmpty()) return;
     if (!path.endsWith(".sxs", Qt::CaseInsensitive)) path += ".sxs";
 
-    QFile file(path);
-    if (!file.open(QIODevice::WriteOnly)) {
+    if (!m_sessionManager->writeSessionFile(currentSessionJson(path), path)) {
         QMessageBox::warning(this, "Save Session",
                              QString("Cannot write to file:\n%1").arg(path));
-        return;
     }
-    auto json = m_sessionManager->buildJson(
-        ui->crossfaderSlider->value(),
-        m_transitionCtrl->currentModeIndex(),
-        m_transitionCtrl->currentDurationSecs(),
-        m_deckController->activeNodeA(),
-        m_deckController->activeNodeB(),
-        m_hotkeyManager->nodeHotkeys(),
-        path);
-    file.write(QJsonDocument(json).toJson(QJsonDocument::Indented));
 }
 
 void MainWindow::onLoadSessionClicked() {

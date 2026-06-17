@@ -88,6 +88,7 @@ set(SOURCES
     src/ui/MirrorOutputWindow.cpp
     src/ui/OutputHub.cpp
     src/ui/NdiProgramSink.cpp
+    src/ui/VirtualCameraProgramSink.cpp
     src/ui/ObsWebSocketClient.cpp
     src/ui/ObsIntegration.cpp
     src/ui/ProgramRecorder.cpp
@@ -98,6 +99,7 @@ set(SOURCES
     src/ui/HotkeyManager.cpp
     src/ui/HotkeyEditorDialog.cpp
     src/ui/SessionManager.cpp
+    src/ui/SessionRecoveryDialog.cpp
     src/ui/TransitionController.cpp
     src/ui/DeckController.cpp
     src/ui/SourceFactory.cpp
@@ -143,6 +145,7 @@ set(HEADERS
     include/ui/MirrorOutputWindow.h
     include/ui/OutputHub.h
     include/ui/NdiProgramSink.h
+    include/ui/VirtualCameraProgramSink.h
     include/ui/ObsWebSocketClient.h
     include/ui/ObsIntegration.h
     include/ui/ProgramRecorder.h
@@ -154,6 +157,7 @@ set(HEADERS
     include/ui/HotkeyManager.h
     include/ui/HotkeyEditorDialog.h
     include/ui/SessionManager.h
+    include/ui/SessionRecoveryDialog.h
     include/ui/TransitionController.h
     include/ui/DeckController.h
     include/ui/SourceFactory.h

@@ -821,6 +821,7 @@ Split 4-Corner: split into 4 quadrants sliding outwards
     <addaction name="actionEditHotkeys"/>
     <addaction name="separator"/>
     <addaction name="actionNdiOutput"/>
+    <addaction name="actionVirtualCameraOutput"/>
     <addaction name="actionRecordProgram"/>
     <addaction name="actionDropMarker"/>
     <addaction name="separator"/>
@@ -971,6 +972,17 @@ Split 4-Corner: split into 4 quadrants sliding outwards
    </property>
    <property name="toolTip">
     <string>Send the program mix as an NDI source (SwitchX Program) for OBS, vMix, etc.</string>
+   </property>
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+  </action>
+  <action name="actionVirtualCameraOutput">
+   <property name="text">
+    <string>Virtual Camera Output</string>
+   </property>
+   <property name="toolTip">
+    <string>Expose the program mix as a webcam (v4l2loopback on Linux). Load the module first: sudo modprobe v4l2loopback</string>
    </property>
    <property name="checkable">
     <bool>true</bool>
