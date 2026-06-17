@@ -1,63 +1,56 @@
-name: Build and Test
+name: Build
 
 on:
   push:
-    branches: [master, main, develop]
+    branches: [main, master, develop]
   pull_request:
-    branches: [master, main, develop]
+    branches: [main, master, develop]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  build:
-    strategy:
-      matrix:
-        os: [ubuntu-latest]
-    runs-on: ${{ matrix.os }}
+  build-linux:
+    runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Qt (Linux)
-        if: matrix.os == 'ubuntu-latest'
+      - name: Install dependencies
         run: |
           sudo apt update
-          sudo apt install -y qt6-base-dev qt6-tools-dev libgl1-mesa-dev qt6-websockets-dev
-
-      - name: Install FFmpeg (Linux)
-        if: matrix.os == 'ubuntu-latest'
-        run: |
-          sudo apt install -y libavcodec-dev libavformat-dev libavutil-dev libswscale-dev
-
-      - name: Install Qt (macOS)
-        if: matrix.os == 'macos-latest'
-        run: |
-          brew install qt@6
-
-      - name: Install FFmpeg (macOS)
-        if: matrix.os == 'macos-latest'
-        run: |
-          brew install ffmpeg
-
-      - name: Install Qt (Windows)
-        if: matrix.os == 'windows-latest'
-        uses: jurplel/install-qt-action@v3
-        with:
-          version: "6.7.0"
-          host: windows
-          target: desktop
-          arch: win64_msvc2019_64
-          tools: cmake
-
-      - name: Install FFmpeg (Windows)
-        if: matrix.os == 'windows-latest'
-        run: |
-          choco install ffmpeg -y
+          sudo apt install -y \
+            build-essential \
+            cmake \
+            pkg-config \
+            qt6-base-dev \
+            qt6-tools-dev \
+            qt6-multimedia-dev \
+            qt6-webengine-dev \
+            qt6-websockets-dev \
+            libgl1-mesa-dev \
+            libgstreamer1.0-dev \
+            libgstreamer-plugins-base1.0-dev \
+            libavcodec-dev \
+            libavformat-dev \
+            libavutil-dev \
+            libswscale-dev \
+            libswresample-dev \
+            libre2-dev
 
       - name: Configure CMake
-        run: cmake -B build -DCMAKE_BUILD_TYPE=Release
+        run: |
+          cmake -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DSWITCHX_WITH_NDI=OFF
 
       - name: Build
-        run: cmake --build build --config Release
+        run: cmake --build build --parallel
 
       - name: Test
         working-directory: build
-        run: ctest --output-on-failure || true
+        run: ctest --output-on-failure
