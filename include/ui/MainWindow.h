@@ -9,6 +9,7 @@
 #include "ui/OutputWindow.h"
 #include "ui/HotkeyManager.h"
 #include "ui/SessionManager.h"
+#include "ui/AssetLibrary.h"
 #include <QJsonObject>
 #include "ui/TransitionController.h"
 #include "ui/DeckController.h"
@@ -94,6 +95,8 @@ private:
     OutputWindow   *m_outputWindow   = nullptr;
 
     class QStackedWidget *m_stackWidget       = nullptr;
+    class QSplitter      *m_editorSplitter    = nullptr;
+    AssetLibrary         *m_assetLibrary      = nullptr;
     ClipNodeEditor       *m_clipNodeEditor    = nullptr;
     QWidget              *m_emptyPlaceholder  = nullptr;
 
@@ -138,7 +141,6 @@ private:
     QJsonObject currentSessionJson(const QString &sessionFilePath) const;
     void addElementNode(const SourceDescriptor &desc, const QPixmap &thumb);
     void addSourceOfKind(SourceDescriptor::Kind kind);
-    void appendClipsToEditor(const QStringList &clipPaths);
     void setupAddElementMenu(QMenu *menu);
     void setupRecordingStatusBar();
     void updateRecordingUi(qint64 elapsedMs = -1);

@@ -190,6 +190,14 @@ QJsonObject SessionManager::buildJson(int crossfader, int transitionMode,
     }
     root["hotkeys"] = hotkeys;
     root["graph"]   = m_editor->saveState(sessionDir);
+
+    QJsonArray assetLibrary;
+    for (const QString &path : m_clipManager->getClips()) {
+        assetLibrary.append(sessionDir.isAbsolute()
+            ? AssetPathResolver::storePath(path, sessionDir)
+            : path);
+    }
+    root["assetLibrary"] = assetLibrary;
     return root;
 }
 
@@ -237,6 +245,19 @@ bool SessionManager::loadFromFile(const QString &path, bool showErrors) {
         relinkOpts.sessionDir = QDir(QFileInfo(path).absolutePath());
 
     AssetPathResolver::RelinkReport relinkReport;
+
+    QJsonArray libArr = root["assetLibrary"].toArray();
+    QStringList libPaths;
+    for (const QJsonValue &v : libArr) {
+        const QString stored = v.toString();
+        if (stored.isEmpty())
+            continue;
+        const QString resolved = AssetPathResolver::resolvePath(stored, relinkOpts, false);
+        if (!resolved.isEmpty())
+            libPaths << resolved;
+    }
+    if (!libPaths.isEmpty())
+        m_clipManager->addFiles(libPaths);
 
     // Re-generate thumbnails for every restored node ─────────────────────────
     for (ClipNodeModel *model : m_editor->allNodes()) {

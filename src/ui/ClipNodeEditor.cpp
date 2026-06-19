@@ -45,9 +45,16 @@
 #include <QObject>
 #include "core/VideoPlayer.h"
 #include "core/ThumbnailExtractor.h"
+#include "core/ClipManager.h"
 #include <QFile>
+#include <QFileInfo>
 #include <QThread>
 #include <QFileDialog>
+#include <QDragEnterEvent>
+#include <QDragMoveEvent>
+#include <QDropEvent>
+#include <QMimeData>
+#include <QUrl>
 
 static constexpr qreal CARD_W        = 122.0;
 static constexpr qreal CARD_PROXY_H  = 175.0;
@@ -1406,6 +1413,7 @@ QVariant GroupNodeItem::itemChange(GraphicsItemChange change, const QVariant &va
 class ClipNodeView : public QGraphicsView {
 public:
     std::function<void()> onDeleteSelection;
+    std::function<void(const QStringList &, const QPoint &)> onFileDrop;
 
     explicit ClipNodeView(QGraphicsScene *scene, QWidget *parent = nullptr)
         : QGraphicsView(scene, parent)
@@ -1419,10 +1427,40 @@ public:
         setSceneRect(-5000, -5000, 10000, 10000);
         setDragMode(RubberBandDrag);
         setFocusPolicy(Qt::StrongFocus);
+        setAcceptDrops(true);
         scene->setItemIndexMethod(QGraphicsScene::NoIndex);
     }
 
 protected:
+    void dragEnterEvent(QDragEnterEvent *e) override {
+        if (e->mimeData()->hasUrls())
+            e->acceptProposedAction();
+    }
+
+    void dragMoveEvent(QDragMoveEvent *e) override {
+        if (e->mimeData()->hasUrls())
+            e->acceptProposedAction();
+    }
+
+    void dropEvent(QDropEvent *e) override {
+        if (!e->mimeData()->hasUrls()) {
+            e->ignore();
+            return;
+        }
+        e->acceptProposedAction();
+        if (!onFileDrop)
+            return;
+
+        QStringList paths;
+        for (const QUrl &url : e->mimeData()->urls()) {
+            const QString path = url.toLocalFile();
+            if (!path.isEmpty() && QFileInfo(path).isFile() && ClipManager::isMediaPath(path))
+                paths << path;
+        }
+        if (!paths.isEmpty())
+            onFileDrop(paths, e->position().toPoint());
+    }
+
     void wheelEvent(QWheelEvent *e) override {
         const qreal factor = e->angleDelta().y() > 0 ? 1.12 : 1.0 / 1.12;
         scale(factor, factor);
@@ -1486,7 +1524,18 @@ ClipNodeEditor::ClipNodeEditor(QWidget *parent)
     };
 
     m_view = new ClipNodeView(m_scene, this);
-    static_cast<ClipNodeView *>(m_view)->onDeleteSelection = [this]() { deleteSelection(m_view); };
+    auto *nodeView = static_cast<ClipNodeView *>(m_view);
+    nodeView->onDeleteSelection = [this]() { deleteSelection(m_view); };
+    nodeView->onFileDrop = [this](const QStringList &paths, const QPoint &viewPos) {
+        const QPoint globalPos = m_view->mapToGlobal(viewPos);
+        for (int i = 0; i < paths.size(); ++i) {
+            ClipNodeModel *model = addClipNode(paths.at(i),
+                                               ThumbnailExtractor::extract(paths.at(i), 110, 65),
+                                               nullptr, m_view);
+            if (auto *item = dynamic_cast<ClipNodeItem *>(m_itemMap.value(model->nodeId())))
+                item->setPos(scenePosForView(m_view, globalPos) + QPointF(i * 20.0, i * 20.0));
+        }
+    };
 
     auto *layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);

@@ -31,31 +31,28 @@
      <number>10</number>
     </property>
     <item>
-     <widget class="QGroupBox" name="gridGroup">
+     <widget class="QWidget" name="gridGroup">
       <property name="sizePolicy">
        <sizepolicy hsizetype="Preferred" vsizetype="Expanding">
         <horstretch>0</horstretch>
         <verstretch>1</verstretch>
        </sizepolicy>
       </property>
-      <property name="title">
-       <string>Clip Grid Launcher</string>
-      </property>
       <layout class="QVBoxLayout" name="gridGroupLayout">
        <property name="spacing">
-        <number>8</number>
+        <number>0</number>
        </property>
        <property name="leftMargin">
-        <number>10</number>
+        <number>0</number>
        </property>
        <property name="topMargin">
-        <number>10</number>
+        <number>0</number>
        </property>
        <property name="rightMargin">
-        <number>10</number>
+        <number>0</number>
        </property>
        <property name="bottomMargin">
-        <number>10</number>
+        <number>0</number>
        </property>
        <item>
         <widget class="QScrollArea" name="clipsScrollArea">
@@ -829,10 +826,10 @@ Split 4-Corner: split into 4 quadrants sliding outwards
   <!-- ── Actions ──────────────────────────────────────────────────────── -->
   <action name="actionLoadFolder">
    <property name="text">
-    <string>📁  Load Folder…</string>
+    <string>📄  Add Files…</string>
    </property>
    <property name="toolTip">
-    <string>Load a folder — replaces current clips</string>
+    <string>Select media files to add to the Asset Library</string>
    </property>
   </action>
   <action name="actionAddFolder">
@@ -840,7 +837,7 @@ Split 4-Corner: split into 4 quadrants sliding outwards
     <string>📂  Add Folder…</string>
    </property>
    <property name="toolTip">
-    <string>Append another folder's clips without replacing the current ones</string>
+    <string>Add all supported media files from a folder to the Asset Library</string>
    </property>
   </action>
   <action name="actionSaveSession">

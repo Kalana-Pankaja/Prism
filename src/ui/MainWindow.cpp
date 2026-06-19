@@ -25,6 +25,8 @@
 #include "ui/MainWindowUtils.h"
 #include "ui/FrameCaptureHelper.h"
 #include "ui/RecordingSettingsDialog.h"
+#include "core/ClipManager.h"
+#include "ui/AssetLibrary.h"
 #include <QApplication>
 #include <QCoreApplication>
 #include <QDir>
@@ -45,6 +47,7 @@
 #include <QMessageBox>
 #include <QMediaDevices>
 #include <QCameraDevice>
+#include <QSplitter>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -55,7 +58,6 @@
 #include <QDialog>
 #include <QStackedWidget>
 #include <QCloseEvent>
-#include <QSplitter>
 #include <QStatusBar>
 #include <QFont>
 #include <QJsonDocument>
@@ -120,10 +122,11 @@ MainWindow::MainWindow(QWidget *parent)
 
     setupAddElementMenu(ui->menuAddElement);
 
-    // ── Stacked widget (node editor vs empty placeholder) ─────────────────────
-    m_stackWidget = new QStackedWidget(ui->gridWidget);
-    ui->gridLayout->addWidget(m_stackWidget, 0, 0, 1, 1);
+    // ── Asset library + node editor (left sidebar + canvas) ───────────────────
+    m_assetLibrary = new AssetLibrary(&clipManager);
+    m_assetLibrary->setMinimumWidth(160);
 
+    m_stackWidget = new QStackedWidget(ui->gridWidget);
     m_clipNodeEditor = new ClipNodeEditor();
     m_clipNodeEditor->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
     m_stackWidget->addWidget(m_clipNodeEditor);
@@ -131,6 +134,20 @@ MainWindow::MainWindow(QWidget *parent)
     buildEmptyPlaceholder();
     m_stackWidget->addWidget(m_emptyPlaceholder);
     m_stackWidget->setCurrentWidget(m_emptyPlaceholder);
+
+    m_editorSplitter = new QSplitter(Qt::Horizontal, ui->gridWidget);
+    m_editorSplitter->addWidget(m_assetLibrary);
+    m_editorSplitter->addWidget(m_stackWidget);
+    m_editorSplitter->setStretchFactor(0, 0);
+    m_editorSplitter->setStretchFactor(1, 1);
+    m_editorSplitter->setSizes({220, 800});
+    ui->gridLayout->addWidget(m_editorSplitter, 0, 0, 1, 1);
+
+    connect(m_assetLibrary, &AssetLibrary::addAsClipRequested,
+            this, [this](const QString &path, const QPixmap &thumb) {
+        m_clipNodeEditor->addClipNode(path, thumb);
+        m_stackWidget->setCurrentWidget(m_clipNodeEditor);
+    });
 
     // ── Controllers ───────────────────────────────────────────────────────────
     m_deckController = new DeckController(m_outputWindow, m_clipNodeEditor, this);
@@ -677,43 +694,34 @@ void MainWindow::setupConnections() {
 // ── Folder / file loading ─────────────────────────────────────────────────────
 
 void MainWindow::onLoadFolderClicked() {
-    QString path = QFileDialog::getExistingDirectory(this, "Select Media Folder");
-    if (path.isEmpty()) return;
-    m_clipNodeEditor->clearAllNodes();
-    clipManager.loadFolder(path);
-    m_deckController->setActiveNodeA(0);
-    m_deckController->setActiveNodeB(0);
-    m_deckController->stopDeckAudio(true);
-    m_deckController->stopDeckAudio(false);
-    m_outputWindow->videoWidget()->clearDeckA();
-    m_outputWindow->videoWidget()->clearDeckB();
-    for (int i = 0; i < clipManager.getClipCount(); ++i) {
-        const QString p = clipManager.getClipPath(i);
-        m_clipNodeEditor->addClipNode(p, ThumbnailExtractor::extract(p, 110, 65));
-    }
-    m_stackWidget->setCurrentWidget(m_clipNodeEditor);
+    QStringList files = QFileDialog::getOpenFileNames(
+        this, tr("Add Files"), "",
+        tr("Media Files (*.mp4 *.avi *.mov *.mkv *.webm *.png *.jpg *.jpeg *.bmp *.webp *.gif)"));
+    if (files.isEmpty()) return;
+    m_assetLibrary->addFiles(files);
 }
 
 void MainWindow::onAddFolderClicked() {
-    QString path = QFileDialog::getExistingDirectory(this, "Add Media Folder");
+    QString path = QFileDialog::getExistingDirectory(this, tr("Add Media Folder"));
     if (path.isEmpty()) return;
-    const QStringList before = clipManager.getClips();
-    clipManager.addFolder(path);
-    appendClipsToEditor(MainWindowUtils::diffNewItems(before, clipManager.getClips()));
+    m_assetLibrary->addFolder(path);
 }
 
 void MainWindow::onAddFilesClicked() {
     QStringList files = QFileDialog::getOpenFileNames(
-        this, "Add Media Files", "",
-        "Media Files (*.mp4 *.avi *.mov *.mkv *.webm *.png *.jpg *.jpeg *.bmp *.webp *.gif)");
+        this, tr("Add Media Files"), "",
+        tr("Media Files (*.mp4 *.avi *.mov *.mkv *.webm *.png *.jpg *.jpeg *.bmp *.webp *.gif)"));
     if (files.isEmpty()) return;
-    const QStringList before = clipManager.getClips();
-    clipManager.addFiles(files);
-    appendClipsToEditor(MainWindowUtils::diffNewItems(before, clipManager.getClips()));
+    if (!m_assetLibrary->addFiles(files))
+        return;
+    for (const QString &path : files) {
+        if (ClipManager::isMediaPath(path))
+            m_clipNodeEditor->addClipNode(path, ThumbnailExtractor::extract(path, 110, 65));
+    }
+    m_stackWidget->setCurrentWidget(m_clipNodeEditor);
 }
 
 void MainWindow::onClearAllClicked() {
-    clipManager.clear();
     m_clipNodeEditor->clearAllNodes();
     m_deckController->setActiveNodeA(0);
     m_deckController->setActiveNodeB(0);
@@ -728,6 +736,11 @@ void MainWindow::onClearAllClicked() {
 
 void MainWindow::addElementNode(const SourceDescriptor &desc, const QPixmap &thumb) {
     m_clipNodeEditor->addSourceNode(desc, thumb);
+    if ((desc.kind == SourceDescriptor::Kind::VideoFile
+         || desc.kind == SourceDescriptor::Kind::Image)
+        && !desc.path.isEmpty() && QFileInfo(desc.path).isFile()) {
+        m_assetLibrary->addFiles({desc.path});
+    }
     m_stackWidget->setCurrentWidget(m_clipNodeEditor);
 }
 
@@ -749,13 +762,6 @@ void MainWindow::setupAddElementMenu(QMenu *menu) {
 #else
                             false);
 #endif
-}
-
-void MainWindow::appendClipsToEditor(const QStringList &clipPaths) {
-    if (clipPaths.isEmpty()) return;
-    for (const QString &path : clipPaths)
-        m_clipNodeEditor->addClipNode(path, ThumbnailExtractor::extract(path, 110, 65));
-    m_stackWidget->setCurrentWidget(m_clipNodeEditor);
 }
 
 // ── Node deck assignment ──────────────────────────────────────────────────────
@@ -1016,17 +1022,17 @@ void MainWindow::dropEvent(QDropEvent *event) {
     const QMimeData *mimeData = event->mimeData();
     if (!mimeData->hasUrls()) return;
 
-    const QStringList before = clipManager.getClips();
     QStringList filePaths;
     for (const QUrl &url : mimeData->urls()) {
         const QString p = url.toLocalFile();
         QFileInfo fi(p);
-        if (fi.isDir()) clipManager.addFolder(p);
-        else            filePaths << p;
+        if (fi.isDir())
+            m_assetLibrary->addFolder(p);
+        else
+            filePaths << p;
     }
-    if (!filePaths.isEmpty()) clipManager.addFiles(filePaths);
-
-    appendClipsToEditor(MainWindowUtils::diffNewItems(before, clipManager.getClips()));
+    if (!filePaths.isEmpty())
+        m_assetLibrary->addFiles(filePaths);
 
     event->acceptProposedAction();
 }
@@ -1413,6 +1419,7 @@ void MainWindow::loadFromFile(const QString &path, bool showErrors) {
 }
 
 void MainWindow::onSessionLoaded() {
+    m_assetLibrary->rebuild();
     m_stackWidget->setCurrentWidget(m_clipNodeEditor);
 
     // Restore hotkeys.

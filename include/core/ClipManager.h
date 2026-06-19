@@ -5,6 +5,24 @@
 
 class ClipManager {
 public:
+    static constexpr int MaxLibrarySize = 300;
+    static constexpr int MaxBatchImport = 100;
+
+    enum class ImportLimit {
+        Ok,
+        FolderTooLarge,
+        BatchTooLarge,
+        LibraryFull,
+        LibraryPartial,
+    };
+
+    struct ImportCheck {
+        ImportLimit status = ImportLimit::Ok;
+        int totalItems  = 0;
+        int newItems    = 0;
+        int importCount = 0;
+    };
+
     ClipManager();
 
     // Replace all clips with the contents of one folder
@@ -15,6 +33,9 @@ public:
 
     // Append individual files selected by the user
     void addFiles(const QStringList &filePaths);
+
+    ImportCheck checkFolderImport(const QString &folderPath) const;
+    ImportCheck checkFilesImport(const QStringList &filePaths) const;
 
     QStringList getClips() const { return clips; }
     QString     getClipPath(int index) const;
@@ -27,8 +48,13 @@ public:
         }
     }
 
+    static bool isMediaPath(const QString &path);
+
 private:
     QStringList clips;
     bool isMediaFile(const QString &path) const;
+    QStringList newMediaInFolder(const QString &folderPath) const;
+    QStringList allMediaInFolder(const QString &folderPath) const;
+    int countNewMedia(const QStringList &paths) const;
     void appendFromFolder(const QString &folderPath);
 };

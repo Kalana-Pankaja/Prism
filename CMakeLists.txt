@@ -131,6 +131,7 @@ set(SOURCES
     src/ui/ClipCard.cpp
     src/ui/ClipNodeModel.cpp
     src/ui/ClipNodeEditor.cpp
+    src/ui/AssetLibrary.cpp
     src/ui/ClipEditDialog.cpp
     src/ui/CropSelectorWidget.cpp
     src/ui/TransformCanvasWidget.cpp
@@ -210,6 +211,7 @@ set(HEADERS
     include/ui/ClipCard.h
     include/ui/ClipNodeModel.h
     include/ui/ClipNodeEditor.h
+    include/ui/AssetLibrary.h
     include/ui/ClipEditDialog.h
     include/ui/CropSelectorWidget.h
     include/ui/TransformCanvasWidget.h
