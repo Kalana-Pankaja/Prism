@@ -1,5 +1,6 @@
 #include "ui/SourcePrompt.h"
 #include "ui/ThumbHelper.h"
+#include "ui/MaterialSymbols.h"
 #include "ui/ShaderEditDialog.h"
 #include "ui/HtmlEditDialog.h"
 #include "ui/TextEditDialog.h"
@@ -61,7 +62,7 @@ bool promptSlideshow(QWidget *parent, SourceDescriptor &desc, QPixmap &thumb) {
                                      QDir::Files, QDir::Name);
     if (!imgs.isEmpty())
         thumb = ThumbnailExtractor::extract(dir.absoluteFilePath(imgs.first()), 110, 65);
-    if (thumb.isNull()) thumb = ThumbHelper::makeIconThumb("📁");
+    if (thumb.isNull()) thumb = ThumbHelper::makeIconThumb(MaterialSymbols::Names::Folder);
 
     desc.kind                = SourceDescriptor::Kind::Slideshow;
     desc.path                = folder;
@@ -131,7 +132,7 @@ bool promptCamera(QWidget *parent, SourceDescriptor &desc, QPixmap &thumb) {
         }
     }
 
-    thumb = ThumbHelper::makeIconThumb("📷");
+    thumb = ThumbHelper::makeIconThumb(MaterialSymbols::Names::PhotoCamera);
     return true;
 }
 
@@ -139,7 +140,7 @@ bool promptScreen(SourceDescriptor &desc, QPixmap &thumb) {
     desc.kind        = SourceDescriptor::Kind::Screen;
     desc.displayName = "Screen Capture";
     desc.screenIndex = 0;
-    thumb = ThumbHelper::makeIconThumb("🖥");
+    thumb = ThumbHelper::makeIconThumb(MaterialSymbols::Names::DesktopWindows);
     return true;
 }
 
@@ -147,7 +148,7 @@ bool promptWindow(SourceDescriptor &desc, QPixmap &thumb) {
     desc.kind        = SourceDescriptor::Kind::Window;
     desc.displayName = "Window / Tab";
     desc.windowIndex = 0;
-    thumb = ThumbHelper::makeIconThumb("🪟");
+    thumb = ThumbHelper::makeIconThumb(MaterialSymbols::Names::SelectWindow);
     return true;
 }
 
@@ -222,23 +223,18 @@ bool promptShader(QWidget *parent, SourceDescriptor &desc, QPixmap &thumb) {
 }
 
 bool promptHtml(QWidget *parent, SourceDescriptor &desc, QPixmap &thumb) {
-    HtmlEditDialog dlg(QString(), QString(), parent);
+    HtmlEditDialog dlg(QString(), parent);
     if (dlg.exec() != QDialog::Accepted) return false;
+    QString filePath = dlg.resultFilePath();
+    QString html     = dlg.resultHtml().trimmed();
+    if (filePath.isEmpty() && html.isEmpty()) return false;
 
-    const QString workspace = dlg.resultWorkspaceJson();
-    const QString bakedHtml = dlg.resultBakedHtml().trimmed();
-    const QString filePath  = dlg.resultFilePath();
-    if (workspace.isEmpty() && filePath.isEmpty() && bakedHtml.isEmpty())
-        return false;
-
-    desc.kind          = SourceDescriptor::Kind::Html;
-    desc.htmlWorkspace = workspace;
-    desc.htmlContent   = workspace.isEmpty() ? dlg.resultHtml().trimmed() : bakedHtml;
-    desc.path          = workspace.isEmpty() ? filePath : QString();
-    desc.displayName   = (!filePath.isEmpty() && workspace.isEmpty())
-                             ? QFileInfo(filePath).fileName()
-                             : QStringLiteral("HTML Overlay");
-    thumb = ThumbHelper::makeHtmlThumb(desc.htmlContent, desc.path);
+    desc.kind        = SourceDescriptor::Kind::Html;
+    desc.htmlContent = html;
+    desc.path        = filePath;
+    desc.displayName = filePath.isEmpty() ? "HTML Overlay"
+                                          : QFileInfo(filePath).fileName();
+    thumb = ThumbHelper::makeHtmlThumb(html, filePath);
     return true;
 }
 
@@ -279,7 +275,7 @@ bool promptNdi(QWidget *parent, SourceDescriptor &desc, QPixmap &thumb) {
     desc.kind        = SourceDescriptor::Kind::Ndi;
     desc.path        = chosen;
     desc.displayName = chosen;
-    thumb = ThumbHelper::makeIconThumb(QStringLiteral("📡"));
+    thumb = ThumbHelper::makeIconThumb(MaterialSymbols::Names::Sensors);
     return true;
 }
 
@@ -504,34 +500,41 @@ void buildMenu(QMenu *menu,
 {
     if (!menu) return;
 
-    menu->addAction(QStringLiteral("🎬  Media File…"), std::move(onFile));
-    menu->addAction(QStringLiteral("📁  Slideshow…"),
-                    [onKind]() { onKind(SourceDescriptor::Kind::Slideshow); });
+    auto addIconAction = [&](const char *iconName, const QString &text, auto slot) {
+        QAction *action = menu->addAction(text, std::move(slot));
+        MaterialSymbols::setActionIcon(action, iconName);
+        return action;
+    };
+
+    addIconAction(MaterialSymbols::Names::Movie, QObject::tr("Media File…"), std::move(onFile));
+    addIconAction(MaterialSymbols::Names::Folder, QObject::tr("Slideshow…"),
+                  [onKind]() { onKind(SourceDescriptor::Kind::Slideshow); });
     menu->addSeparator();
-    menu->addAction(QStringLiteral("📷  Camera…"),
-                    [onKind]() { onKind(SourceDescriptor::Kind::Camera); });
-    menu->addAction(QStringLiteral("🖥  Screen Capture…"),
-                    [onKind]() { onKind(SourceDescriptor::Kind::Screen); });
-    menu->addAction(QStringLiteral("🪟  Window / Tab…"),
-                    [onKind]() { onKind(SourceDescriptor::Kind::Window); });
+    addIconAction(MaterialSymbols::Names::PhotoCamera, QObject::tr("Camera…"),
+                  [onKind]() { onKind(SourceDescriptor::Kind::Camera); });
+    addIconAction(MaterialSymbols::Names::DesktopWindows, QObject::tr("Screen Capture…"),
+                  [onKind]() { onKind(SourceDescriptor::Kind::Screen); });
+    addIconAction(MaterialSymbols::Names::SelectWindow, QObject::tr("Window / Tab…"),
+                  [onKind]() { onKind(SourceDescriptor::Kind::Window); });
     menu->addSeparator();
-    menu->addAction(QStringLiteral("⬜  Canvas…"),
-                    [onKind]() { onKind(SourceDescriptor::Kind::Canvas); });
-    menu->addAction(QStringLiteral("≋  Shader…"),
-                    [onKind]() { onKind(SourceDescriptor::Kind::Shader); });
-    menu->addAction(QStringLiteral("🌐  HTML Overlay…"),
-                    [onKind]() { onKind(SourceDescriptor::Kind::Html); });
-    menu->addAction(QStringLiteral("T  Text…"),
-                    [onKind]() { onKind(SourceDescriptor::Kind::Text); });
-    QAction *ndiAction = menu->addAction(QStringLiteral("📡  NDI Source…"),
-                    [onKind]() { onKind(SourceDescriptor::Kind::Ndi); });
+    addIconAction(MaterialSymbols::Names::CropSquare, QObject::tr("Canvas…"),
+                  [onKind]() { onKind(SourceDescriptor::Kind::Canvas); });
+    addIconAction(MaterialSymbols::Names::Grain, QObject::tr("Shader…"),
+                  [onKind]() { onKind(SourceDescriptor::Kind::Shader); });
+    addIconAction(MaterialSymbols::Names::Language, QObject::tr("HTML Overlay…"),
+                  [onKind]() { onKind(SourceDescriptor::Kind::Html); });
+    addIconAction(MaterialSymbols::Names::TextFields, QObject::tr("Text…"),
+                  [onKind]() { onKind(SourceDescriptor::Kind::Text); });
+    QAction *ndiAction = addIconAction(MaterialSymbols::Names::Sensors, QObject::tr("NDI Source…"),
+                                       [onKind]() { onKind(SourceDescriptor::Kind::Ndi); });
     ndiAction->setEnabled(ndiAvailable);
     if (!ndiAvailable) {
         ndiAction->setToolTip(QObject::tr(
             "NDI SDK not found at build time. Install the NDI SDK and rebuild with -DNDI_ROOT=…"));
     }
-    QAction *webrtcAction = menu->addAction(QStringLiteral("📱  Phone Camera (WebRTC)…"),
-                    [onKind]() { onKind(SourceDescriptor::Kind::WebRtc); });
+    QAction *webrtcAction = addIconAction(MaterialSymbols::Names::Smartphone,
+                                          QObject::tr("Phone Camera (WebRTC)…"),
+                                          [onKind]() { onKind(SourceDescriptor::Kind::WebRtc); });
     webrtcAction->setEnabled(webrtcAvailable);
     if (!webrtcAvailable) {
         webrtcAction->setToolTip(QObject::tr(

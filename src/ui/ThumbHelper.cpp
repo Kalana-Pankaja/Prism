@@ -1,4 +1,5 @@
 #include "ui/ThumbHelper.h"
+#include "ui/MaterialSymbols.h"
 #include "core/ShaderSource.h"
 #include <QPainter>
 #include <QFont>
@@ -7,15 +8,13 @@
 #include <QTimer>
 #include <QUrl>
 
-QPixmap ThumbHelper::makeIconThumb(const QString &glyph, int w, int h) {
+QPixmap ThumbHelper::makeIconThumb(const QString &symbolName, int w, int h) {
     QPixmap pix(w, h);
     pix.fill(QColor("#1c1d1f"));
     QPainter p(&pix);
-    QFont f;
-    f.setPixelSize(32);
-    p.setFont(f);
     p.setPen(QColor("#888888"));
-    p.drawText(pix.rect(), Qt::AlignCenter, glyph);
+    MaterialSymbols::drawCentered(p, pix.rect(), symbolName.toUtf8().constData(), 32,
+                                  QColor("#888888"));
     return pix;
 }
 
@@ -44,7 +43,7 @@ QPixmap ThumbHelper::makeCanvasThumb(const QString &label,
 QPixmap ThumbHelper::makeShaderThumb(const QString &code, int w, int h) {
     ShaderSource src(code, QSize(w, h));
     if (!src.nextFrame() || !src.isReady())
-        return makeIconThumb("≋", w, h);
+        return makeIconThumb(MaterialSymbols::Names::Grain, w, h);
     const uint8_t *data = src.frameData();
     QImage img(data, w, h, w * 3, QImage::Format_RGB888);
     return QPixmap::fromImage(img.copy());
@@ -71,7 +70,7 @@ QPixmap ThumbHelper::makeHtmlThumb(const QString &html, const QString &filePath,
 
     QPixmap grab = view.grab();
     if (grab.isNull())
-        return makeIconThumb("🌐", w, h);
+        return makeIconThumb(MaterialSymbols::Names::Language, w, h);
     return grab.scaled(w, h, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
 }
 

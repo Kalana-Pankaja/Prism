@@ -12,7 +12,7 @@ class ThumbHelper {
 public:
     ThumbHelper() = delete;
 
-    static QPixmap makeIconThumb(const QString &glyph, int w = 110, int h = 65);
+    static QPixmap makeIconThumb(const QString &symbolName, int w = 110, int h = 65);
 
     static QPixmap makeCanvasThumb(const QString &label,
                                    SourceDescriptor::CanvasFill fill,

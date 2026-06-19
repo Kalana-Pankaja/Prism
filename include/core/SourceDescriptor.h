@@ -44,7 +44,6 @@ struct SourceDescriptor {
     CanvasFill canvasFill    = CanvasFill::Checkered; // Canvas kind
     QString shaderCode;                 // Shader kind
     QString htmlContent;                // Html kind (inline HTML or file path)
-    QString htmlWorkspace;              // Html workspace JSON (multi-component layout)
     QString obsSceneName;               // OBS program scene to switch when clip is triggered
     QString textTemplate;               // Text kind — may contain {parameter} placeholders
     QString fontFamily    = QStringLiteral("Sans Serif");

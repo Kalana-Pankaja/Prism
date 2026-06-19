@@ -23,6 +23,7 @@
 #include "ui/RemoteControlServer.h"
 #include "ui/RemoteServerDialog.h"
 #include "ui/MainWindowUtils.h"
+#include "ui/MaterialSymbols.h"
 #include "ui/FrameCaptureHelper.h"
 #include "ui/RecordingSettingsDialog.h"
 #include "core/ClipManager.h"
@@ -74,6 +75,16 @@ MainWindow::MainWindow(QWidget *parent)
     ui->setupUi(this);
     setAcceptDrops(true);
     m_baseWindowTitle = windowTitle();
+
+    MaterialSymbols::setActionIcon(ui->actionLoadFolder, MaterialSymbols::Names::Description);
+    MaterialSymbols::setActionIcon(ui->actionAddFolder, MaterialSymbols::Names::FolderOpen);
+    MaterialSymbols::setActionIcon(ui->actionSaveSession, MaterialSymbols::Names::Save);
+    MaterialSymbols::setActionIcon(ui->actionLoadSession, MaterialSymbols::Names::FolderOpen);
+    MaterialSymbols::setActionIcon(ui->actionExportProject, MaterialSymbols::Names::Inventory);
+    MaterialSymbols::setActionIcon(ui->actionImportProject, MaterialSymbols::Names::Download);
+    MaterialSymbols::setActionIcon(ui->actionClearAll, MaterialSymbols::Names::Delete);
+    MaterialSymbols::setPlayPause(ui->aDeckPlayBtn, false, 22);
+    MaterialSymbols::setPlayPause(ui->bDeckPlayBtn, false, 22);
 
     const RecordingOptions recOpts = RecordingSettingsDialog::loadSavedOptions();
 
@@ -208,9 +219,9 @@ void MainWindow::buildEmptyPlaceholder() {
     phLayout->setSpacing(20);
     phLayout->setContentsMargins(40, 40, 40, 40);
 
-    auto *phIcon = new QLabel("🎬", m_emptyPlaceholder);
+    auto *phIcon = new QLabel(m_emptyPlaceholder);
+    MaterialSymbols::setLabelText(phIcon, MaterialSymbols::Names::Movie, 52);
     phIcon->setAlignment(Qt::AlignCenter);
-    phIcon->setStyleSheet("font-size: 52px;");
 
     auto *phText = new QLabel(m_emptyPlaceholder);
     phText->setAlignment(Qt::AlignCenter);
@@ -228,7 +239,8 @@ void MainWindow::buildEmptyPlaceholder() {
     phBtns->setContentsMargins(0, 0, 0, 0);
     phBtns->setAlignment(Qt::AlignCenter);
 
-    auto *phAddElementBtn = new QPushButton("＋  Add Element", phBtnRow);
+    auto *phAddElementBtn = new QPushButton(tr("Add Element"), phBtnRow);
+    phAddElementBtn->setIcon(MaterialSymbols::icon(MaterialSymbols::Names::Add, 16));
     phAddElementBtn->setObjectName("accentButton");
     phAddElementBtn->setStyleSheet(
         "QPushButton#accentButton {"
@@ -981,7 +993,7 @@ void MainWindow::onTimerUpdate() {
         }
         m_deckController->setLastTimeA(timeA);
     }
-    ui->aDeckPlayBtn->setText(out->isPlayingA() ? "⏸" : "▶");
+    MaterialSymbols::setPlayPause(ui->aDeckPlayBtn, out->isPlayingA(), 22);
 
     // B deck
     double durB  = out->getDurationB();
@@ -1003,7 +1015,7 @@ void MainWindow::onTimerUpdate() {
         }
         m_deckController->setLastTimeB(timeB);
     }
-    ui->bDeckPlayBtn->setText(out->isPlayingB() ? "⏸" : "▶");
+    MaterialSymbols::setPlayPause(ui->bDeckPlayBtn, out->isPlayingB(), 22);
 
     refreshPreviewPixmaps();
 

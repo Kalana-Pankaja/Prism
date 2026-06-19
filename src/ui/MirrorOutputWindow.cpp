@@ -1,5 +1,6 @@
 #include "ui/MirrorOutputWindow.h"
 #include "ui/ProgramMirrorWidget.h"
+#include "ui/MaterialSymbols.h"
 #include <QHBoxLayout>
 #include <QKeyEvent>
 #include <QPushButton>
@@ -26,7 +27,8 @@ MirrorOutputWindow::MirrorOutputWindow(QWidget *parent)
     controls->setContentsMargins(8, 8, 8, 8);
     controls->addStretch();
 
-    m_fullscreenBtn = new QPushButton(QStringLiteral("🖵"), central);
+    m_fullscreenBtn = new QPushButton(central);
+    MaterialSymbols::setIconText(m_fullscreenBtn, MaterialSymbols::Names::Fullscreen, 22);
     m_fullscreenBtn->setMaximumWidth(50);
     connect(m_fullscreenBtn, &QPushButton::clicked, this, &MirrorOutputWindow::onFullscreenClicked);
     controls->addWidget(m_fullscreenBtn);
@@ -43,17 +45,17 @@ void MirrorOutputWindow::setFrame(const QImage &frame) {
 void MirrorOutputWindow::onFullscreenClicked() {
     if (isFullScreen()) {
         showNormal();
-        m_fullscreenBtn->setText(QStringLiteral("🖵"));
+        MaterialSymbols::setIconText(m_fullscreenBtn, MaterialSymbols::Names::Fullscreen, 22);
     } else {
         showFullScreen();
-        m_fullscreenBtn->setText(QStringLiteral("🖦"));
+        MaterialSymbols::setIconText(m_fullscreenBtn, MaterialSymbols::Names::CloseFullscreen, 22);
     }
 }
 
 void MirrorOutputWindow::keyPressEvent(QKeyEvent *event) {
     if (event->key() == Qt::Key_Escape && isFullScreen()) {
         showNormal();
-        m_fullscreenBtn->setText(QStringLiteral("🖵"));
+        MaterialSymbols::setIconText(m_fullscreenBtn, MaterialSymbols::Names::Fullscreen, 22);
         event->accept();
         return;
     }

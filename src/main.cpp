@@ -1,6 +1,7 @@
 #include <QApplication>
 #include <QByteArray>
 #include "ui/MainWindow.h"
+#include "ui/MaterialSymbols.h"
 
 int main(int argc, char *argv[]) {
     // WebEngine / Chromium uses the Gallium GPU stack on this system which
@@ -18,6 +19,7 @@ int main(int argc, char *argv[]) {
     Q_INIT_RESOURCE(resources);
 
     QApplication app(argc, argv);
+    MaterialSymbols::init();
     app.setOrganizationName("SwitchX");
     app.setApplicationName("SwitchX");
     app.setStyle("fusion");

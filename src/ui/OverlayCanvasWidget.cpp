@@ -1,4 +1,5 @@
 #include "ui/OverlayCanvasWidget.h"
+#include "ui/MaterialSymbols.h"
 #include <QBrush>
 #include <QPainter>
 #include <QPixmap>
@@ -181,7 +182,15 @@ void OverlayCanvasWidget::drawOverlay(QPainter &p, const OverlayItem &ov, bool s
         } else {
             p.setPen(QColor(0xe0, 0x50, 0x50));
             p.drawRect(r);
-            p.drawText(r, Qt::AlignCenter, "⚠ image\nnot found");
+            const int iconSize = std::max(12, static_cast<int>(r.height() * 0.25));
+            MaterialSymbols::drawCentered(
+                p, r.adjusted(0, 0, 0, -r.height() * 0.35),
+                MaterialSymbols::Names::Warning, iconSize, QColor(0xe0, 0x50, 0x50));
+            QFont f;
+            f.setPixelSize(std::max(8, static_cast<int>(r.height() * 0.12)));
+            p.setFont(f);
+            p.drawText(r.adjusted(4, static_cast<int>(r.height() * 0.35), -4, -4),
+                       Qt::AlignCenter | Qt::AlignTop, "image\nnot found");
         }
     } else {
         // Scale font relative to canvas width vs. reference 1280px output width
@@ -237,6 +246,6 @@ void OverlayCanvasWidget::paintEvent(QPaintEvent *) {
     p.setFont(QFont("Segoe UI", 9));
     p.drawText(QRectF(0, height() - 18, width(), 18), Qt::AlignCenter,
         m_overlays.isEmpty()
-            ? "Click  '＋ Text'  or  '＋ Image'  to add an overlay"
+            ? "Click  '+ Text'  or  '+ Image'  to add an overlay"
             : "Click text/image overlay to select  ·  Drag to move  ·  Drag corners to resize");
 }

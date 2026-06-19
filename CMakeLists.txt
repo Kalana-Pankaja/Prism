@@ -113,7 +113,6 @@ set(SOURCES
     src/core/ProjectPackager.cpp
     src/core/ShaderSource.cpp
     src/core/HtmlSource.cpp
-    src/core/HtmlWorkspace.cpp
     src/core/TextSource.cpp
     src/core/ScriptRuntime.cpp
     src/core/NdiLibrary.cpp
@@ -152,12 +151,11 @@ set(SOURCES
     src/ui/RecordingSettingsDialog.cpp
     src/ui/ShaderEditDialog.cpp
     src/ui/HtmlEditDialog.cpp
-    src/ui/HtmlPreviewWidget.cpp
-    src/ui/HtmlWorkspaceCanvasWidget.cpp
     src/ui/ScriptEditDialog.cpp
     src/ui/TextEditDialog.cpp
     # Extracted helper / controller classes
     src/ui/ThumbHelper.cpp
+    src/ui/MaterialSymbols.cpp
     src/ui/HotkeyManager.cpp
     src/ui/HotkeyEditorDialog.cpp
     src/ui/SessionManager.cpp
@@ -195,7 +193,6 @@ set(HEADERS
     include/core/ProjectPackager.h
     include/core/ShaderSource.h
     include/core/HtmlSource.h
-    include/core/HtmlWorkspace.h
     include/core/TextSource.h
     include/core/ScriptOutput.h
     include/core/ScriptRuntime.h
@@ -237,12 +234,11 @@ set(HEADERS
     include/ui/ProgramOutputSink.h
     include/ui/ShaderEditDialog.h
     include/ui/HtmlEditDialog.h
-    include/ui/HtmlPreviewWidget.h
-    include/ui/HtmlWorkspaceCanvasWidget.h
     include/ui/ScriptEditDialog.h
     include/ui/TextEditDialog.h
     # Extracted helper / controller headers
     include/ui/ThumbHelper.h
+    include/ui/MaterialSymbols.h
     include/ui/HotkeyManager.h
     include/ui/HotkeyEditorDialog.h
     include/ui/SessionManager.h

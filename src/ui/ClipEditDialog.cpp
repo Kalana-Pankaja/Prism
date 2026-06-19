@@ -1,6 +1,8 @@
 #include "ui/ClipEditDialog.h"
 #include "ui_ClipEditDialog.h"
+#include "ui/MaterialSymbols.h"
 #include "core/VideoPlayer.h"
+#include <QPushButton>
 #include <QShowEvent>
 #include <cmath>
 
@@ -17,6 +19,27 @@ ClipEditDialog::ClipEditDialog(const QString &clipPath, const ClipSettings &sett
     ui->setupUi(this);
     ui->preview->addDeckPreviewConsumer();
     setWindowTitle("Edit Clip — " + clipPath.section('/', -1));
+
+    ui->tabWidget->setTabIcon(0, MaterialSymbols::icon(MaterialSymbols::Names::ContentCut, 16));
+    MaterialSymbols::setPlayPause(ui->playPauseBtn, false, 18);
+
+    auto setupSeekBack = [](QPushButton *btn, const QString &label) {
+        btn->setText(label);
+        btn->setIcon(MaterialSymbols::icon(MaterialSymbols::Names::SkipPrevious, 12));
+    };
+    auto setupSeekForward = [](QPushButton *btn, const QString &label) {
+        btn->setText(label);
+        btn->setIcon(MaterialSymbols::icon(MaterialSymbols::Names::SkipNext, 12));
+        btn->setLayoutDirection(Qt::RightToLeft);
+    };
+    setupSeekBack(ui->btn10sBack, "10s");
+    setupSeekBack(ui->btn5sBack, "5s");
+    setupSeekBack(ui->btn1sBack, "1s");
+    setupSeekBack(ui->btn01sBack, "0.1");
+    setupSeekForward(ui->btn01sForward, "0.1");
+    setupSeekForward(ui->btn1sForward, "1s");
+    setupSeekForward(ui->btn5sForward, "5s");
+    setupSeekForward(ui->btn10sForward, "10s");
 
     VideoPlayer tmp;
     if (tmp.open(clipPath))
@@ -107,7 +130,7 @@ void ClipEditDialog::showEvent(QShowEvent *event) {
             }
             seekTo(m_startTime);
             ui->preview->play();
-            ui->playPauseBtn->setText("⏸");
+            MaterialSymbols::setPlayPause(ui->playPauseBtn, true, 18);
             pollTimer->start();
         });
     }
@@ -117,10 +140,10 @@ void ClipEditDialog::onPlayPauseClicked() {
     if (!m_videoLoaded) return;
     if (ui->preview->isPlaying()) {
         ui->preview->pause();
-        ui->playPauseBtn->setText("▶");
+        MaterialSymbols::setPlayPause(ui->playPauseBtn, false, 18);
     } else {
         ui->preview->play();
-        ui->playPauseBtn->setText("⏸");
+        MaterialSymbols::setPlayPause(ui->playPauseBtn, true, 18);
     }
 }
 
@@ -175,7 +198,7 @@ void ClipEditDialog::onSetEnd() {
 
 void ClipEditDialog::onPollTimer() {
     if (!m_videoLoaded) return;
-    ui->playPauseBtn->setText(ui->preview->isPlaying() ? "⏸" : "▶");
+    MaterialSymbols::setPlayPause(ui->playPauseBtn, ui->preview->isPlaying(), 18);
     double t = ui->preview->getCurrentTime();
     if (!m_sliderDragging) {
         ui->progressSlider->blockSignals(true);

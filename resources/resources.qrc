@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <RCC>
     <qresource prefix="/">
+        <file>fonts/MaterialSymbolsRounded-Regular.ttf</file>
         <file>styles/dark.qss</file>
         <file>shaders/neon_kaleidoscope.glsl</file>
         <file>shaders/cyberpunk_horizon_grid.glsl</file>
@@ -16,10 +17,6 @@
         <file>html/countdown_timer.html</file>
         <file>html/cricket_score_bar.html</file>
         <file>html/cricket_score_table.html</file>
-        <file>html/widgets/clock.html</file>
-        <file>html/widgets/countdown_timer.html</file>
-        <file>html/widgets/cricket_score_bar.html</file>
-        <file>html/widgets/cricket_score_table.html</file>
         <file>scripts/clock.lua</file>
         <file>scripts/counter.lua</file>
         <file>scripts/greeting.lua</file>

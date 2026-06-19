@@ -2520,7 +2520,6 @@ static QJsonObject descriptorToJson(const SourceDescriptor &d, const QDir &sessi
     o["canvasFill"]         = (int)d.canvasFill;
     o["shaderCode"]         = d.shaderCode;
     o["htmlContent"]        = d.htmlContent;
-    o["htmlWorkspace"]      = d.htmlWorkspace;
     o["obsSceneName"]       = d.obsSceneName;
     o["textTemplate"]       = d.textTemplate;
     o["fontFamily"]         = d.fontFamily;
@@ -2548,7 +2547,6 @@ static SourceDescriptor descriptorFromJson(const QJsonObject &o) {
     d.canvasFill         = (SourceDescriptor::CanvasFill)o["canvasFill"].toInt();
     d.shaderCode         = o["shaderCode"].toString();
     d.htmlContent        = o["htmlContent"].toString();
-    d.htmlWorkspace      = o["htmlWorkspace"].toString();
     d.obsSceneName       = o["obsSceneName"].toString();
     d.textTemplate       = o["textTemplate"].toString();
     d.fontFamily         = o["fontFamily"].toString(QStringLiteral("Sans Serif"));

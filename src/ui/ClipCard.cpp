@@ -5,6 +5,7 @@
 #include "ui/HtmlEditDialog.h"
 #include "ui/TextEditDialog.h"
 #include "ui/ThumbHelper.h"
+#include "ui/MaterialSymbols.h"
 #include "core/ImageSource.h"
 #include "core/SlideshowSource.h"
 #include "core/ShaderSource.h"
@@ -53,6 +54,12 @@ static QWidget *dialogParent(QWidget *w) {
 ClipCard::ClipCard(int index, QWidget *parent)
     : QFrame(parent), m_index(index), ui(new Ui::ClipCard) {
     ui->setupUi(this);
+
+    ui->removeBtn->setIcon(MaterialSymbols::icon(MaterialSymbols::Names::Close, 14, QColor("#888888")));
+    ui->removeBtn->setText({});
+    ui->removeBtn->setIconSize(QSize(14, 14));
+    ui->repeatBtn->setIcon(MaterialSymbols::icon(MaterialSymbols::Names::Repeat, 12));
+    ui->repeatBtn->setText(tr(" Off"));
 
     // Hotkey badge — floats over the top-left corner of the thumbnail area.
     // The thumbnail button is at (5, 5) in ClipCard's local coords (layout margins).
@@ -232,7 +239,7 @@ void ClipCard::setBSelected(bool selected) {
 
 void ClipCard::setRepeat(bool r) {
     m_repeat = r;
-    ui->repeatBtn->setText(m_repeat ? "↺  On" : "↺  Off");
+    ui->repeatBtn->setText(m_repeat ? tr(" On") : tr(" Off"));
 }
 
 void ClipCard::onRepeatClicked() {
@@ -558,21 +565,13 @@ void ClipCard::onEditClicked() {
     }
 
     case Kind::Html: {
-        HtmlEditDialog dlg(m_sourceDesc.htmlContent, m_sourceDesc.htmlWorkspace, this);
+        HtmlEditDialog dlg(m_sourceDesc.htmlContent, this);
         if (dlg.exec() == QDialog::Accepted) {
-            const QString workspace = dlg.resultWorkspaceJson();
-            const QString bakedHtml = dlg.resultBakedHtml().trimmed();
-            const QString filePath  = dlg.resultFilePath();
-            if (!workspace.isEmpty()) {
-                m_sourceDesc.htmlWorkspace = workspace;
-                m_sourceDesc.htmlContent   = bakedHtml;
-                m_sourceDesc.path.clear();
-                m_sourceDesc.displayName     = tr("HTML Overlay");
-                emit sourceDescriptorChanged(m_index, m_sourceDesc);
-            } else if (!filePath.isEmpty() || !bakedHtml.isEmpty()) {
-                m_sourceDesc.htmlWorkspace.clear();
+            QString filePath = dlg.resultFilePath();
+            QString html     = dlg.resultHtml().trimmed();
+            if (!filePath.isEmpty() || !html.isEmpty()) {
                 m_sourceDesc.path        = filePath;
-                m_sourceDesc.htmlContent = dlg.resultHtml().trimmed();
+                m_sourceDesc.htmlContent = html;
                 if (!filePath.isEmpty())
                     m_sourceDesc.displayName = QFileInfo(filePath).fileName();
                 emit sourceDescriptorChanged(m_index, m_sourceDesc);

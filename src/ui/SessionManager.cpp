@@ -2,11 +2,11 @@
 #include "ui/ClipNodeEditor.h"
 #include "ui/VideoWidget.h"
 #include "ui/ThumbHelper.h"
+#include "ui/MaterialSymbols.h"
 #include "core/AssetPathResolver.h"
 #include "core/ClipManager.h"
 #include "core/ThumbnailExtractor.h"
 #include "core/NdiSource.h"
-#include "core/HtmlWorkspace.h"
 #include <QFile>
 #include <QDir>
 #include <QFileInfo>
@@ -280,31 +280,22 @@ bool SessionManager::loadFromFile(const QString &path, bool showErrors) {
                                               QDir::Files, QDir::Name);
             if (!imgs.isEmpty())
                 thumb = ThumbnailExtractor::extract(dir.absoluteFilePath(imgs.first()), 110, 65);
-            if (thumb.isNull()) thumb = ThumbHelper::makeIconThumb("📁");
+            if (thumb.isNull()) thumb = ThumbHelper::makeIconThumb(MaterialSymbols::Names::Folder);
             break;
         }
-        case Kind::Camera: thumb = ThumbHelper::makeIconThumb("📷"); break;
-        case Kind::Screen: thumb = ThumbHelper::makeIconThumb("🖥");  break;
-        case Kind::Window: thumb = ThumbHelper::makeIconThumb("🪟");  break;
+        case Kind::Camera: thumb = ThumbHelper::makeIconThumb(MaterialSymbols::Names::PhotoCamera); break;
+        case Kind::Screen: thumb = ThumbHelper::makeIconThumb(MaterialSymbols::Names::DesktopWindows); break;
+        case Kind::Window: thumb = ThumbHelper::makeIconThumb(MaterialSymbols::Names::SelectWindow); break;
         case Kind::Canvas:
             thumb = ThumbHelper::makeCanvasThumb(
                 QString("%1x%2").arg(desc.canvasWidth).arg(desc.canvasHeight),
                 desc.canvasFill, desc.color);
             break;
         case Kind::Shader: thumb = ThumbHelper::makeShaderThumb(desc.shaderCode);           break;
-        case Kind::Html: {
-            QString html = desc.htmlContent;
-            QString path = desc.path;
-            if (!desc.htmlWorkspace.isEmpty()) {
-                html = HtmlWorkspaceBuilder::buildFromJson(desc.htmlWorkspace);
-                path = {};
-            }
-            thumb = ThumbHelper::makeHtmlThumb(html, path);
-            break;
-        }
+        case Kind::Html:   thumb = ThumbHelper::makeHtmlThumb(desc.htmlContent, desc.path); break;
         case Kind::Text:   thumb = ThumbHelper::makeTextThumb(desc.textTemplate, desc.color); break;
-        case Kind::Ndi:    thumb = ThumbHelper::makeIconThumb(QStringLiteral("📡"));       break;
-        case Kind::WebRtc: thumb = ThumbHelper::makeIconThumb(QStringLiteral("📱"));       break;
+        case Kind::Ndi:    thumb = ThumbHelper::makeIconThumb(MaterialSymbols::Names::Sensors); break;
+        case Kind::WebRtc: thumb = ThumbHelper::makeIconThumb(MaterialSymbols::Names::Smartphone); break;
         }
         if (!thumb.isNull()) {
             if (desc.kind == Kind::VideoFile || desc.kind == Kind::Image)
