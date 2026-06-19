@@ -237,16 +237,46 @@ void MainWindow::buildEmptyPlaceholder() {
 }
 
 MainWindow::~MainWindow() {
-    m_outputHub->stopAllRecording();
-    m_outputHub->setNdiOutputEnabled(false);
-    m_outputHub->setVirtualCameraEnabled(false);
-    m_obsIntegration->disconnectFromObs();
-    m_deckController->stopDeckAudio(true);
-    m_deckController->stopDeckAudio(false);
+    shutdownLivePipeline();
+    if (m_outputHub) {
+        m_outputHub->setNdiOutputEnabled(false);
+        m_outputHub->setVirtualCameraEnabled(false);
+    }
     delete ui;
 }
 
+void MainWindow::shutdownLivePipeline() {
+    if (m_shuttingDown)
+        return;
+    m_shuttingDown = true;
+
+    if (updateTimer)
+        updateTimer->stop();
+    if (m_autosaveTimer)
+        m_autosaveTimer->stop();
+
+    if (m_remoteServer)
+        m_remoteServer->stopServer();
+
+    if (m_outputHub) {
+        disconnect(m_outputHub, nullptr, this, nullptr);
+        m_outputHub->stopAllRecording();
+    }
+
+    if (m_deckController)
+        m_deckController->releaseAllDeckAudio();
+
+    if (m_outputWindow) {
+        if (VideoWidget *vw = m_outputWindow->videoWidget())
+            vw->shutdownPlayback();
+    }
+
+    if (m_obsIntegration)
+        m_obsIntegration->disconnectFromObs();
+}
+
 void MainWindow::closeEvent(QCloseEvent *event) {
+    shutdownLivePipeline();
     performAutosave();
     SessionManager::markCleanExit();
     QMainWindow::closeEvent(event);
@@ -899,6 +929,9 @@ void MainWindow::onPanicStayTunedClicked(bool checked) {
 // ── Timer update (preview labels + progress sliders) ─────────────────────────
 
 void MainWindow::onTimerUpdate() {
+    if (m_shuttingDown || !m_outputWindow || !ui)
+        return;
+
     auto *out = m_outputWindow->videoWidget();
 
     // A deck
@@ -1613,6 +1646,9 @@ void MainWindow::setupRecordingStatusBar() {
 }
 
 void MainWindow::updateRecordingUi(qint64 elapsedMs) {
+    if (m_shuttingDown)
+        return;
+
     const bool recording = m_outputHub && m_outputHub->isRecording();
     if (m_recStatusLabel) m_recStatusLabel->setVisible(recording);
     if (m_recTimeLabel)   m_recTimeLabel->setVisible(recording);

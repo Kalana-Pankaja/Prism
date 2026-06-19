@@ -121,6 +121,7 @@ private:
     QLabel          *m_recTracksLabel  = nullptr;
     QLabel          *m_recPathLabel    = nullptr;
     QString          m_baseWindowTitle;
+    bool             m_shuttingDown = false;
 
     // ── Helpers ───────────────────────────────────────────────────────────────
     void setupConnections();
@@ -140,6 +141,7 @@ private:
     void setupAddElementMenu(QMenu *menu);
     void setupRecordingStatusBar();
     void updateRecordingUi(qint64 elapsedMs = -1);
+    void shutdownLivePipeline();
     void onRecordingPanel();
     void showRecordingPanel();
 

@@ -173,6 +173,9 @@ public:
     const std::vector<NodeChainSource> &chainSourcesA() const { return m_chainA; }
     const std::vector<NodeChainSource> &chainSourcesB() const { return m_chainB; }
 
+    /// Stop timers and release live sources (safe to call before window teardown).
+    void shutdownPlayback();
+
 signals:
     void programFrameReady();
     void framelessToggleFullscreenRequested();

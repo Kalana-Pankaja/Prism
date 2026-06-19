@@ -2,6 +2,8 @@
 #include <QAudioFormat>
 #include <QAudioSink>
 #include <QAudio>
+#include <QCoreApplication>
+#include <QEvent>
 #include <QMediaDevices>
 #include <QIODevice>
 #include <QDebug>
@@ -14,6 +16,8 @@ AudioPlayer::AudioPlayer(QObject *parent)
 }
 
 AudioPlayer::~AudioPlayer() {
+    blockSignals(true);
+    QCoreApplication::removePostedEvents(this, QEvent::MetaCall);
     stop();
 }
 
@@ -63,11 +67,12 @@ bool AudioPlayer::start(const QString &filePath, double startTimeSeconds) {
 
 void AudioPlayer::stop() {
     m_pushTimer.stop();
+    disconnect(&m_pushTimer, nullptr, this, nullptr);
+    m_outputDevice = nullptr;
     if (m_sink) {
         m_sink->stop();
         m_sink.reset();
     }
-    m_outputDevice = nullptr;
     m_currentFilePath.clear();
     m_decoder.close();
     m_residualBuffer.clear();
@@ -123,7 +128,9 @@ void AudioPlayer::pushAudio() {
     // 2. Decode more if sink has space
     constexpr int bytesPerFrame = AudioDecoder::kOutputChannels * static_cast<int>(sizeof(float));
     
-    while (m_sink->bytesFree() >= bytesPerFrame && m_residualBuffer.size() < m_sink->bufferSize()) {
+    while (m_sink && m_outputDevice
+           && m_sink->bytesFree() >= bytesPerFrame
+           && m_residualBuffer.size() < m_sink->bufferSize()) {
         QByteArray chunk;
         if (m_silenceBytesPending > 0) {
             const int sizeToPush = static_cast<int>(std::min<qint64>(m_silenceBytesPending, 4096));
@@ -132,14 +139,16 @@ void AudioPlayer::pushAudio() {
         } else {
             if (!m_decoder.decodeNextChunk(chunk)) {
                 if (m_decoder.atEnd() && m_residualBuffer.isEmpty()) {
-                    if (m_sink->state() == QAudio::IdleState) {
+                    if (m_sink && m_sink->state() == QAudio::IdleState)
                         stop();
-                    }
                 }
                 break;
             }
             applyGain(chunk);
         }
+
+        if (!m_sink || !m_outputDevice)
+            break;
 
         m_residualBuffer.append(chunk);
         writeFromBuffer();

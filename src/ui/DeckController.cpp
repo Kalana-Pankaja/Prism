@@ -39,6 +39,11 @@ void DeckController::stopDeckAudio(bool deckA) {
     if (player) player->stop();
 }
 
+void DeckController::releaseAllDeckAudio() {
+    m_audioPlayerA.reset();
+    m_audioPlayerB.reset();
+}
+
 void DeckController::updateDeckAudio(bool deckA, NodeId clipId, const ClipNodeModel *node,
                                      double currentTimeHint, bool forceSeek) {
     if (!node || node->sourceDescriptor().kind != SourceDescriptor::Kind::VideoFile) {

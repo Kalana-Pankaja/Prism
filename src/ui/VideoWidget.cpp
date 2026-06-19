@@ -4,6 +4,8 @@
 #include "core/VideoFileSource.h"
 #include "core/ImageSource.h"
 #include <QTimer>
+#include <QCoreApplication>
+#include <QEvent>
 #include <QDebug>
 #include <QDragEnterEvent>
 #include <QMimeData>
@@ -27,6 +29,8 @@ VideoWidget::VideoWidget(QWidget *parent)
 }
 
 VideoWidget::~VideoWidget() {
+    blockSignals(true);
+    QCoreApplication::removePostedEvents(this, QEvent::MetaCall);
     releaseMediaSources();
     if (isValid()) {
         makeCurrent();
@@ -40,9 +44,15 @@ VideoWidget::~VideoWidget() {
     }
 }
 
+void VideoWidget::shutdownPlayback() {
+    releaseMediaSources();
+}
+
 void VideoWidget::releaseMediaSources() {
-    if (m_frameTimer)
+    if (m_frameTimer) {
         m_frameTimer->stop();
+        disconnect(m_frameTimer, nullptr, this, nullptr);
+    }
     m_playingA = false;
     m_playingB = false;
     m_playingOverlay = false;
