@@ -3,8 +3,7 @@
 #include "core/WebRtcPairing.h"
 #include "core/WebRtcCamPage.h"
 #include "core/WebRtcTlsStore.h"
-#include "core/WebRtcH264Sdp.h"
-#include "core/SwitchXH264RtpDepacketizer.h"
+#include "core/SwitchXVp9RtpDepacketizer.h"
 #include "core/FirewallUtils.h"
 
 #include <QJsonDocument>
@@ -50,165 +49,56 @@ QString makeToken() {
     return token;
 }
 
-class H264Decoder {
+class Vp9Decoder {
 public:
-    H264Decoder() = default;
-    ~H264Decoder() { reset(); }
+    Vp9Decoder() = default;
+    ~Vp9Decoder() { reset(); }
 
-    H264Decoder(const H264Decoder &) = delete;
-    H264Decoder &operator=(const H264Decoder &) = delete;
-
-    bool hasExtradata() const { return !m_avcExtradata.isEmpty(); }
-
-    bool tryConfigureFromAnnexB(const uint8_t *data, int size) {
-        if (hasExtradata() || !data || size < 5)
-            return false;
-
-        QByteArray sps;
-        QByteArray pps;
-
-        auto appendNal = [](QByteArray &dest, const uint8_t *nal, int nalSize) {
-            if (nalSize <= 0)
-                return;
-            if (!dest.isEmpty())
-                return;
-            dest = QByteArray(reinterpret_cast<const char *>(nal), nalSize);
-        };
-
-        for (int i = 0; i + 4 < size;) {
-            int startCode = 0;
-            if (data[i] == 0 && data[i + 1] == 0 && data[i + 2] == 1) {
-                startCode = 3;
-            } else if (i + 4 < size && data[i] == 0 && data[i + 1] == 0 && data[i + 2] == 0
-                       && data[i + 3] == 1) {
-                startCode = 4;
-            } else {
-                ++i;
-                continue;
-            }
-
-            const int nalStart = i + startCode;
-            if (nalStart >= size)
-                break;
-
-            int next = size;
-            for (int j = nalStart + 1; j + 3 < size; ++j) {
-                if (data[j] == 0 && data[j + 1] == 0
-                    && (data[j + 2] == 1 || (j + 3 < size && data[j + 2] == 0 && data[j + 3] == 1))) {
-                    next = j;
-                    break;
-                }
-            }
-
-            const int nalSize = next - nalStart;
-            const uint8_t nalType = data[nalStart] & 0x1F;
-            if (nalType == 7)
-                appendNal(sps, data + nalStart, nalSize);
-            else if (nalType == 8)
-                appendNal(pps, data + nalStart, nalSize);
-
-            i = next;
-        }
-
-        if (sps.isEmpty() || pps.isEmpty())
-            return false;
-
-        const QByteArray avc = WebRtcH264Sdp::buildAvcExtradata(sps, pps);
-        if (avc.isEmpty())
-            return false;
-
-        qInfo() << "WebRTC: configured H.264 decoder from in-band SPS/PPS";
-        return setAvcExtradata(avc);
-    }
-
-    bool setAvcExtradata(const QByteArray &avcExtradata) {
-        m_avcExtradata = avcExtradata;
-        reset();
-        return !avcExtradata.isEmpty() && ensureOpen();
-    }
+    Vp9Decoder(const Vp9Decoder &) = delete;
+    Vp9Decoder &operator=(const Vp9Decoder &) = delete;
 
     bool ensureOpen() {
         if (m_ctx) return true;
-        const AVCodec *codec = avcodec_find_decoder(AV_CODEC_ID_H264);
+        const AVCodec *codec = avcodec_find_decoder(AV_CODEC_ID_VP9);
         if (!codec) return false;
 
         m_ctx = avcodec_alloc_context3(codec);
         if (!m_ctx) return false;
         m_ctx->flags |= AV_CODEC_FLAG_LOW_DELAY;
         m_ctx->thread_count = 1;
-        m_ctx->has_b_frames = 0;
-
-        if (!m_avcExtradata.isEmpty()) {
-            m_ctx->extradata_size = m_avcExtradata.size();
-            m_ctx->extradata = static_cast<uint8_t *>(
-                av_malloc(static_cast<size_t>(m_ctx->extradata_size) + AV_INPUT_BUFFER_PADDING_SIZE));
-            if (!m_ctx->extradata) {
-                reset();
-                return false;
-            }
-            memcpy(m_ctx->extradata, m_avcExtradata.constData(),
-                   static_cast<size_t>(m_ctx->extradata_size));
-            memset(m_ctx->extradata + m_ctx->extradata_size, 0, AV_INPUT_BUFFER_PADDING_SIZE);
-        }
 
         if (avcodec_open2(m_ctx, codec, nullptr) < 0) {
             reset();
             return false;
         }
 
-        m_parser = av_parser_init(AV_CODEC_ID_H264);
-        m_frame  = av_frame_alloc();
-        m_pkt    = av_packet_alloc();
-        return m_parser && m_frame && m_pkt;
+        m_frame = av_frame_alloc();
+        m_pkt   = av_packet_alloc();
+        return m_frame && m_pkt;
     }
 
     QImage decode(const uint8_t *data, int size) {
         if (!data || size <= 0) return {};
-        tryConfigureFromAnnexB(data, size);
         if (!ensureOpen()) return {};
 
-        QImage out;
-        const uint8_t *cursor   = data;
-        int            remaining = size;
+        av_packet_unref(m_pkt);
+        if (av_new_packet(m_pkt, size) < 0)
+            return {};
+        memcpy(m_pkt->data, data, static_cast<size_t>(size));
 
-        while (remaining > 0) {
-            uint8_t *parsed     = nullptr;
-            int      parsedSize = 0;
-            const int consumed = av_parser_parse2(
-                m_parser, m_ctx, &parsed, &parsedSize, cursor, remaining,
-                AV_NOPTS_VALUE, AV_NOPTS_VALUE, 0);
-            if (consumed < 0)
-                break;
+        if (avcodec_send_packet(m_ctx, m_pkt) < 0)
+            return {};
 
-            cursor += consumed;
-            remaining -= consumed;
-
-            if (parsedSize <= 0)
-                continue;
-
-            av_packet_unref(m_pkt);
-            if (av_new_packet(m_pkt, parsedSize) < 0)
-                continue;
-            memcpy(m_pkt->data, parsed, static_cast<size_t>(parsedSize));
-
-            if (avcodec_send_packet(m_ctx, m_pkt) < 0)
-                continue;
-
-            while (avcodec_receive_frame(m_ctx, m_frame) == 0) {
-                out = frameToRgb(m_frame);
-                if (!out.isNull())
-                    return out;
-            }
+        while (avcodec_receive_frame(m_ctx, m_frame) == 0) {
+            QImage out = frameToRgb(m_frame);
+            if (!out.isNull())
+                return out;
         }
 
-        return out;
+        return {};
     }
 
     void reset() {
-        if (m_parser) {
-            av_parser_close(m_parser);
-            m_parser = nullptr;
-        }
         if (m_sws) {
             sws_freeContext(m_sws);
             m_sws = nullptr;
@@ -249,14 +139,12 @@ private:
         return img;
     }
 
-    AVCodecContext       *m_ctx    = nullptr;
-    AVCodecParserContext *m_parser = nullptr;
-    AVFrame              *m_frame  = nullptr;
-    AVPacket             *m_pkt    = nullptr;
+    AVCodecContext *m_ctx   = nullptr;
+    AVFrame        *m_frame = nullptr;
+    AVPacket       *m_pkt   = nullptr;
     SwsContext     *m_sws   = nullptr;
     int             m_swsW  = 0;
     int             m_swsH  = 0;
-    QByteArray      m_avcExtradata;
 };
 
 struct FrameBuffer {
@@ -270,9 +158,9 @@ struct Session {
     QPointer<QWebSocket> socket;
     std::shared_ptr<rtc::PeerConnection> pc;
     std::shared_ptr<rtc::Track> videoTrack;
-    std::shared_ptr<SwitchXH264RtpDepacketizer> depacketizer;
+    std::shared_ptr<SwitchXVp9RtpDepacketizer> depacketizer;
     std::shared_ptr<rtc::RtcpReceivingSession> rtcpSession;
-    H264Decoder decoder;
+    Vp9Decoder decoder;
     FrameBuffer frames;
     bool peerConnected = false;
     int  viewerCount   = 0;
@@ -685,18 +573,6 @@ private:
             rtc::Configuration config;
             config.disableAutoNegotiation = true;
 
-            QByteArray sps;
-            QByteArray pps;
-            if (WebRtcH264Sdp::parseSpropParameterSets(sdp, &sps, &pps)) {
-                const QByteArray avc = WebRtcH264Sdp::buildAvcExtradata(sps, pps);
-                if (!avc.isEmpty() && session->decoder.setAvcExtradata(avc))
-                    qInfo() << "WebRTC: configured H.264 decoder from SDP parameter sets";
-                else
-                    qWarning() << "WebRTC: could not configure H.264 decoder from SDP parameter sets";
-            } else {
-                qInfo() << "WebRTC: offer SDP missing sprop-parameter-sets; waiting for in-band SPS/PPS";
-            }
-
             session->pc = std::make_shared<rtc::PeerConnection>(config);
             const QString token = session->token;
 
@@ -780,7 +656,7 @@ private:
             return;
 
         session->videoTrack = track;
-        session->depacketizer = std::make_shared<SwitchXH264RtpDepacketizer>();
+        session->depacketizer = std::make_shared<SwitchXVp9RtpDepacketizer>();
         session->rtcpSession  = std::make_shared<rtc::RtcpReceivingSession>();
         session->depacketizer->addToChain(session->rtcpSession);
         track->setMediaHandler(session->depacketizer);

@@ -121,8 +121,7 @@ set(SOURCES
     src/core/WebRtcPairing.cpp
     src/core/WebRtcCamPage.cpp
     src/core/WebRtcTlsStore.cpp
-    src/core/WebRtcH264Sdp.cpp
-    src/core/SwitchXH264RtpDepacketizer.cpp
+    src/core/SwitchXVp9RtpDepacketizer.cpp
     src/core/FirewallUtils.cpp
     src/core/WebRtcManager.cpp
     src/core/WebRtcSource.cpp
@@ -201,8 +200,7 @@ set(HEADERS
     include/core/WebRtcPairing.h
     include/core/WebRtcCamPage.h
     include/core/WebRtcTlsStore.h
-    include/core/WebRtcH264Sdp.h
-    include/core/SwitchXH264RtpDepacketizer.h
+    include/core/SwitchXVp9RtpDepacketizer.h
     include/core/FirewallUtils.h
     include/core/WebRtcManager.h
     include/core/WebRtcSource.h

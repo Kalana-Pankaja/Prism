@@ -15,25 +15,152 @@ QString html(const QString &token, quint16 sigPort) {
         body { font-family: system-ui, sans-serif; background: #111; color: #eee; margin: 0; padding: 16px; text-align: center; }
         video { width: 100%; max-width: 480px; border-radius: 12px; background: #000; }
         .status { margin: 12px 0; font-size: 14px; color: #aaa; }
+        .controls { max-width: 480px; margin: 0 auto 16px; text-align: left; display: grid; gap: 12px; }
+        .field { display: grid; gap: 6px; }
+        .field label { font-size: 13px; color: #bbb; font-weight: 600; }
+        select {
+            width: 100%; box-sizing: border-box; background: #1b1b1b; color: #eee;
+            border: 1px solid #333; border-radius: 10px; padding: 10px 12px; font-size: 15px;
+        }
+        select:disabled { opacity: 0.5; }
         button { background: #e5a93b; color: #111; border: none; border-radius: 10px; padding: 12px 20px; font-weight: 700; font-size: 16px; }
         button:disabled { opacity: 0.5; }
     </style>
 </head>
 <body>
     <h1>SwitchX Phone Camera</h1>
-    <p class="status" id="status">Tap Start to stream your camera to SwitchX.</p>
+    <p class="status" id="status">Loading cameras…</p>
+    <div class="controls">
+        <div class="field">
+            <label for="cameraSelect">Camera</label>
+            <select id="cameraSelect" disabled></select>
+        </div>
+        <div class="field">
+            <label for="resolutionSelect">Resolution</label>
+            <select id="resolutionSelect" disabled></select>
+        </div>
+    </div>
     <video id="preview" autoplay playsinline muted></video>
-    <p><button id="startBtn">Start streaming</button></p>
+    <p><button id="startBtn" disabled>Start streaming</button></p>
     <script>
         const TOKEN = "%1";
         const SIG_PORT = %2;
+        const RESOLUTIONS = [
+            { label: '1280×720 (HD)', width: 1280, height: 720 },
+            { label: '1920×1080 (Full HD)', width: 1920, height: 1080 },
+            { label: '960×540', width: 960, height: 540 },
+            { label: '640×480', width: 640, height: 480 },
+            { label: 'Device default', width: 0, height: 0 }
+        ];
         const statusEl = document.getElementById('status');
         const preview = document.getElementById('preview');
         const startBtn = document.getElementById('startBtn');
+        const cameraSelect = document.getElementById('cameraSelect');
+        const resolutionSelect = document.getElementById('resolutionSelect');
         let ws = null;
         let pc = null;
+        let previewStream = null;
+        let streaming = false;
 
         function setStatus(text) { statusEl.textContent = text; }
+
+        function setControlsEnabled(enabled) {
+            cameraSelect.disabled = !enabled;
+            resolutionSelect.disabled = !enabled;
+            startBtn.disabled = !enabled || streaming;
+        }
+
+        function selectedResolution() {
+            return RESOLUTIONS[resolutionSelect.selectedIndex] || RESOLUTIONS[0];
+        }
+
+        function buildVideoConstraints() {
+            const res = selectedResolution();
+            const video = { frameRate: { ideal: 30, max: 30 } };
+            if (cameraSelect.value)
+                video.deviceId = { exact: cameraSelect.value };
+            if (res.width > 0) {
+                video.width = { ideal: res.width, max: res.width };
+                video.height = { ideal: res.height, max: res.height };
+            }
+            return { video, audio: false };
+        }
+
+        function populateResolutions() {
+            resolutionSelect.innerHTML = '';
+            RESOLUTIONS.forEach((res, index) => {
+                const opt = document.createElement('option');
+                opt.value = String(index);
+                opt.textContent = res.label;
+                resolutionSelect.appendChild(opt);
+            });
+        }
+
+        async function populateCameras() {
+            const devices = await navigator.mediaDevices.enumerateDevices();
+            const cameras = devices.filter(d => d.kind === 'videoinput');
+            cameraSelect.innerHTML = '';
+            cameras.forEach((cam, index) => {
+                const opt = document.createElement('option');
+                opt.value = cam.deviceId;
+                opt.textContent = cam.label || ('Camera ' + (index + 1));
+                cameraSelect.appendChild(opt);
+            });
+            if (!cameras.length)
+                throw new Error('No cameras found');
+        }
+
+        function stopPreview() {
+            if (previewStream) {
+                previewStream.getTracks().forEach(t => t.stop());
+                previewStream = null;
+            }
+            preview.srcObject = null;
+        }
+
+        async function openPreview() {
+            if (streaming) return;
+            stopPreview();
+            previewStream = await navigator.mediaDevices.getUserMedia(buildVideoConstraints());
+            preview.srcObject = previewStream;
+            const track = previewStream.getVideoTracks()[0];
+            if (track) {
+                const settings = track.getSettings();
+                if (settings.width && settings.height)
+                    setStatus('Preview: ' + settings.width + '×' + settings.height);
+                else
+                    setStatus('Preview ready');
+            }
+        }
+
+        async function initPage() {
+            populateResolutions();
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                setStatus('Camera API not available in this browser.');
+                return;
+            }
+            setStatus('Requesting camera access…');
+            try {
+                const tmp = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+                tmp.getTracks().forEach(t => t.stop());
+            } catch (err) {
+                setStatus('Camera access denied: ' + err);
+                return;
+            }
+            try {
+                await populateCameras();
+            } catch (err) {
+                setStatus(String(err));
+                return;
+            }
+            setControlsEnabled(true);
+            try {
+                await openPreview();
+                setStatus('Choose camera and resolution, then tap Start.');
+            } catch (err) {
+                setStatus('Could not open camera: ' + err);
+            }
+        }
 
         function wsUrl() {
             const scheme = location.protocol === 'https:' ? 'wss' : 'ws';
@@ -49,38 +176,40 @@ QString html(const QString &token, quint16 sigPort) {
                 ws.send(JSON.stringify(msg));
         }
 
+        function teardownConnection() {
+            if (pc) {
+                pc.close();
+                pc = null;
+            }
+            if (ws) {
+                ws.close();
+                ws = null;
+            }
+            streaming = false;
+            setControlsEnabled(true);
+        }
+
         async function start() {
-            startBtn.disabled = true;
-            setStatus('Requesting camera…');
-            try {
-                const stream = await navigator.mediaDevices.getUserMedia({
-                    video: {
-                        facingMode: 'environment',
-                        width: { ideal: 1280, max: 1280 },
-                        height: { ideal: 720, max: 720 },
-                        frameRate: { ideal: 30, max: 30 }
-                    },
-                    audio: false
-                });
-                preview.srcObject = stream;
-            } catch (err) {
-                setStatus('Camera access denied: ' + err);
-                startBtn.disabled = false;
+            if (streaming) return;
+            if (!previewStream || !previewStream.getVideoTracks().length) {
+                setStatus('No camera preview available.');
                 return;
             }
 
+            streaming = true;
+            setControlsEnabled(false);
             setStatus('Connecting…');
             ws = new WebSocket(wsUrl());
             ws.onopen = async () => {
                 send({ type: 'hello', token: TOKEN });
                 pc = new RTCPeerConnection({ iceServers: [] });
-                const videoTrack = preview.srcObject.getVideoTracks()[0];
+                const videoTrack = previewStream.getVideoTracks()[0];
                 const tr = pc.addTransceiver(videoTrack, { direction: 'sendonly' });
                 try {
                     if (tr.setCodecPreferences && window.RTCRtpSender && RTCRtpSender.getCapabilities) {
                         const caps = RTCRtpSender.getCapabilities('video');
-                        const h264 = caps.codecs.filter(c => /h264/i.test(c.mimeType));
-                        if (h264.length) tr.setCodecPreferences(h264);
+                        const vp9 = caps.codecs.filter(c => /vp9/i.test(c.mimeType));
+                        if (vp9.length) tr.setCodecPreferences(vp9);
                     }
                 } catch (e) { /* older browsers: fall back to default negotiation */ }
                 pc.onicecandidate = (ev) => {
@@ -100,16 +229,36 @@ QString html(const QString &token, quint16 sigPort) {
                 const msg = JSON.parse(ev.data);
                 if (msg.type === 'answer' && pc) {
                     await pc.setRemoteDescription({ type: 'answer', sdp: msg.sdp });
-                    setStatus('Streaming to SwitchX');
+                    const track = previewStream.getVideoTracks()[0];
+                    const settings = track ? track.getSettings() : {};
+                    const size = (settings.width && settings.height)
+                        ? (' (' + settings.width + '×' + settings.height + ')')
+                        : '';
+                    setStatus('Streaming to SwitchX' + size);
                 } else if (msg.type === 'candidate' && pc && msg.candidate) {
                     await pc.addIceCandidate({ candidate: msg.candidate, sdpMid: msg.mid });
                 }
             };
-            ws.onerror = () => { setStatus('WebSocket error'); startBtn.disabled = false; };
-            ws.onclose = () => { setStatus('Disconnected'); startBtn.disabled = false; };
+            ws.onerror = () => {
+                setStatus('WebSocket error');
+                teardownConnection();
+                openPreview().catch(() => {});
+            };
+            ws.onclose = () => {
+                setStatus('Disconnected');
+                teardownConnection();
+                openPreview().catch(() => {});
+            };
         }
 
+        cameraSelect.addEventListener('change', () => {
+            openPreview().catch(err => setStatus('Could not switch camera: ' + err));
+        });
+        resolutionSelect.addEventListener('change', () => {
+            openPreview().catch(err => setStatus('Could not change resolution: ' + err));
+        });
         startBtn.addEventListener('click', start);
+        initPage();
     </script>
 </body>
 </html>)html").arg(safeToken, sigPortStr);
