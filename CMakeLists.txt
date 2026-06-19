@@ -73,7 +73,6 @@ endif()
 
 
 set(SOURCES
-    src/main.cpp
     src/core/VideoPlayer.cpp
     src/core/VideoFileSource.cpp
     src/core/AudioDecoder.cpp
@@ -139,6 +138,8 @@ set(SOURCES
     src/ui/SourceFactory.cpp
     src/ui/SourcePrompt.cpp
     src/ui/RemoteControlServer.cpp
+    src/ui/RemoteProtocol.cpp
+    src/ui/MainWindowUtils.cpp
     src/ui/RemoteServerDialog.cpp
     src/ui/QrCodeHelper.cpp
     third_party/qrcodegen/qrcodegen.cpp
@@ -191,6 +192,7 @@ set(HEADERS
     include/ui/ProgramMirrorWidget.h
     include/ui/MirrorOutputWindow.h
     include/ui/OutputHub.h
+    include/ui/ProgramFrameSource.h
     include/ui/NdiProgramSink.h
     include/ui/VirtualCameraProgramSink.h
     include/ui/FrameCaptureHelper.h
@@ -213,6 +215,8 @@ set(HEADERS
     include/ui/SourceFactory.h
     include/ui/SourcePrompt.h
     include/ui/RemoteControlServer.h
+    include/ui/RemoteProtocol.h
+    include/ui/MainWindowUtils.h
     include/ui/RemoteServerDialog.h
     include/ui/QrCodeHelper.h
 )
@@ -230,16 +234,14 @@ set(UI_FILES
     forms/AudioNodeDialog.ui
 )
 
-# Create executable
-qt_add_executable(Prism ${SOURCES} ${HEADERS} ${UI_FILES} resources/resources.qrc)
+# Core library (linked by the app and unit tests)
+add_library(switchx_core STATIC ${SOURCES} ${HEADERS} ${UI_FILES} resources/resources.qrc)
 
-# Tell AUTOUIC where to find .ui files
-set_target_properties(Prism PROPERTIES
+set_target_properties(switchx_core PROPERTIES
     AUTOUIC_SEARCH_PATHS "${CMAKE_CURRENT_SOURCE_DIR}/forms"
 )
 
-# Include directories
-target_include_directories(Prism PRIVATE
+target_include_directories(switchx_core PUBLIC
     include
     third_party/qrcodegen
     ${FFMPEG_INCLUDE_DIRS}
@@ -248,8 +250,7 @@ target_include_directories(Prism PRIVATE
     ${LIBZIP_INCLUDE_DIRS}
 )
 
-# Link libraries
-target_link_libraries(Prism PRIVATE
+target_link_libraries(switchx_core PUBLIC
     Qt6::Core
     Qt6::Widgets
     Qt6::OpenGL
@@ -268,20 +269,23 @@ target_link_libraries(Prism PRIVATE
 )
 
 if(SWITCHX_HAVE_NDI)
-    target_compile_definitions(Prism PRIVATE SWITCHX_HAVE_NDI)
-    target_include_directories(Prism PRIVATE ${NDI_INCLUDE_DIRS})
-    target_link_libraries(Prism PRIVATE ${NDI_LIBRARIES})
+    target_compile_definitions(switchx_core PUBLIC SWITCHX_HAVE_NDI)
+    target_include_directories(switchx_core PUBLIC ${NDI_INCLUDE_DIRS})
+    target_link_libraries(switchx_core PUBLIC ${NDI_LIBRARIES})
 endif()
 
 if(SWITCHX_HAVE_OBS_WS)
-    target_compile_definitions(Prism PRIVATE SWITCHX_HAVE_OBS_WS)
-    target_link_libraries(Prism PRIVATE Qt6::WebSockets)
+    target_compile_definitions(switchx_core PUBLIC SWITCHX_HAVE_OBS_WS)
+    target_link_libraries(switchx_core PUBLIC Qt6::WebSockets)
 endif()
 
 if(SWITCHX_HAVE_WEBRTC)
-    target_compile_definitions(Prism PRIVATE SWITCHX_HAVE_WEBRTC)
-    target_link_libraries(Prism PRIVATE LibDataChannel::LibDataChannelStatic Qt6::WebSockets OpenSSL::SSL OpenSSL::Crypto)
+    target_compile_definitions(switchx_core PUBLIC SWITCHX_HAVE_WEBRTC)
+    target_link_libraries(switchx_core PUBLIC LibDataChannel::LibDataChannelStatic Qt6::WebSockets OpenSSL::SSL OpenSSL::Crypto)
 endif()
+
+qt_add_executable(Prism src/main.cpp)
+target_link_libraries(Prism PRIVATE switchx_core)
 
 # Enable testing
 enable_testing()
@@ -289,4 +293,4 @@ enable_testing()
 # Add test subdirectory
 add_subdirectory(tests)
 
-install(TARGETS Prism RUNTIME DESTINATION bin)
+install(TARGETS Prism switchx_core RUNTIME DESTINATION bin ARCHIVE DESTINATION lib)

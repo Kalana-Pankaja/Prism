@@ -245,8 +245,20 @@ void ProgramRecorder::addMarker(const QString &label) {
 }
 
 void ProgramRecorder::writeMarkersFile() const {
+    const QJsonDocument doc = buildMarkersJson(
+        m_outputPath, m_markers, m_trackLabel,
+        m_lastDurationMs > 0 ? m_lastDurationMs : m_timer.elapsed(), kFps);
+
+    QFile file(m_markersPath);
+    if (file.open(QIODevice::WriteOnly))
+        file.write(doc.toJson(QJsonDocument::Indented));
+}
+
+QJsonDocument ProgramRecorder::buildMarkersJson(const QString &videoPath, const QVector<Marker> &markers,
+                                                const QString &trackLabel, qint64 durationMs, int frameRate)
+{
     QJsonArray markersArr;
-    for (const Marker &m : m_markers) {
+    for (const Marker &m : markers) {
         QJsonObject o;
         o.insert(QStringLiteral("timeMs"), m.timeMs);
         o.insert(QStringLiteral("label"), m.label);
@@ -254,16 +266,14 @@ void ProgramRecorder::writeMarkersFile() const {
     }
 
     QJsonObject root;
-    root.insert(QStringLiteral("video"), m_outputPath);
-    if (!m_trackLabel.isEmpty())
-        root.insert(QStringLiteral("track"), m_trackLabel);
-    root.insert(QStringLiteral("durationMs"), m_lastDurationMs > 0 ? m_lastDurationMs : m_timer.elapsed());
-    root.insert(QStringLiteral("frameRate"), kFps);
+    root.insert(QStringLiteral("video"), videoPath);
+    if (!trackLabel.isEmpty())
+        root.insert(QStringLiteral("track"), trackLabel);
+    root.insert(QStringLiteral("durationMs"), durationMs);
+    root.insert(QStringLiteral("frameRate"), frameRate);
     root.insert(QStringLiteral("markers"), markersArr);
 
-    QFile file(m_markersPath);
-    if (file.open(QIODevice::WriteOnly))
-        file.write(QJsonDocument(root).toJson(QJsonDocument::Indented));
+    return QJsonDocument(root);
 }
 
 void ProgramRecorder::cleanup() {

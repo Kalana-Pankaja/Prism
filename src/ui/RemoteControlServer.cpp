@@ -3,6 +3,7 @@
 #include "ui/MainWindow.h"
 #include "ui/ClipNodeEditor.h"
 #include "ui/ClipNodeModel.h"
+#include "ui/RemoteProtocol.h"
 #include "core/WebRtcPairing.h"
 #include "core/WebRtcCamPage.h"
 #ifdef SWITCHX_HAVE_WEBRTC
@@ -13,9 +14,6 @@
 #include <QUrlQuery>
 #include <QSlider>
 #include <QMetaObject>
-#include <QJsonDocument>
-#include <QJsonObject>
-#include <QJsonArray>
 
 RemoteControlServer::RemoteControlServer(MainWindow *mainWindow, TransitionController *transitionCtrl, QSlider *faderSlider, QObject *parent)
     : QTcpServer(parent)
@@ -61,148 +59,141 @@ void RemoteControlServer::onReadyRead() {
     QTcpSocket *socket = qobject_cast<QTcpSocket*>(sender());
     if (!socket) return;
 
-    QByteArray requestData = socket->readAll();
-    QString request(requestData);
+    const RemoteProtocol::RequestLine request =
+        RemoteProtocol::parseRequestLine(QString::fromUtf8(socket->readAll()));
+    if (!request.valid)
+        return;
 
-    QStringList lines = request.split("\r\n");
-    if (lines.isEmpty()) return;
+    switch (RemoteProtocol::matchRoute(request.method, request.path)) {
+    case RemoteProtocol::Route::Root:
+        sendHtmlResponse(socket);
+        break;
 
-    QString firstLine = lines.first();
-    QStringList parts = firstLine.split(" ");
-    if (parts.size() < 2) return;
-
-    QString method = parts[0];
-    QString path = parts[1];
-
-    if (method == "GET") {
-        if (path == "/") {
-            sendHtmlResponse(socket);
-        } else if (path.startsWith("/cam")) {
-            QUrl url(QStringLiteral("http://local") + path);
-            QUrlQuery query(url.query());
-            QString token;
-            quint16 sigPort = 0;
-            if (!WebRtcPairing::decodeQuery(query, token, sigPort)) {
-                sendTextResponse(socket,
-                    QStringLiteral("Missing or invalid pairing data (?d=<base64> or ?s=<token>)"), 400);
-            } else {
+    case RemoteProtocol::Route::Cam: {
+        QUrl url(QStringLiteral("http://local") + request.path);
+        QUrlQuery query(url.query());
+        QString token;
+        quint16 sigPort = 0;
+        if (!WebRtcPairing::decodeQuery(query, token, sigPort)) {
+            sendTextResponse(socket,
+                QStringLiteral("Missing or invalid pairing data (?d=<base64> or ?s=<token>)"), 400);
+        } else {
 #ifdef SWITCHX_HAVE_WEBRTC
-                if (sigPort == 0)
-                    sigPort = WebRtcManager::instance().signalingPort();
+            if (sigPort == 0)
+                sigPort = WebRtcManager::instance().signalingPort();
 #endif
-                sendCamHtmlResponse(socket, token, sigPort);
-            }
-        } else if (path == "/api/status") {
-            QJsonObject statusObj;
-            
-            // Fader
-            int faderVal = m_faderSlider ? m_faderSlider->value() : 0;
-            statusObj["fader"] = faderVal;
+            sendCamHtmlResponse(socket, token, sigPort);
+        }
+        break;
+    }
 
-            if (m_mainWindow) {
-                // Deck states
-                statusObj["activeA"] = QString::number(m_mainWindow->activeNodeA());
-                statusObj["activeB"] = QString::number(m_mainWindow->activeNodeB());
-                statusObj["isPlayingA"] = m_mainWindow->isPlayingA();
-                statusObj["isPlayingB"] = m_mainWindow->isPlayingB();
+    case RemoteProtocol::Route::Status: {
+        RemoteProtocol::StatusData status;
+        status.fader = m_faderSlider ? m_faderSlider->value() : 0;
 
-                // Clips list
-                QJsonArray clipsArray;
-                if (auto *editor = m_mainWindow->clipNodeEditor()) {
-                    for (auto *node : editor->allNodes()) {
-                        if (node && node->hasSource()) {
-                            QJsonObject clipObj;
-                            clipObj["id"] = QString::number(node->nodeId());
-                            clipObj["name"] = node->sourceName();
-                            clipObj["activeA"] = (node->nodeId() == m_mainWindow->activeNodeA());
-                            clipObj["activeB"] = (node->nodeId() == m_mainWindow->activeNodeB());
-                            clipsArray.append(clipObj);
-                        }
+        if (m_mainWindow) {
+            status.hasDeck = true;
+            status.activeA = m_mainWindow->activeNodeA();
+            status.activeB = m_mainWindow->activeNodeB();
+            status.isPlayingA = m_mainWindow->isPlayingA();
+            status.isPlayingB = m_mainWindow->isPlayingB();
+
+            if (auto *editor = m_mainWindow->clipNodeEditor()) {
+                for (auto *node : editor->allNodes()) {
+                    if (node && node->hasSource()) {
+                        RemoteProtocol::ClipInfo clip;
+                        clip.id = node->nodeId();
+                        clip.name = node->sourceName();
+                        clip.activeA = (node->nodeId() == m_mainWindow->activeNodeA());
+                        clip.activeB = (node->nodeId() == m_mainWindow->activeNodeB());
+                        status.clips.append(clip);
                     }
                 }
-                statusObj["clips"] = clipsArray;
             }
-
-            if (m_transitionCtrl) {
-                statusObj["transitionMode"] = m_transitionCtrl->currentModeIndex();
-                statusObj["transitionDuration"] = m_transitionCtrl->currentDurationSecs();
-                
-                QJsonArray modesArray;
-                for (const QString &modeName : m_transitionCtrl->transitionModeNames()) {
-                    modesArray.append(modeName);
-                }
-                statusObj["transitionModes"] = modesArray;
-            }
-
-            QJsonDocument doc(statusObj);
-            sendJsonResponse(socket, doc.toJson(QJsonDocument::Compact));
-        } else if (path.startsWith("/api/fader")) {
-            QUrl url(path);
-            QUrlQuery query(url.query());
-            if (query.hasQueryItem("val")) {
-                int val = query.queryItemValue("val").toInt();
-                if (m_faderSlider) {
-                    m_faderSlider->setValue(val);
-                }
-            }
-            sendJsonResponse(socket, "{\"status\": \"ok\"}");
-        } else if (path == "/api/cut") {
-            if (m_transitionCtrl) {
-                m_transitionCtrl->onCutTransitionClicked();
-            }
-            sendJsonResponse(socket, "{\"status\": \"ok\"}");
-        } else if (path == "/api/auto") {
-            if (m_transitionCtrl) {
-                m_transitionCtrl->onAutoTransitionClicked();
-            }
-            sendJsonResponse(socket, "{\"status\": \"ok\"}");
-        } else if (path.startsWith("/api/selectA")) {
-            QUrl url(path);
-            QUrlQuery query(url.query());
-            if (query.hasQueryItem("id") && m_mainWindow) {
-                quint64 id = query.queryItemValue("id").toULongLong();
-                m_mainWindow->selectNodeA(id);
-            }
-            sendJsonResponse(socket, "{\"status\": \"ok\"}");
-        } else if (path.startsWith("/api/selectB")) {
-            QUrl url(path);
-            QUrlQuery query(url.query());
-            if (query.hasQueryItem("id") && m_mainWindow) {
-                quint64 id = query.queryItemValue("id").toULongLong();
-                m_mainWindow->selectNodeB(id);
-            }
-            sendJsonResponse(socket, "{\"status\": \"ok\"}");
-        } else if (path == "/api/togglePlayA") {
-            if (m_mainWindow) {
-                m_mainWindow->togglePlayA();
-            }
-            sendJsonResponse(socket, "{\"status\": \"ok\"}");
-        } else if (path == "/api/togglePlayB") {
-            if (m_mainWindow) {
-                m_mainWindow->togglePlayB();
-            }
-            sendJsonResponse(socket, "{\"status\": \"ok\"}");
-        } else if (path.startsWith("/api/setTransitionMode")) {
-            QUrl url(path);
-            QUrlQuery query(url.query());
-            if (query.hasQueryItem("index") && m_transitionCtrl) {
-                int index = query.queryItemValue("index").toInt();
-                m_transitionCtrl->setTransitionModeIndex(index);
-            }
-            sendJsonResponse(socket, "{\"status\": \"ok\"}");
-        } else if (path.startsWith("/api/setDuration")) {
-            QUrl url(path);
-            QUrlQuery query(url.query());
-            if (query.hasQueryItem("val") && m_transitionCtrl) {
-                double val = query.queryItemValue("val").toDouble();
-                m_transitionCtrl->setTransitionDuration(val);
-            }
-            sendJsonResponse(socket, "{\"status\": \"ok\"}");
-        } else {
-            sendTextResponse(socket, "404 Not Found", 404);
         }
-    } else {
+
+        if (m_transitionCtrl) {
+            status.hasTransition = true;
+            status.transitionMode = m_transitionCtrl->currentModeIndex();
+            status.transitionDuration = m_transitionCtrl->currentDurationSecs();
+            status.transitionModes = m_transitionCtrl->transitionModeNames();
+        }
+
+        sendJsonResponse(socket, RemoteProtocol::buildStatusJson(status));
+        break;
+    }
+
+    case RemoteProtocol::Route::Fader: {
+        int val = 0;
+        if (RemoteProtocol::intParam(request.path, QStringLiteral("val"), val) && m_faderSlider)
+            m_faderSlider->setValue(val);
+        sendJsonResponse(socket, "{\"status\": \"ok\"}");
+        break;
+    }
+
+    case RemoteProtocol::Route::Cut:
+        if (m_transitionCtrl)
+            m_transitionCtrl->onCutTransitionClicked();
+        sendJsonResponse(socket, "{\"status\": \"ok\"}");
+        break;
+
+    case RemoteProtocol::Route::Auto:
+        if (m_transitionCtrl)
+            m_transitionCtrl->onAutoTransitionClicked();
+        sendJsonResponse(socket, "{\"status\": \"ok\"}");
+        break;
+
+    case RemoteProtocol::Route::SelectA: {
+        quint64 id = 0;
+        if (RemoteProtocol::uint64Param(request.path, QStringLiteral("id"), id) && m_mainWindow)
+            m_mainWindow->selectNodeA(id);
+        sendJsonResponse(socket, "{\"status\": \"ok\"}");
+        break;
+    }
+
+    case RemoteProtocol::Route::SelectB: {
+        quint64 id = 0;
+        if (RemoteProtocol::uint64Param(request.path, QStringLiteral("id"), id) && m_mainWindow)
+            m_mainWindow->selectNodeB(id);
+        sendJsonResponse(socket, "{\"status\": \"ok\"}");
+        break;
+    }
+
+    case RemoteProtocol::Route::TogglePlayA:
+        if (m_mainWindow)
+            m_mainWindow->togglePlayA();
+        sendJsonResponse(socket, "{\"status\": \"ok\"}");
+        break;
+
+    case RemoteProtocol::Route::TogglePlayB:
+        if (m_mainWindow)
+            m_mainWindow->togglePlayB();
+        sendJsonResponse(socket, "{\"status\": \"ok\"}");
+        break;
+
+    case RemoteProtocol::Route::SetTransitionMode: {
+        int index = 0;
+        if (RemoteProtocol::intParam(request.path, QStringLiteral("index"), index) && m_transitionCtrl)
+            m_transitionCtrl->setTransitionModeIndex(index);
+        sendJsonResponse(socket, "{\"status\": \"ok\"}");
+        break;
+    }
+
+    case RemoteProtocol::Route::SetDuration: {
+        double val = 0.0;
+        if (RemoteProtocol::doubleParam(request.path, QStringLiteral("val"), val) && m_transitionCtrl)
+            m_transitionCtrl->setTransitionDuration(val);
+        sendJsonResponse(socket, "{\"status\": \"ok\"}");
+        break;
+    }
+
+    case RemoteProtocol::Route::NotFound:
+        sendTextResponse(socket, "404 Not Found", 404);
+        break;
+
+    case RemoteProtocol::Route::MethodNotAllowed:
         sendTextResponse(socket, "405 Method Not Allowed", 405);
+        break;
     }
 }
 
@@ -214,39 +205,26 @@ void RemoteControlServer::onDisconnected() {
 }
 
 void RemoteControlServer::sendHtmlResponse(QTcpSocket *socket) {
-    QByteArray body = getWebPageHtml().toUtf8();
-    QByteArray response = "HTTP/1.1 200 OK\r\n"
-                          "Content-Type: text/html; charset=utf-8\r\n"
-                          "Content-Length: " + QByteArray::number(body.size()) + "\r\n"
-                          "Connection: close\r\n\r\n" + body;
-    socket->write(response);
+    const QByteArray body = getWebPageHtml().toUtf8();
+    socket->write(RemoteProtocol::buildHttpResponse(
+        200, "text/html; charset=utf-8", body));
 }
 
 void RemoteControlServer::sendCamHtmlResponse(QTcpSocket *socket, const QString &token, quint16 sigPort) {
-    QByteArray body = WebRtcCamPage::html(token, sigPort).toUtf8();
-    QByteArray response = "HTTP/1.1 200 OK\r\n"
-                          "Content-Type: text/html; charset=utf-8\r\n"
-                          "Content-Length: " + QByteArray::number(body.size()) + "\r\n"
-                          "Connection: close\r\n\r\n" + body;
-    socket->write(response);
+    const QByteArray body = WebRtcCamPage::html(token, sigPort).toUtf8();
+    socket->write(RemoteProtocol::buildHttpResponse(
+        200, "text/html; charset=utf-8", body));
 }
 
 void RemoteControlServer::sendJsonResponse(QTcpSocket *socket, const QByteArray &json) {
-    QByteArray response = "HTTP/1.1 200 OK\r\n"
-                          "Content-Type: application/json\r\n"
-                          "Content-Length: " + QByteArray::number(json.size()) + "\r\n"
-                          "Connection: close\r\n\r\n" + json;
-    socket->write(response);
+    socket->write(RemoteProtocol::buildHttpResponse(
+        200, "application/json", json));
 }
 
 void RemoteControlServer::sendTextResponse(QTcpSocket *socket, const QString &text, int statusCode) {
-    QByteArray body = text.toUtf8();
-    QByteArray statusLine = QString("HTTP/1.1 %1\r\n").arg(statusCode).toUtf8();
-    QByteArray response = statusLine +
-                          "Content-Type: text/plain\r\n" +
-                          "Content-Length: " + QByteArray::number(body.size()) + "\r\n" +
-                          "Connection: close\r\n\r\n" + body;
-    socket->write(response);
+    const QByteArray body = text.toUtf8();
+    socket->write(RemoteProtocol::buildHttpResponse(
+        statusCode, "text/plain", body));
 }
 
 QString RemoteControlServer::getWebPageHtml() const {

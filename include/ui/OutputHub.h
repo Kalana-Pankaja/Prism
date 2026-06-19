@@ -8,6 +8,7 @@
 #include <memory>
 #include "ui/NdiProgramSink.h"
 #include "ui/VirtualCameraProgramSink.h"
+#include "ui/ProgramFrameSource.h"
 #include "ui/ProgramRecorder.h"
 #include "ui/RecordingOptions.h"
 #include "ui/ClipNodeModel.h"
@@ -31,7 +32,8 @@ public:
     ~OutputHub() override;
 
     void setProgramSource(VideoWidget *source);
-    VideoWidget *programSource() const { return m_source; }
+    void setProgramSourceForTest(ProgramFrameSource *source);
+    VideoWidget *programSource() const;
 
     void setActiveDeckNodes(NodeId deckA, NodeId deckB);
 
@@ -101,7 +103,8 @@ private:
     void placeOnSecondaryScreen(QWidget *window);
     ProgramRecorder *recorderFor(TrackKind kind, NodeId sourceNodeId = 0) const;
 
-    VideoWidget *m_source = nullptr;
+    ProgramFrameSource *m_frameSource = nullptr;
+    QPointer<VideoWidget> m_videoWidget;
     QList<QPointer<MirrorOutputWindow>> m_mirrors;
 
     std::unique_ptr<NdiProgramSink>            m_ndiSink;

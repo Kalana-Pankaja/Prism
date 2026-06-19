@@ -9,9 +9,10 @@
 #include <vector>
 #include "core/MediaSource.h"
 #include "core/OverlayItem.h"
+#include "ui/ProgramFrameSource.h"
 #include "ui/Transition.h"
 
-class VideoWidget : public QOpenGLWidget, protected QOpenGLFunctions {
+class VideoWidget : public QOpenGLWidget, public ProgramFrameSource, protected QOpenGLFunctions {
     Q_OBJECT
 
 public:
@@ -27,6 +28,14 @@ public:
     // Direct source injection — used by future source types (slideshow, camera…).
     void setSourceA(std::unique_ptr<MediaSource> source);
     void setSourceB(std::unique_ptr<MediaSource> source);
+
+    /// Drop the primary source and overlay chain for a deck (e.g. when its node is deleted).
+    void clearDeckA();
+    void clearDeckB();
+
+    /// Assign a deck source without GL texture upload (safe before `initializeGL`).
+    void adoptSourceA(std::unique_ptr<MediaSource> source);
+    void adoptSourceB(std::unique_ptr<MediaSource> source);
 
     // HTML overlay composited on top of the A/B crossfade (RGBA, alpha-blended).
     void setHtmlOverlay(std::unique_ptr<MediaSource> source);
@@ -136,8 +145,8 @@ public:
     /// Enable CPU readback of the program FBO for mirror outputs / recording.
     void addProgramFrameConsumer();
     void removeProgramFrameConsumer();
-    void setProgramFrameConsumerCount(int count);
-    QImage programFrame() const { return m_programFrameCache; }
+    void setProgramFrameConsumerCount(int count) override;
+    QImage programFrame() const override { return m_programFrameCache; }
 
     /// Enable CPU readback of per-deck FBOs for A/B preview labels.
     void addDeckPreviewConsumer();
@@ -145,14 +154,14 @@ public:
     void setDeckPreviewConsumerCount(int count);
 
     /// Full-resolution deck iso frames (1280×720, with overlays) for recording.
-    void setDeckFrameConsumerCount(int count);
-    QImage deckProgramFrame(bool deckA) const;
+    void setDeckFrameConsumerCount(int count) override;
+    QImage deckProgramFrame(bool deckA) const override;
 
     /// Read back the current program compositor frame (1280×720 RGBA).
     QImage captureProgramFrame();
 
     /// Compose and emit programFrameReady when mirror/NDI/recording consumers are active.
-    void captureOutputFrameNow();
+    void captureOutputFrameNow() override;
 
     /// Enable drag-to-move, double-click, and context menu for frameless windows.
     void setFramelessWindowChrome(bool enabled) { m_framelessWindowChrome = enabled; }
@@ -186,6 +195,9 @@ private slots:
     void updateFrame();
 
 private:
+    /// Stop live sources before GL context teardown (~VideoWidget ordering).
+    void releaseMediaSources();
+
     /// Render program/deck FBOs and optional CPU readback (mirror, NDI, recording).
     void composeProgramFrame();
 

@@ -27,15 +27,30 @@ VideoWidget::VideoWidget(QWidget *parent)
 }
 
 VideoWidget::~VideoWidget() {
-    m_frameTimer->stop();
-    makeCurrent();
-    destroyProgramFbo();
-    if (m_textureA)       glDeleteTextures(1, &m_textureA);
-    if (m_textureB)       glDeleteTextures(1, &m_textureB);
-    if (m_textureOverlay) glDeleteTextures(1, &m_textureOverlay);
-    clearChainTextures(m_chainTexA);
-    clearChainTextures(m_chainTexB);
-    doneCurrent();
+    releaseMediaSources();
+    if (isValid()) {
+        makeCurrent();
+        destroyProgramFbo();
+        if (m_textureA)       glDeleteTextures(1, &m_textureA);
+        if (m_textureB)       glDeleteTextures(1, &m_textureB);
+        if (m_textureOverlay) glDeleteTextures(1, &m_textureOverlay);
+        clearChainTextures(m_chainTexA);
+        clearChainTextures(m_chainTexB);
+        doneCurrent();
+    }
+}
+
+void VideoWidget::releaseMediaSources() {
+    if (m_frameTimer)
+        m_frameTimer->stop();
+    m_playingA = false;
+    m_playingB = false;
+    m_playingOverlay = false;
+    m_sourceA.reset();
+    m_sourceB.reset();
+    m_htmlOverlay.reset();
+    m_chainA.clear();
+    m_chainB.clear();
 }
 
 // ── OpenGL callbacks ──────────────────────────────────────────────────────────
@@ -654,6 +669,26 @@ void VideoWidget::setSourceB(std::unique_ptr<MediaSource> source) {
     update();
 }
 
+void VideoWidget::clearDeckA() {
+    setSourceA(nullptr);
+    setNodeChainA({});
+}
+
+void VideoWidget::clearDeckB() {
+    setSourceB(nullptr);
+    setNodeChainB({});
+}
+
+void VideoWidget::adoptSourceA(std::unique_ptr<MediaSource> source) {
+    m_playingA = false;
+    m_sourceA  = std::move(source);
+}
+
+void VideoWidget::adoptSourceB(std::unique_ptr<MediaSource> source) {
+    m_playingB = false;
+    m_sourceB  = std::move(source);
+}
+
 void VideoWidget::setHtmlOverlay(std::unique_ptr<MediaSource> source) {
     m_playingOverlay = false;
     m_htmlOverlay    = std::move(source);
@@ -793,21 +828,29 @@ void VideoWidget::primeChainSources(std::vector<NodeChainSource> &chain,
 }
 
 void VideoWidget::setNodeChainA(std::vector<NodeChainSource> chain) {
-    makeCurrent();
-    clearChainTextures(m_chainTexA);
-    m_chainA = std::move(chain);
-    primeChainSources(m_chainA, m_chainTexA);
-    doneCurrent();
-    update();
+    if (isValid()) {
+        makeCurrent();
+        clearChainTextures(m_chainTexA);
+        m_chainA = std::move(chain);
+        primeChainSources(m_chainA, m_chainTexA);
+        doneCurrent();
+        update();
+    } else {
+        m_chainA = std::move(chain);
+    }
 }
 
 void VideoWidget::setNodeChainB(std::vector<NodeChainSource> chain) {
-    makeCurrent();
-    clearChainTextures(m_chainTexB);
-    m_chainB = std::move(chain);
-    primeChainSources(m_chainB, m_chainTexB);
-    doneCurrent();
-    update();
+    if (isValid()) {
+        makeCurrent();
+        clearChainTextures(m_chainTexB);
+        m_chainB = std::move(chain);
+        primeChainSources(m_chainB, m_chainTexB);
+        doneCurrent();
+        update();
+    } else {
+        m_chainB = std::move(chain);
+    }
 }
 
 void VideoWidget::drawChainSources(std::vector<NodeChainSource> &chain,

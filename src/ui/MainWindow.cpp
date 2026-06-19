@@ -22,6 +22,7 @@
 #include "ui/SessionRecoveryDialog.h"
 #include "ui/RemoteControlServer.h"
 #include "ui/RemoteServerDialog.h"
+#include "ui/MainWindowUtils.h"
 #include "ui/FrameCaptureHelper.h"
 #include "ui/RecordingSettingsDialog.h"
 #include <QApplication>
@@ -652,8 +653,8 @@ void MainWindow::onLoadFolderClicked() {
     m_deckController->setActiveNodeB(0);
     m_deckController->stopDeckAudio(true);
     m_deckController->stopDeckAudio(false);
-    m_outputWindow->videoWidget()->setNodeChainA({});
-    m_outputWindow->videoWidget()->setNodeChainB({});
+    m_outputWindow->videoWidget()->clearDeckA();
+    m_outputWindow->videoWidget()->clearDeckB();
     for (int i = 0; i < clipManager.getClipCount(); ++i) {
         const QString p = clipManager.getClipPath(i);
         m_clipNodeEditor->addClipNode(p, ThumbnailExtractor::extract(p, 110, 65));
@@ -666,10 +667,7 @@ void MainWindow::onAddFolderClicked() {
     if (path.isEmpty()) return;
     const QStringList before = clipManager.getClips();
     clipManager.addFolder(path);
-    QStringList added;
-    for (const QString &p : clipManager.getClips())
-        if (!before.contains(p)) added << p;
-    appendClipsToEditor(added);
+    appendClipsToEditor(MainWindowUtils::diffNewItems(before, clipManager.getClips()));
 }
 
 void MainWindow::onAddFilesClicked() {
@@ -679,10 +677,7 @@ void MainWindow::onAddFilesClicked() {
     if (files.isEmpty()) return;
     const QStringList before = clipManager.getClips();
     clipManager.addFiles(files);
-    QStringList added;
-    for (const QString &p : clipManager.getClips())
-        if (!before.contains(p)) added << p;
-    appendClipsToEditor(added);
+    appendClipsToEditor(MainWindowUtils::diffNewItems(before, clipManager.getClips()));
 }
 
 void MainWindow::onClearAllClicked() {
@@ -692,8 +687,8 @@ void MainWindow::onClearAllClicked() {
     m_deckController->setActiveNodeB(0);
     m_deckController->stopDeckAudio(true);
     m_deckController->stopDeckAudio(false);
-    m_outputWindow->videoWidget()->setNodeChainA({});
-    m_outputWindow->videoWidget()->setNodeChainB({});
+    m_outputWindow->videoWidget()->clearDeckA();
+    m_outputWindow->videoWidget()->clearDeckB();
     m_stackWidget->setCurrentWidget(m_emptyPlaceholder);
 }
 
@@ -797,8 +792,8 @@ void MainWindow::onNodeRemoveRequested(NodeId nodeId) {
     m_hotkeyManager->releaseHotkeyForNode(nodeId);
     m_clipNodeEditor->removeNode(nodeId);
     auto *out = m_outputWindow->videoWidget();
-    if (m_deckController->activeNodeA() == nodeId) { m_deckController->setActiveNodeA(0); out->setNodeChainA({}); }
-    if (m_deckController->activeNodeB() == nodeId) { m_deckController->setActiveNodeB(0); out->setNodeChainB({}); }
+    if (m_deckController->activeNodeA() == nodeId) { m_deckController->setActiveNodeA(0); out->clearDeckA(); }
+    if (m_deckController->activeNodeB() == nodeId) { m_deckController->setActiveNodeB(0); out->clearDeckB(); }
     if (!m_deckController->activeNodeA()) m_deckController->stopDeckAudio(true);
     if (!m_deckController->activeNodeB()) m_deckController->stopDeckAudio(false);
     if (m_clipNodeEditor->allNodes().isEmpty())
@@ -857,26 +852,30 @@ void MainWindow::clearPanicState() {
 void MainWindow::applyPanicFromButtons() {
     auto *out = m_outputWindow->videoWidget();
 
-    if (ui->panicBlackoutBtn->isChecked()) {
+    switch (MainWindowUtils::panicStateForButtons(
+        ui->panicBlackoutBtn->isChecked(),
+        ui->panicStayTunedBtn->isChecked(),
+        ui->panicPauseBtn->isChecked())) {
+    case MainWindowUtils::PanicState::Blackout:
         out->setOutputFrozen(false);
         out->setPanicOverlay(VideoWidget::PanicOverlay::Blackout);
         m_deckController->stopDeckAudio(true);
         m_deckController->stopDeckAudio(false);
         return;
-    }
-    if (ui->panicStayTunedBtn->isChecked()) {
+    case MainWindowUtils::PanicState::StayTuned:
         out->setOutputFrozen(false);
         out->setPanicOverlay(VideoWidget::PanicOverlay::StayTuned);
         m_deckController->stopDeckAudio(true);
         m_deckController->stopDeckAudio(false);
         return;
-    }
-    if (ui->panicPauseBtn->isChecked()) {
+    case MainWindowUtils::PanicState::Freeze:
         out->setPanicOverlay(VideoWidget::PanicOverlay::None);
         out->setOutputFrozen(true);
         m_deckController->stopDeckAudio(true);
         m_deckController->stopDeckAudio(false);
         return;
+    case MainWindowUtils::PanicState::None:
+        break;
     }
 
     clearPanicState();
@@ -915,7 +914,7 @@ void MainWindow::onTimerUpdate() {
             DeckController::formatTimeShort(timeA) + " / " + DeckController::formatTimeShort(durA));
 
         // Restart audio on loop/backward jump
-        if (timeA < m_deckController->lastTimeA() - 0.2) {
+        if (MainWindowUtils::isBackwardJump(timeA, m_deckController->lastTimeA())) {
             NodeId id = m_deckController->activeNodeA();
             if (id)
                 if (auto *node = m_clipNodeEditor->nodeAt(id))
@@ -937,7 +936,7 @@ void MainWindow::onTimerUpdate() {
         ui->bTimeLabel->setText(
             DeckController::formatTimeShort(timeB) + " / " + DeckController::formatTimeShort(durB));
 
-        if (timeB < m_deckController->lastTimeB() - 0.2) {
+        if (MainWindowUtils::isBackwardJump(timeB, m_deckController->lastTimeB())) {
             NodeId id = m_deckController->activeNodeB();
             if (id)
                 if (auto *node = m_clipNodeEditor->nodeAt(id))
@@ -974,10 +973,7 @@ void MainWindow::dropEvent(QDropEvent *event) {
     }
     if (!filePaths.isEmpty()) clipManager.addFiles(filePaths);
 
-    QStringList added;
-    for (const QString &p : clipManager.getClips())
-        if (!before.contains(p)) added << p;
-    appendClipsToEditor(added);
+    appendClipsToEditor(MainWindowUtils::diffNewItems(before, clipManager.getClips()));
 
     event->acceptProposedAction();
 }
@@ -1275,7 +1271,7 @@ void MainWindow::onSaveSessionClicked() {
     QString path = QFileDialog::getSaveFileName(
         this, "Save Session", QString(), "SwitchX Session (*.sxs);;All Files (*)");
     if (path.isEmpty()) return;
-    if (!path.endsWith(".sxs", Qt::CaseInsensitive)) path += ".sxs";
+    path = MainWindowUtils::ensureExtension(path, QStringLiteral(".sxs"));
 
     if (!m_sessionManager->writeSessionFile(currentSessionJson(path), path)) {
         QMessageBox::warning(this, "Save Session",
@@ -1295,8 +1291,7 @@ void MainWindow::onExportProjectClicked() {
         this, tr("Export Project"), QString(),
         tr("SwitchX Project (*.switch);;All Files (*)"));
     if (path.isEmpty()) return;
-    if (!path.endsWith(ProjectPackager::kExtension, Qt::CaseInsensitive))
-        path += ProjectPackager::kExtension;
+    path = MainWindowUtils::ensureExtension(path, ProjectPackager::kExtension);
 
     const ProjectPackager::Report report = ProjectPackager::exportPackage(
         currentSessionJson(), m_clipNodeEditor->allNodes(), path);
@@ -1617,17 +1612,6 @@ void MainWindow::setupRecordingStatusBar() {
     bar->addPermanentWidget(m_recPathLabel);
 }
 
-static QString formatRecordingElapsed(qint64 ms) {
-    const qint64 totalSecs = ms / 1000;
-    const int hours   = static_cast<int>(totalSecs / 3600);
-    const int minutes = static_cast<int>((totalSecs % 3600) / 60);
-    const int seconds = static_cast<int>(totalSecs % 60);
-    return QStringLiteral("%1:%2:%3")
-        .arg(hours,   2, 10, QChar('0'))
-        .arg(minutes, 2, 10, QChar('0'))
-        .arg(seconds, 2, 10, QChar('0'));
-}
-
 void MainWindow::updateRecordingUi(qint64 elapsedMs) {
     const bool recording = m_outputHub && m_outputHub->isRecording();
     if (m_recStatusLabel) m_recStatusLabel->setVisible(recording);
@@ -1645,7 +1629,7 @@ void MainWindow::updateRecordingUi(qint64 elapsedMs) {
     if (elapsedMs < 0)
         elapsedMs = m_outputHub->longestActiveRecordingMs();
 
-    const QString elapsed = formatRecordingElapsed(elapsedMs);
+    const QString elapsed = MainWindowUtils::formatRecordingElapsed(elapsedMs);
     const QString tracks  = m_outputHub->activeRecordingTrackLabels().join(QStringLiteral(" · "));
 
     if (m_recTimeLabel)

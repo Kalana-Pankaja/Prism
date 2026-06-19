@@ -1,29 +1,57 @@
-name: Build
+name: CI
 
 on:
   push:
-    branches: [main, master, develop]
   pull_request:
-    branches: [main, master, develop]
 
 permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-jobs:
-  build-linux:
-    runs-on: ubuntu-latest
+env:
+  QT_QPA_PLATFORM: offscreen
 
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install lint tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cppcheck clang-tidy
+
+      - name: cppcheck
+        run: |
+          cppcheck --std=c++20 \
+            --enable=warning,performance,portability \
+            --suppress=missingIncludeSystem \
+            --suppress=unmatchedSuppression \
+            --inline-suppr \
+            --error-exitcode=1 \
+            -I include \
+            -I third_party/qrcodegen \
+            -D SWITCHX_HAVE_NDI=0 \
+            -D SWITCHX_HAVE_WEBRTC=1 \
+            -D SWITCHX_HAVE_OBS_WS=1 \
+            -D QT_MESSAGELOGCONTEXT \
+            --quiet \
+            src include tests
+
+  linux:
+    runs-on: ubuntu-latest
+    needs: lint
     steps:
       - uses: actions/checkout@v4
 
       - name: Install dependencies
         run: |
-          sudo apt update
-          sudo apt install -y \
+          sudo apt-get update
+          sudo apt-get install -y \
             build-essential \
             cmake \
             pkg-config \
@@ -40,18 +68,35 @@ jobs:
             libavutil-dev \
             libswscale-dev \
             libswresample-dev \
-            libre2-dev
+            libre2-dev \
+            libzip-dev \
+            libssl-dev \
+            clang-tidy
 
-      - name: Configure CMake
+      - name: Configure
         run: |
           cmake -B build \
-            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
             -DSWITCHX_WITH_NDI=OFF \
-            -DSWITCHX_WITH_WEBRTC=OFF
+            -DSWITCHX_WITH_WEBRTC=ON
 
       - name: Build
         run: cmake --build build --parallel
 
+      - name: clang-tidy
+        run: |
+          run-clang-tidy -p build -quiet tests/ 2>&1 | tee clang-tidy.log
+          issues=$(grep -E ' (error|warning): ' clang-tidy.log | grep -v '/build/' || true)
+          if [ -n "$issues" ]; then
+            echo "clang-tidy reported issues in tests:"
+            echo "$issues" | head -50
+            exit 1
+          fi
+
       - name: Test
         working-directory: build
-        run: ctest --output-on-failure
+        run: ctest --output-on-failure --parallel
+
+      - name: Verify application binary
+        run: test -x build/SwitchX

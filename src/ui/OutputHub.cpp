@@ -39,15 +39,24 @@ void OutputHub::setOutputDir(const QString &dir) {
 }
 
 void OutputHub::setProgramSource(VideoWidget *source) {
-    if (m_source)
-        disconnect(m_source, nullptr, this, nullptr);
-    m_source = source;
-    if (!m_source) return;
+    if (m_videoWidget)
+        disconnect(m_videoWidget, nullptr, this, nullptr);
+    m_videoWidget = source;
+    m_frameSource = source;
+    if (!m_frameSource) return;
 
-    connect(m_source, &VideoWidget::programFrameReady,
+    connect(m_videoWidget, &VideoWidget::programFrameReady,
             this, &OutputHub::onProgramFrameReady);
 
     syncFrameConsumers();
+}
+
+void OutputHub::setProgramSourceForTest(ProgramFrameSource *source) {
+    m_frameSource = source;
+}
+
+VideoWidget *OutputHub::programSource() const {
+    return m_videoWidget.data();
 }
 
 void OutputHub::setActiveDeckNodes(NodeId deckA, NodeId deckB) {
@@ -56,7 +65,7 @@ void OutputHub::setActiveDeckNodes(NodeId deckA, NodeId deckB) {
 }
 
 MirrorOutputWindow *OutputHub::addMirrorOutput(const QString &title) {
-    if (!m_source) return nullptr;
+    if (!m_frameSource) return nullptr;
 
     auto *window = new MirrorOutputWindow();
     window->setAttribute(Qt::WA_DeleteOnClose);
@@ -221,14 +230,14 @@ QString OutputHub::makeTrackOutputPath(const QString &suffix) const {
 }
 
 bool OutputHub::startProgramRecording() {
-    if (!m_source || m_programRecorder->isRecording()) return m_programRecorder->isRecording();
+    if (!m_frameSource || m_programRecorder->isRecording()) return m_programRecorder->isRecording();
     const QString path = makeTrackOutputPath(QStringLiteral("program"));
     if (!m_programRecorder->startRecording(path, tr("Program"), true))
         return false;
     m_programRecorder->addMarker(tr("Recording started"));
     syncFrameConsumers();
-    if (m_source)
-        m_source->captureOutputFrameNow();
+    if (m_frameSource)
+        m_frameSource->captureOutputFrameNow();
     ensureProgressTimer();
     emit recordingStateChanged();
     return true;
@@ -243,14 +252,14 @@ void OutputHub::stopProgramRecording() {
 }
 
 bool OutputHub::startDeckARecording() {
-    if (!m_source || m_deckARecorder->isRecording()) return m_deckARecorder->isRecording();
+    if (!m_frameSource || m_deckARecorder->isRecording()) return m_deckARecorder->isRecording();
     const QString path = makeTrackOutputPath(QStringLiteral("deckA"));
     if (!m_deckARecorder->startRecording(path, tr("Deck A"), true))
         return false;
     m_deckARecorder->addMarker(tr("Recording started"));
     syncFrameConsumers();
-    if (m_source)
-        m_source->captureOutputFrameNow();
+    if (m_frameSource)
+        m_frameSource->captureOutputFrameNow();
     ensureProgressTimer();
     emit recordingStateChanged();
     return true;
@@ -265,14 +274,14 @@ void OutputHub::stopDeckARecording() {
 }
 
 bool OutputHub::startDeckBRecording() {
-    if (!m_source || m_deckBRecorder->isRecording()) return m_deckBRecorder->isRecording();
+    if (!m_frameSource || m_deckBRecorder->isRecording()) return m_deckBRecorder->isRecording();
     const QString path = makeTrackOutputPath(QStringLiteral("deckB"));
     if (!m_deckBRecorder->startRecording(path, tr("Deck B"), true))
         return false;
     m_deckBRecorder->addMarker(tr("Recording started"));
     syncFrameConsumers();
-    if (m_source)
-        m_source->captureOutputFrameNow();
+    if (m_frameSource)
+        m_frameSource->captureOutputFrameNow();
     ensureProgressTimer();
     emit recordingStateChanged();
     return true;
@@ -287,7 +296,7 @@ void OutputHub::stopDeckBRecording() {
 }
 
 bool OutputHub::startSourceRecording(NodeId nodeId, const QString &label) {
-    if (!m_source || nodeId == 0) return false;
+    if (!m_frameSource || nodeId == 0) return false;
     if (isTrackRecording(TrackKind::Source, nodeId))
         return true;
 
@@ -300,8 +309,8 @@ bool OutputHub::startSourceRecording(NodeId nodeId, const QString &label) {
     rec->addMarker(tr("Recording started"));
     m_sourceRecorders[nodeId] = std::move(rec);
     syncFrameConsumers();
-    if (m_source)
-        m_source->captureOutputFrameNow();
+    if (m_frameSource)
+        m_frameSource->captureOutputFrameNow();
     ensureProgressTimer();
     emit recordingStateChanged();
     return true;
@@ -362,11 +371,11 @@ void OutputHub::maybeStopProgressTimer() {
 }
 
 void OutputHub::onProgramFrameReady() {
-    if (!m_source) return;
+    if (!m_frameSource) return;
 
-    const QImage programFrame = m_source->programFrame();
-    const QImage deckAFrame   = needsDeckFrameReadback() ? m_source->deckProgramFrame(true)  : QImage();
-    const QImage deckBFrame   = needsDeckFrameReadback() ? m_source->deckProgramFrame(false) : QImage();
+    const QImage programFrame = m_frameSource->programFrame();
+    const QImage deckAFrame   = needsDeckFrameReadback() ? m_frameSource->deckProgramFrame(true)  : QImage();
+    const QImage deckBFrame   = needsDeckFrameReadback() ? m_frameSource->deckProgramFrame(false) : QImage();
 
     if (!programFrame.isNull()) {
         for (const auto &mirror : m_mirrors) {
@@ -419,9 +428,9 @@ void OutputHub::onRecordingProgressTick() {
 }
 
 void OutputHub::syncFrameConsumers() {
-    if (!m_source) return;
-    m_source->setProgramFrameConsumerCount(activeFrameConsumerCount());
-    m_source->setDeckFrameConsumerCount(needsDeckFrameReadback() ? 1 : 0);
+    if (!m_frameSource) return;
+    m_frameSource->setProgramFrameConsumerCount(activeFrameConsumerCount());
+    m_frameSource->setDeckFrameConsumerCount(needsDeckFrameReadback() ? 1 : 0);
 }
 
 int OutputHub::activeFrameConsumerCount() const {

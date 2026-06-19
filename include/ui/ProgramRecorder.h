@@ -5,6 +5,7 @@
 #include <QVector>
 #include <QElapsedTimer>
 #include <QImage>
+#include <QJsonDocument>
 
 struct AVFormatContext;
 struct AVCodecContext;
@@ -29,6 +30,9 @@ public:
     static QString defaultOutputDir();
     static QString defaultOutputPath();
     static QString makeOutputPath(const QString &dir, const QString &stem, const QString &suffix);
+
+    static QJsonDocument buildMarkersJson(const QString &videoPath, const QVector<Marker> &markers,
+                                          const QString &trackLabel, qint64 durationMs, int frameRate);
 
     bool isRecording() const { return m_recording; }
     QString outputPath() const { return m_outputPath; }
