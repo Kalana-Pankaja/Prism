@@ -2,7 +2,7 @@
 
 #include <QDialog>
 #include <QString>
-#include <memory>
+#include "core/HtmlWorkspace.h"
 
 namespace Ui { class HtmlEditDialog; }
 class QWebEngineView;
@@ -11,23 +11,43 @@ class HtmlEditDialog : public QDialog {
     Q_OBJECT
 
 public:
-    explicit HtmlEditDialog(const QString &initialHtml = {}, QWidget *parent = nullptr);
+    enum class EditMode { Simple, Workspace };
+
+    explicit HtmlEditDialog(const QString &initialHtml = {},
+                            const QString &initialWorkspaceJson = {},
+                            QWidget *parent = nullptr);
     ~HtmlEditDialog() override;
 
-    // Returns inline HTML (or empty string if a file was selected).
+    EditMode editMode() const;
+
     QString resultHtml() const;
-    // Returns selected file path (empty if using inline HTML).
     QString resultFilePath() const;
+    QString resultWorkspaceJson() const;
+    QString resultBakedHtml() const;
 
 private slots:
     void onPresetSelected(int row);
     void onBrowse();
     void onClearFile();
-    void onRefresh();
+    void onRefreshSimplePreview();
+    void onWorkspaceChanged();
+    void onComponentSelected(int index);
+    void onPropSpinChanged();
+    void onDeleteComponent();
+    void onDuplicateComponent();
+    void onBuildWorkspacePreview();
+    void onModeTabChanged(int index);
 
 private:
-    void loadPreview(const QString &html, const QString &filePath = {});
+    void setupPalette();
+    void loadSimplePreview(const QString &html, const QString &filePath = {});
+    void loadWorkspacePreview(const QString &html);
+    void syncPropsFromSelection();
+    void applyPropsToSelection();
+    HtmlWorkspace currentWorkspace() const;
 
     Ui::HtmlEditDialog *ui;
-    QWebEngineView     *m_preview = nullptr;
+    QWebEngineView     *m_simplePreview = nullptr;
+    QWebEngineView     *m_wsPreview     = nullptr;
+    bool                m_propChanging  = false;
 };

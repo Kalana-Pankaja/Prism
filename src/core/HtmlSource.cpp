@@ -9,14 +9,17 @@
 static constexpr QSize kFrameSize{1280, 720};
 
 HtmlSource::HtmlSource(const QString &html, const QString &filePath) {
+    m_frame = QImage(kFrameSize, QImage::Format_RGBA8888);
+    m_frame.fill(Qt::transparent);
+
     m_view = new QWebEngineView();
     m_view->resize(kFrameSize);
-    // Transparent background so HTML/CSS controls what shows through.
-    m_view->setAttribute(Qt::WA_TranslucentBackground);
+    m_view->setFixedSize(kFrameSize);
+    // Do not use WA_TranslucentBackground — it causes grab() ghost trails on
+    // Linux/Wayland when combined with animated / glowing HTML content.
     m_view->page()->setBackgroundColor(Qt::transparent);
-    // Keep hidden — WebEngine renders to its internal GPU pipeline regardless.
     m_view->setAttribute(Qt::WA_DontShowOnScreen);
-    m_view->show();   // must be "shown" to trigger the render pipeline
+    m_view->show(); // must be shown for the Chromium render pipeline
 
     connect(m_view, &QWebEngineView::loadFinished,
             this,   &HtmlSource::onLoadFinished);
@@ -53,17 +56,26 @@ void HtmlSource::onLoadFinished(bool ok) {
     qDebug() << "HtmlSource: page loaded —" << m_name;
     m_ready = true;
     m_timer->start();
+    // First paint after load — grab() needs a tick before pixels are ready.
+    QTimer::singleShot(100, this, &HtmlSource::captureFrame);
 }
 
 void HtmlSource::captureFrame() {
-    QPixmap px = m_view->grab();
-    if (px.isNull()) return;
+    if (!m_view || !m_ready)
+        return;
 
-    QImage img = px.toImage().scaled(kFrameSize, Qt::IgnoreAspectRatio,
-                                     Qt::SmoothTransformation)
-                              .convertToFormat(QImage::Format_RGBA8888);
-    if (!img.isNull()) {
-        m_frame = std::move(img);
-        m_dirty = true;
+    const QPixmap px = m_view->grab(QRect(QPoint(0, 0), kFrameSize));
+    if (px.isNull())
+        return;
+
+    QImage img = px.toImage().convertToFormat(QImage::Format_RGBA8888);
+    if (img.size() != kFrameSize) {
+        img = img.scaled(kFrameSize, Qt::IgnoreAspectRatio,
+                         Qt::SmoothTransformation);
     }
+    if (img.isNull())
+        return;
+
+    m_frame = std::move(img);
+    m_dirty = true;
 }

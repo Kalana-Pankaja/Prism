@@ -222,18 +222,23 @@ bool promptShader(QWidget *parent, SourceDescriptor &desc, QPixmap &thumb) {
 }
 
 bool promptHtml(QWidget *parent, SourceDescriptor &desc, QPixmap &thumb) {
-    HtmlEditDialog dlg(QString(), parent);
+    HtmlEditDialog dlg(QString(), QString(), parent);
     if (dlg.exec() != QDialog::Accepted) return false;
-    QString filePath = dlg.resultFilePath();
-    QString html     = dlg.resultHtml().trimmed();
-    if (filePath.isEmpty() && html.isEmpty()) return false;
 
-    desc.kind        = SourceDescriptor::Kind::Html;
-    desc.htmlContent = html;
-    desc.path        = filePath;
-    desc.displayName = filePath.isEmpty() ? "HTML Overlay"
-                                          : QFileInfo(filePath).fileName();
-    thumb = ThumbHelper::makeHtmlThumb(html, filePath);
+    const QString workspace = dlg.resultWorkspaceJson();
+    const QString bakedHtml = dlg.resultBakedHtml().trimmed();
+    const QString filePath  = dlg.resultFilePath();
+    if (workspace.isEmpty() && filePath.isEmpty() && bakedHtml.isEmpty())
+        return false;
+
+    desc.kind          = SourceDescriptor::Kind::Html;
+    desc.htmlWorkspace = workspace;
+    desc.htmlContent   = workspace.isEmpty() ? dlg.resultHtml().trimmed() : bakedHtml;
+    desc.path          = workspace.isEmpty() ? filePath : QString();
+    desc.displayName   = (!filePath.isEmpty() && workspace.isEmpty())
+                             ? QFileInfo(filePath).fileName()
+                             : QStringLiteral("HTML Overlay");
+    thumb = ThumbHelper::makeHtmlThumb(desc.htmlContent, desc.path);
     return true;
 }
 

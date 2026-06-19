@@ -11,9 +11,8 @@ class QTimer;
 // MediaSource that renders an HTML/CSS/JS page (including Tailwind CSS) via
 // Qt WebEngine and captures frames at ~30 fps.
 //
-// The view is kept hidden at 1280×720. After the page finishes loading,
-// a timer calls grab() every 33 ms, converts the result to RGB888, and
-// marks the frame dirty so VideoWidget picks it up on the next tick.
+// The view is kept offscreen at 1280×720. After the page finishes loading,
+// a timer calls grab() every 33 ms and marks the frame dirty for upload.
 //
 // Usage:
 //   auto src = std::make_unique<HtmlSource>(htmlString);

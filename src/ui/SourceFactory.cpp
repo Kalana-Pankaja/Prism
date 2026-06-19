@@ -7,6 +7,7 @@
 #include "core/CanvasSource.h"
 #include "core/ShaderSource.h"
 #include "core/HtmlSource.h"
+#include "core/HtmlWorkspace.h"
 #include "core/TextSource.h"
 #include "core/NdiSource.h"
 #ifdef SWITCHX_HAVE_WEBRTC
@@ -76,8 +77,15 @@ std::unique_ptr<MediaSource> SourceFactory::create(const SourceDescriptor &desc)
             desc.color);
     case Kind::Shader:
         return std::make_unique<ShaderSource>(desc.shaderCode);
-    case Kind::Html:
-        return std::make_unique<HtmlSource>(desc.htmlContent, desc.path);
+    case Kind::Html: {
+        QString html = desc.htmlContent;
+        QString path = desc.path;
+        if (!desc.htmlWorkspace.isEmpty()) {
+            html = HtmlWorkspaceBuilder::buildFromJson(desc.htmlWorkspace);
+            path = {};
+        }
+        return std::make_unique<HtmlSource>(html, path);
+    }
     case Kind::Text: {
         QFont font(desc.fontFamily, desc.fontSize);
         return std::make_unique<TextSource>(

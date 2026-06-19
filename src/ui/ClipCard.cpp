@@ -558,13 +558,21 @@ void ClipCard::onEditClicked() {
     }
 
     case Kind::Html: {
-        HtmlEditDialog dlg(m_sourceDesc.htmlContent, this);
+        HtmlEditDialog dlg(m_sourceDesc.htmlContent, m_sourceDesc.htmlWorkspace, this);
         if (dlg.exec() == QDialog::Accepted) {
-            QString filePath = dlg.resultFilePath();
-            QString html     = dlg.resultHtml().trimmed();
-            if (!filePath.isEmpty() || !html.isEmpty()) {
+            const QString workspace = dlg.resultWorkspaceJson();
+            const QString bakedHtml = dlg.resultBakedHtml().trimmed();
+            const QString filePath  = dlg.resultFilePath();
+            if (!workspace.isEmpty()) {
+                m_sourceDesc.htmlWorkspace = workspace;
+                m_sourceDesc.htmlContent   = bakedHtml;
+                m_sourceDesc.path.clear();
+                m_sourceDesc.displayName     = tr("HTML Overlay");
+                emit sourceDescriptorChanged(m_index, m_sourceDesc);
+            } else if (!filePath.isEmpty() || !bakedHtml.isEmpty()) {
+                m_sourceDesc.htmlWorkspace.clear();
                 m_sourceDesc.path        = filePath;
-                m_sourceDesc.htmlContent = html;
+                m_sourceDesc.htmlContent = dlg.resultHtml().trimmed();
                 if (!filePath.isEmpty())
                     m_sourceDesc.displayName = QFileInfo(filePath).fileName();
                 emit sourceDescriptorChanged(m_index, m_sourceDesc);
