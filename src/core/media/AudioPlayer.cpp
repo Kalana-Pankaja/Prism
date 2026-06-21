@@ -40,7 +40,17 @@ bool AudioPlayer::start(const QString &filePath, double startTimeSeconds) {
     format.setChannelCount(AudioDecoder::kOutputChannels);
     format.setSampleFormat(QAudioFormat::Float);
 
-    const QAudioDevice device = QMediaDevices::defaultAudioOutput();
+    QAudioDevice device = QMediaDevices::defaultAudioOutput();
+    if (!m_deviceId.isEmpty()) {
+        const auto outputs = QMediaDevices::audioOutputs();
+        for (const QAudioDevice &dev : outputs) {
+            if (QString::fromUtf8(dev.id()) == m_deviceId) {
+                device = dev;
+                break;
+            }
+        }
+        // If the saved device is no longer present, fall back to the default.
+    }
     if (!device.isFormatSupported(format)) {
         qWarning() << "AudioPlayer: output device does not support float32 stereo 44.1kHz";
         m_decoder.close();
@@ -67,7 +77,6 @@ bool AudioPlayer::start(const QString &filePath, double startTimeSeconds) {
 
 void AudioPlayer::stop() {
     m_pushTimer.stop();
-    disconnect(&m_pushTimer, nullptr, this, nullptr);
     m_outputDevice = nullptr;
     if (m_sink) {
         m_sink->stop();

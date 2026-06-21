@@ -57,7 +57,8 @@ void DeckController::updateDeckAudio(bool deckA, NodeId clipId, const ClipNodeMo
     bool routedToMaster = false;
     AudioPlaybackMode playbackMode = AudioPlaybackMode::Always;
     int audioDelayMs = 0;
-    if (!m_editor->audioSettingsForClip(clipId, volume, muted, routedToMaster, playbackMode, audioDelayMs)
+    QString outputDeviceId;
+    if (!m_editor->audioSettingsForClip(clipId, volume, muted, routedToMaster, playbackMode, audioDelayMs, outputDeviceId)
         || !routedToMaster) {
         stopDeckAudio(deckA);
         return;
@@ -66,10 +67,14 @@ void DeckController::updateDeckAudio(bool deckA, NodeId clipId, const ClipNodeMo
     auto &player = deckA ? m_audioPlayerA : m_audioPlayerB;
     if (!player) player = std::make_unique<AudioPlayer>(this);
 
+    const bool deviceChanged = (player->outputDeviceId() != outputDeviceId);
+    player->setOutputDeviceId(outputDeviceId);
     player->setDelayMs(audioDelayMs);
 
     const QString &path = node->sourceDescriptor().path;
-    if (player->currentFilePath() != path) {
+    // A device change requires re-creating the sink, so restart at the current
+    // position rather than just seeking.
+    if (player->currentFilePath() != path || deviceChanged) {
         const double startTime = (currentTimeHint >= 0.0) ? currentTimeHint : node->startTime();
         if (!player->start(path, startTime)) {
             stopDeckAudio(deckA);

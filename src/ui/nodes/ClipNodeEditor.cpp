@@ -17,6 +17,8 @@
 #include <QGraphicsLineItem>
 #include <QGraphicsSceneMouseEvent>
 #include <QGraphicsTextItem>
+#include <QMediaDevices>
+#include <QAudioDevice>
 #include <QScrollBar>
 #include <QVBoxLayout>
 #include <QFormLayout>
@@ -599,11 +601,23 @@ public:
     }
 
     std::function<void(NodeId)> onDeleteRequested;
+    std::function<void(NodeId)> onDeviceChanged;
 
     NodeId nodeId() const override { return m_nodeId; }
     PortItem *audioInPort() const { return m_audioInPort; }
 
+    // Empty deviceId = system default output.
+    QString deviceId() const { return m_deviceId; }
+    QString deviceLabel() const { return m_deviceLabel; }
+    void setDevice(const QString &id, const QString &label) {
+        m_deviceId = id;
+        m_deviceLabel = label;
+        update();
+    }
+
     QRectF boundingRect() const override { return QRectF(0, 0, SMALL_NODE_W, SMALL_NODE_H); }
+
+    QRectF getDeviceButtonRect() const { return QRectF(4, SMALL_NODE_H - 32, SMALL_NODE_W - 8, 24); }
 
     void paint(QPainter *p, const QStyleOptionGraphicsItem *, QWidget *) override {
         p->setRenderHint(QPainter::Antialiasing);
@@ -613,14 +627,36 @@ public:
 
         p->setPen(QColor(245, 206, 88));
         p->setFont(QFont("Monospace", 8, QFont::Bold));
-        p->drawText(QRectF(6, 10, SMALL_NODE_W - 12, SMALL_NODE_H - 20),
+        p->drawText(QRectF(6, 8, SMALL_NODE_W - 12, 40),
                     Qt::AlignCenter, "Master Audio\nOutput");
+
+        // Output-device selector (click to choose).
+        const QRectF devRect = getDeviceButtonRect();
+        p->setPen(QPen(QColor(245, 206, 88), 1));
+        p->setBrush(QColor(70, 52, 16));
+        p->drawRoundedRect(devRect, 3, 3);
+        p->setPen(QColor(255, 224, 140));
+        p->setFont(QFont("Monospace", 7));
+        const QString devText = m_deviceId.isEmpty() ? QStringLiteral("Default")
+                                                      : m_deviceLabel;
+        const QString elided = p->fontMetrics().elidedText(
+            devText + QStringLiteral(" ▾"), Qt::ElideRight, devRect.width() - 6);
+        p->drawText(devRect, Qt::AlignCenter, elided);
 
         if (isSelected()) {
             p->setPen(QPen(kSelectionAccent, 2));
             p->setBrush(Qt::NoBrush);
             p->drawRoundedRect(QRectF(0, 0, SMALL_NODE_W, SMALL_NODE_H).adjusted(1, 1, -1, -1), 4, 4);
         }
+    }
+
+    void mousePressEvent(QGraphicsSceneMouseEvent *e) override {
+        if (getDeviceButtonRect().contains(e->pos())) {
+            showDeviceMenu(e->screenPos());
+            e->accept();
+            return;
+        }
+        QGraphicsItem::mousePressEvent(e);
     }
 
     void contextMenuEvent(QGraphicsSceneContextMenuEvent *e) override {
@@ -636,6 +672,36 @@ protected:
     QVariant itemChange(GraphicsItemChange change, const QVariant &value) override;
 
 private:
+    void showDeviceMenu(const QPoint &screenPos) {
+        QMenu menu;
+        QAction *defAct = menu.addAction(QStringLiteral("System Default"));
+        defAct->setCheckable(true);
+        defAct->setChecked(m_deviceId.isEmpty());
+        menu.addSeparator();
+        const auto outputs = QMediaDevices::audioOutputs();
+        for (const QAudioDevice &dev : outputs) {
+            QAction *a = menu.addAction(dev.description());
+            a->setCheckable(true);
+            const QString id = QString::fromUtf8(dev.id());
+            a->setChecked(id == m_deviceId);
+            a->setData(id);
+        }
+        QAction *chosen = menu.exec(screenPos);
+        if (!chosen) return;
+        if (chosen == defAct) {
+            m_deviceId.clear();
+            m_deviceLabel.clear();
+        } else {
+            m_deviceId = chosen->data().toString();
+            m_deviceLabel = chosen->text();
+        }
+        update();
+        if (onDeviceChanged) onDeviceChanged(m_nodeId);
+    }
+
+    QString m_deviceId;       // empty = system default
+    QString m_deviceLabel;
+
     NodeId m_nodeId;
     PortItem *m_audioInPort = nullptr;
 };
@@ -2001,6 +2067,7 @@ void ClipNodeEditor::addMasterAudioOutputTo(ClipNodeScene *scene, QGraphicsView 
     masterNode->setPos(scenePosForView(view, globalPos));
     scene->addItem(masterNode);
     m_masterAudioNodes[masterNode->nodeId()] = static_cast<void *>(masterNode);
+    masterNode->onDeviceChanged = [this](NodeId) { emit audioGraphChanged(); };
     registerItem(masterNode);
     wireDeleteCallback(masterNode, [this](NodeId nid) { deleteNodeById(nid); });
     emit clipChainChanged();
@@ -2262,7 +2329,7 @@ bool ClipNodeEditor::contextCanvasSize(NodeId clipId, int &w, int &h) const {
     return true;
 }
 
-bool ClipNodeEditor::audioSettingsForClip(NodeId clipId, int &volume, bool &muted, bool &routedToMaster, AudioPlaybackMode &playbackMode, int &delayMs) const {
+bool ClipNodeEditor::audioSettingsForClip(NodeId clipId, int &volume, bool &muted, bool &routedToMaster, AudioPlaybackMode &playbackMode, int &delayMs, QString &outputDeviceId) const {
     ClipNodeScene *scene = sceneForNode(clipId);
     const NodeId audioNodeId = scene->audioNodeForClip(clipId);
     if (audioNodeId == 0) return false;
@@ -2273,7 +2340,14 @@ bool ClipNodeEditor::audioSettingsForClip(NodeId clipId, int &volume, bool &mute
     auto *audioNode = static_cast<AudioControllerNodeItem *>(*it);
     volume = audioNode->volume();
     muted = audioNode->muted();
-    routedToMaster = (scene->masterNodeForAudioController(audioNodeId) != 0);
+    const NodeId masterId = scene->masterNodeForAudioController(audioNodeId);
+    routedToMaster = (masterId != 0);
+    outputDeviceId.clear();
+    if (masterId) {
+        auto *mn = static_cast<MasterAudioOutputNodeItem *>(m_itemMap.value(masterId));
+        if (!mn) mn = static_cast<MasterAudioOutputNodeItem *>(m_masterAudioNodes.value(masterId));
+        if (mn) outputDeviceId = mn->deviceId();
+    }
     playbackMode = audioNode->playbackMode();
     delayMs = audioNode->delayMs();
     return true;
@@ -2656,6 +2730,8 @@ QJsonObject ClipNodeEditor::saveState(const QDir &sessionDir) const {
         obj["id"]   = (qint64)mn->nodeId();
         obj["posX"] = mn->pos().x();
         obj["posY"] = mn->pos().y();
+        obj["deviceId"]    = mn->deviceId();
+        obj["deviceLabel"] = mn->deviceLabel();
         masterAudioNodes.append(obj);
     }
     root["masterAudioNodes"] = masterAudioNodes;
@@ -2852,6 +2928,8 @@ void ClipNodeEditor::restoreState(const QJsonObject &state) {
         m_nextId = masterId;
         auto *mn = new MasterAudioOutputNodeItem(m_nextId++);
         mn->setPos(obj["posX"].toDouble(), obj["posY"].toDouble());
+        mn->setDevice(obj["deviceId"].toString(), obj["deviceLabel"].toString());
+        mn->onDeviceChanged = [this](NodeId) { emit audioGraphChanged(); };
         m_scene->addItem(mn);
         m_masterAudioNodes[masterId] = static_cast<void *>(mn);
         registerItem(mn);

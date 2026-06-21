@@ -33,6 +33,11 @@ public:
     void setDelayMs(int delayMs) { m_delayMs = delayMs; }
     int delayMs() const { return m_delayMs; }
 
+    /// Select the output device by QAudioDevice::id() (empty = system default).
+    /// Takes effect on the next start(); restart playback to switch live.
+    void setOutputDeviceId(const QString &deviceId) { m_deviceId = deviceId; }
+    QString outputDeviceId() const { return m_deviceId; }
+
 private slots:
     void pushAudio();
 
@@ -48,5 +53,6 @@ private:
     int m_volumePercent = 100;
     bool m_muted = false;
     int m_delayMs = 0;
+    QString m_deviceId;   // empty = system default output
     qint64 m_silenceBytesPending = 0;
 };

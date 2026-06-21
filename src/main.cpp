@@ -3,7 +3,15 @@
 #include "ui/mainwindow/MainWindow.h"
 #include "ui/common/MaterialSymbols.h"
 
+extern "C" {
+#include <libavutil/log.h>
+}
+
 int main(int argc, char *argv[]) {
+    // Quiet libav's container quirk spam (e.g. "Referenced QT chapter track not
+    // found") which is harmless; keep genuine errors visible.
+    av_log_set_level(AV_LOG_ERROR);
+
     // WebEngine / Chromium uses the Gallium GPU stack on this system which
     // crashes when trying to initialize its Vulkan/GBM render path on Wayland.
     // Force software rendering to avoid the libgallium SIGSEGV.

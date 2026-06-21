@@ -62,7 +62,7 @@ public:
     QVector<NodeId> clipsForContext(NodeId contextId) const;
     QVector<NodeId> clipsForContextOrdered(NodeId contextId) const;
     bool contextCanvasSize(NodeId clipId, int &w, int &h) const;
-    bool audioSettingsForClip(NodeId clipId, int &volume, bool &muted, bool &routedToMaster, AudioPlaybackMode &playbackMode, int &delayMs) const;
+    bool audioSettingsForClip(NodeId clipId, int &volume, bool &muted, bool &routedToMaster, AudioPlaybackMode &playbackMode, int &delayMs, QString &outputDeviceId) const;
     bool audioSourceForShader(NodeId shaderNodeId, QString &filePath) const;
     std::shared_ptr<ScriptOutput> scriptOutputForDataNode(NodeId dataNodeId) const;
 

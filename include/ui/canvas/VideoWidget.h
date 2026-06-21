@@ -5,6 +5,7 @@
 #include <QImage>
 #include <QHash>
 #include <QPixmap>
+#include <QElapsedTimer>
 #include <memory>
 #include <vector>
 #include "core/sources/MediaSource.h"
@@ -226,6 +227,14 @@ private:
     double m_trimStartA = 0.0,  m_trimEndA = -1.0;
     double m_trimStartB = 0.0,  m_trimEndB = -1.0;
 
+    // Wall-clock playback pacing for the A/B decks. The video timeline is driven
+    // by elapsed real time (not one-frame-per-tick) so it tracks the real-time
+    // audio regardless of the source's native frame rate. Re-anchored on
+    // play/seek (m_clockDirty*).
+    QElapsedTimer m_playClockA, m_playClockB;
+    double m_clockAnchorA = 0.0, m_clockAnchorB = 0.0;
+    bool   m_clockDirtyA = true, m_clockDirtyB = true;
+
     // Crop: normalised [0, 1]
     float m_cropXA = 0.f, m_cropYA = 0.f, m_cropWA = 1.f, m_cropHA = 1.f;
     float m_cropXB = 0.f, m_cropYB = 0.f, m_cropWB = 1.f, m_cropHB = 1.f;
@@ -277,6 +286,9 @@ private:
                           const QRectF &videoRect, float globalAlpha);
     bool   advanceSource(MediaSource *source, bool &playing, bool repeat,
                          double trimStart, double trimEnd);
+    // Wall-clock paced advance for deck A/B; falls back to advanceSource() for
+    // live/static sources that have no real timeline.
+    bool   advanceDeckPaced(bool deckA);
     void   loadSourceInternal(const QString &filePath,
                               std::unique_ptr<MediaSource> &target,
                               GLuint &tex, bool &playing);

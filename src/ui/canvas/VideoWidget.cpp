@@ -654,6 +654,7 @@ void VideoWidget::loadVideoB(const QString &filePath) {
 
 void VideoWidget::setSourceA(std::unique_ptr<MediaSource> source) {
     m_playingA = false;
+    m_clockDirtyA = true;
     m_sourceA  = std::move(source);
     if (!m_sourceA) return;
     makeCurrent();
@@ -681,6 +682,7 @@ void VideoWidget::setSourceA(std::unique_ptr<MediaSource> source) {
 
 void VideoWidget::setSourceB(std::unique_ptr<MediaSource> source) {
     m_playingB = false;
+    m_clockDirtyB = true;
     m_sourceB  = std::move(source);
     if (!m_sourceB) return;
     makeCurrent();
@@ -752,9 +754,9 @@ void VideoWidget::clearHtmlOverlay() {
 
 // ── Playback control ──────────────────────────────────────────────────────────
 
-void VideoWidget::playA()  { if (m_sourceA) m_playingA = true; }
+void VideoWidget::playA()  { if (m_sourceA) { m_playingA = true; m_clockDirtyA = true; } }
 void VideoWidget::pauseA() { m_playingA = false; }
-void VideoWidget::playB()  { if (m_sourceB) m_playingB = true; }
+void VideoWidget::playB()  { if (m_sourceB) { m_playingB = true; m_clockDirtyB = true; } }
 void VideoWidget::pauseB() { m_playingB = false; }
 
 void VideoWidget::stop() {
@@ -764,6 +766,7 @@ void VideoWidget::stop() {
 
 void VideoWidget::seekA(double seconds) {
     if (!m_sourceA || !m_sourceA->isReady()) return;
+    m_clockDirtyA = true;
     m_sourceA->seek(seconds);
     if (m_sourceA->nextFrame()) {
         makeCurrent();
@@ -775,6 +778,7 @@ void VideoWidget::seekA(double seconds) {
 
 void VideoWidget::seekB(double seconds) {
     if (!m_sourceB || !m_sourceB->isReady()) return;
+    m_clockDirtyB = true;
     m_sourceB->seek(seconds);
     if (m_sourceB->nextFrame()) {
         makeCurrent();
@@ -1172,6 +1176,77 @@ bool VideoWidget::advanceSource(MediaSource *source, bool &playing, bool repeat,
     return source->nextFrame();
 }
 
+bool VideoWidget::advanceDeckPaced(bool deckA) {
+    MediaSource *source = deckA ? m_sourceA.get() : m_sourceB.get();
+    bool &playing       = deckA ? m_playingA : m_playingB;
+    if (!source) return false;
+
+    if (!source->isReady()) {
+        source->nextFrame();   // let lazy/live sources initialize
+        return false;
+    }
+
+    const double dur = source->duration();
+    // Live/static sources (camera, screen, image, …) have no real timeline:
+    // keep the simple one-frame-per-tick behaviour.
+    if (dur <= 0.0)
+        return advanceSource(source, playing,
+                             deckA ? m_repeatA : m_repeatB,
+                             deckA ? m_trimStartA : m_trimStartB,
+                             deckA ? m_trimEndA   : m_trimEndB);
+
+    QElapsedTimer &clock = deckA ? m_playClockA   : m_playClockB;
+    double &anchor       = deckA ? m_clockAnchorA : m_clockAnchorB;
+    bool   &dirty        = deckA ? m_clockDirtyA  : m_clockDirtyB;
+    const bool   repeat    = deckA ? m_repeatA    : m_repeatB;
+    const double trimStart = deckA ? m_trimStartA : m_trimStartB;
+    const double trimEnd   = deckA ? m_trimEndA   : m_trimEndB;
+
+    if (dirty || !clock.isValid()) {
+        anchor = source->currentTime();
+        clock.start();
+        dirty = false;
+    }
+
+    double desired = anchor + clock.elapsed() / 1000.0;
+    const double endLimit = (trimEnd > 0) ? trimEnd : dur;
+
+    if (endLimit > 0 && desired >= endLimit) {
+        if (repeat) {
+            source->seek(trimStart);
+            anchor  = trimStart;
+            clock.restart();
+            desired = trimStart;
+        } else {
+            // Play out to the end, then stop once we've actually reached it.
+            desired = endLimit;
+        }
+    }
+
+    // Decode forward until the source catches up to the wall-clock target,
+    // capping the burst so a hitch can't cause a long decode stall. If we're
+    // still far behind after the cap, re-anchor (drop the backlog) to prevent a
+    // runaway catch-up spiral — sync resumes from the current position.
+    constexpr int kMaxCatchUp = 8;
+    bool decoded = false;
+    int steps = 0;
+    while (source->currentTime() < desired && steps < kMaxCatchUp) {
+        if (!source->nextFrame())
+            break;
+        decoded = true;
+        ++steps;
+    }
+    if (steps >= kMaxCatchUp && source->currentTime() < desired - 0.25) {
+        anchor = source->currentTime();
+        clock.restart();
+    }
+
+    if (!repeat && endLimit > 0 && source->currentTime() >= endLimit - 1e-3)
+        playing = false;
+
+    return decoded;
+}
+
 void VideoWidget::updateFrame() {
     const bool needsCapture = m_programFrameConsumers > 0 || m_deckFrameConsumers > 0;
     if (m_outputFrozen && !needsCapture) return;
@@ -1184,11 +1259,9 @@ void VideoWidget::updateFrame() {
     bool decodedA = false, decodedB = false, decodedOverlay = false;
 
     if (m_playingA)
-        decodedA = advanceSource(m_sourceA.get(), m_playingA,
-                                 m_repeatA, m_trimStartA, m_trimEndA);
+        decodedA = advanceDeckPaced(true);
     if (m_playingB)
-        decodedB = advanceSource(m_sourceB.get(), m_playingB,
-                                 m_repeatB, m_trimStartB, m_trimEndB);
+        decodedB = advanceDeckPaced(false);
     if (m_playingOverlay && m_htmlOverlay)
         decodedOverlay = advanceSource(m_htmlOverlay.get(), m_playingOverlay,
                                        false, 0.0, -1.0);
