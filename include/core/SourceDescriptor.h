@@ -25,7 +25,7 @@ struct SourceDescriptor {
         Shader, // GLSL fragment shader — shaderCode field
         Html,   // HTML/CSS/JS overlay  — htmlContent field
         Ndi,    // network NDI source   — path = NDI source name
-        WebRtc, // phone camera (WebRTC) — path = session token
+        WebRtc, // phone camera (WebRTC) — path = session token; webrtcRelayUrl when using public relay
         Text,   // CPU-rendered text overlay — textTemplate field
     };
 
@@ -44,8 +44,10 @@ struct SourceDescriptor {
     CanvasFill canvasFill    = CanvasFill::Checkered; // Canvas kind
     QString shaderCode;                 // Shader kind
     QString htmlContent;                // Html kind (inline HTML or file path)
+    QString htmlWorkspace;              // Html workspace JSON (multi-component layout)
     QString obsSceneName;               // OBS program scene to switch when clip is triggered
     QString textTemplate;               // Text kind — may contain {parameter} placeholders
+    QString webrtcRelayUrl;             // WebRtc kind — wss://…/ws when using public signaling relay
     QString fontFamily    = QStringLiteral("Sans Serif");
     int     fontSize      = 48;
     int     textAlign     = 0x0084;     // Qt::AlignCenter (avoid Qt include in header)

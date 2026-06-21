@@ -17,6 +17,10 @@
         <file>html/countdown_timer.html</file>
         <file>html/cricket_score_bar.html</file>
         <file>html/cricket_score_table.html</file>
+        <file>html/widgets/clock.html</file>
+        <file>html/widgets/countdown_timer.html</file>
+        <file>html/widgets/cricket_score_bar.html</file>
+        <file>html/widgets/cricket_score_table.html</file>
         <file>scripts/clock.lua</file>
         <file>scripts/counter.lua</file>
         <file>scripts/greeting.lua</file>

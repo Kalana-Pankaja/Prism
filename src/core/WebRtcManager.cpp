@@ -155,6 +155,7 @@ struct FrameBuffer {
 
 struct Session {
     QString token;
+    QString relayUrl;
     QPointer<QWebSocket> socket;
     std::shared_ptr<rtc::PeerConnection> pc;
     std::shared_ptr<rtc::Track> videoTrack;
@@ -362,8 +363,50 @@ public:
     }
 
     WebRtcPairingInfo createSession(const QString &bindAddress, quint16 sigPort, quint16 httpPort,
-                                    const QString &existingToken = {}) {
+                                    const QString &existingToken = {},
+                                    const QString &relayUrl = {}) {
         WebRtcPairingInfo info;
+        if (!relayUrl.isEmpty()) {
+            const QUrl relay(relayUrl);
+            if (!relay.isValid() || relay.host().isEmpty())
+                return info;
+
+            if (!existingToken.isEmpty()) {
+                std::shared_ptr<Session> existing;
+                {
+                    QMutexLocker lock(&m_mutex);
+                    auto it = m_sessions.find(existingToken);
+                    if (it != m_sessions.end())
+                        existing = it->second;
+                }
+                if (existing) {
+                    connectRelay(existing, relayUrl);
+                    info.host      = relay.host();
+                    info.sigPort   = static_cast<quint16>(relay.port(relay.scheme() == QLatin1String("wss") ? 443 : 80));
+                    info.httpPort  = info.sigPort;
+                    info.token     = existingToken;
+                    info.relayUrl  = relayUrl;
+                    return info;
+                }
+            }
+
+            auto session = std::make_shared<Session>();
+            session->token    = existingToken.isEmpty() ? makeToken() : existingToken;
+            session->relayUrl = relayUrl;
+            {
+                QMutexLocker lock(&m_mutex);
+                m_sessions.emplace(session->token, session);
+            }
+            connectRelay(session, relayUrl);
+
+            info.host     = relay.host();
+            info.sigPort  = static_cast<quint16>(relay.port(relay.scheme() == QLatin1String("wss") ? 443 : 80));
+            info.httpPort = info.sigPort;
+            info.token    = session->token;
+            info.relayUrl = relayUrl;
+            return info;
+        }
+
         if (bindAddress.isEmpty())
             return info;
 
@@ -379,9 +422,10 @@ public:
             QMutexLocker lock(&m_mutex);
             auto it = m_sessions.find(existingToken);
             if (it != m_sessions.end()) {
-                info.host    = bindAddress;
-                info.sigPort = boundSig;
-                info.token   = existingToken;
+                info.host     = bindAddress;
+                info.sigPort  = boundSig;
+                info.httpPort = boundHttp;
+                info.token    = existingToken;
                 return info;
             }
         }
@@ -393,10 +437,53 @@ public:
             m_sessions.emplace(session->token, session);
         }
 
-        info.host    = bindAddress;
-        info.sigPort = boundSig;
-        info.token   = session->token;
+        info.host     = bindAddress;
+        info.sigPort  = boundSig;
+        info.httpPort = boundHttp;
+        info.token    = session->token;
         return info;
+    }
+
+    void connectRelay(const std::shared_ptr<Session> &session, const QString &relayUrl) {
+        if (!session || relayUrl.isEmpty())
+            return;
+
+        if (session->socket) {
+            if (session->socket->isValid())
+                return;
+            session->socket->deleteLater();
+            session->socket = nullptr;
+        }
+
+        auto *socket = new QWebSocket(QString(), QWebSocketProtocol::VersionLatest, m_owner);
+        {
+            QMutexLocker lock(&m_mutex);
+            session->socket = socket;
+            m_socketTokens.insert(socket, session->token);
+        }
+
+        const QString token = session->token;
+        QObject::connect(socket, &QWebSocket::connected, m_owner, [socket, token]() {
+            qInfo() << "WebRTC relay connected for session" << token.left(8);
+            QJsonObject hello;
+            hello.insert(QStringLiteral("type"), QStringLiteral("hello"));
+            hello.insert(QStringLiteral("token"), token);
+            hello.insert(QStringLiteral("role"), QStringLiteral("desktop"));
+            socket->sendTextMessage(QString::fromUtf8(QJsonDocument(hello).toJson(QJsonDocument::Compact)));
+        });
+        QObject::connect(socket, &QWebSocket::errorOccurred, m_owner,
+                         [relayUrl](QAbstractSocket::SocketError error) {
+                             qWarning() << "WebRTC relay socket error:" << error << relayUrl;
+                         });
+        QObject::connect(socket, &QWebSocket::textMessageReceived, m_owner, [this, socket](const QString &msg) {
+            handleMessage(socket, msg);
+        });
+        QObject::connect(socket, &QWebSocket::disconnected, m_owner, [this, socket]() {
+            unbindSocket(socket);
+            socket->deleteLater();
+        });
+        qInfo() << "WebRTC relay connecting to" << relayUrl;
+        socket->open(QUrl(relayUrl));
     }
 
     QString bindAddress() const {
@@ -529,7 +616,13 @@ private:
         const QJsonObject obj = doc.object();
         const QString type = obj.value(QStringLiteral("type")).toString();
 
+        if (type == QStringLiteral("hello-ok") || type == QStringLiteral("error"))
+            return;
+
         if (type == QStringLiteral("hello")) {
+            const QString role = obj.value(QStringLiteral("role")).toString();
+            if (role == QStringLiteral("desktop"))
+                return;
             bindSocket(obj.value(QStringLiteral("token")).toString(), socket);
             return;
         }
@@ -572,6 +665,8 @@ private:
         try {
             rtc::Configuration config;
             config.disableAutoNegotiation = true;
+            config.iceServers.emplace_back("stun:stun.l.google.com:19302");
+            config.iceServers.emplace_back("stun:stun1.l.google.com:19302");
 
             session->pc = std::make_shared<rtc::PeerConnection>(config);
             const QString token = session->token;
@@ -730,18 +825,20 @@ bool WebRtcManager::isAvailable() {
 #endif
 }
 
-WebRtcPairingInfo WebRtcManager::createSession(const QString &bindAddress) {
-    return ensureSession(bindAddress);
+WebRtcPairingInfo WebRtcManager::createSession(const QString &bindAddress, const QString &relayUrl) {
+    return ensureSession(bindAddress, {}, relayUrl);
 }
 
-WebRtcPairingInfo WebRtcManager::ensureSession(const QString &bindAddress, const QString &token) {
+WebRtcPairingInfo WebRtcManager::ensureSession(const QString &bindAddress, const QString &token,
+                                               const QString &relayUrl) {
     WebRtcPairingInfo info;
 #ifdef SWITCHX_HAVE_WEBRTC
     if (!m_impl) return info;
-    info = m_impl->createSession(bindAddress, m_sigPort, m_httpPort, token);
+    info = m_impl->createSession(bindAddress, m_sigPort, m_httpPort, token, relayUrl);
 #else
     Q_UNUSED(bindAddress);
     Q_UNUSED(token);
+    Q_UNUSED(relayUrl);
 #endif
     return info;
 }

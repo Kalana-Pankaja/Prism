@@ -1,12 +1,96 @@
-#include "core/WebRtcCamPage.h"
+#!/usr/bin/env python3
+"""SwitchX public WebRTC signaling relay + browser camera page.
 
-namespace WebRtcCamPage {
+Install deps once:
+    pip install fastapi uvicorn
 
-QString html(const QString &token, quint16 sigPort, const QString &relayUrl) {
-    const QString safeToken = token.toHtmlEscaped();
-    const QString sigPortStr = QString::number(sigPort);
-    const QString safeRelay = relayUrl.toHtmlEscaped();
-    return QString(R"html(<!DOCTYPE html>
+Run with exactly **one worker** (in-memory rooms):
+    uvicorn webrtc_signaling_server:app --host 127.0.0.1 --port 8765 --workers 1
+
+Run with built-in TLS (Let's Encrypt cert paths):
+    uvicorn webrtc_signaling_server:app --host 0.0.0.0 --port 443 \\
+        --ssl-keyfile /etc/letsencrypt/live/example.com/privkey.pem \\
+        --ssl-certfile /etc/letsencrypt/live/example.com/fullchain.pem
+
+Production relay: wss://roboti.qzz.io/ws  (https://roboti.qzz.io)
+
+Point SwitchX at: wss://your-host/ws  (or ws://… when using plain HTTP)
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+from dataclasses import dataclass, field
+from typing import Dict, List, Optional
+
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.responses import HTMLResponse, PlainTextResponse
+
+log = logging.getLogger("switchx.signaling")
+logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
+
+app = FastAPI(title="SwitchX WebRTC Signaling", docs_url=None, redoc_url=None)
+
+
+@dataclass
+class Room:
+    phone: Optional[WebSocket] = None
+    desktop: Optional[WebSocket] = None
+    pending_to_phone: List[str] = field(default_factory=list)
+    pending_to_desktop: List[str] = field(default_factory=list)
+
+
+rooms: Dict[str, Room] = {}
+MAX_PENDING = 64
+
+
+def _other_peer(room: Room, role: str) -> Optional[WebSocket]:
+    """Return the peer socket for @p role (phone -> desktop, desktop -> phone)."""
+    return room.desktop if role == "phone" else room.phone
+
+
+def _clear_peer(room: Room, role: str, ws: WebSocket) -> None:
+    if role == "desktop" and room.desktop is ws:
+        room.desktop = None
+    elif role == "phone" and room.phone is ws:
+        room.phone = None
+
+
+async def _flush_pending(room: Room, role: str) -> None:
+    if role == "desktop":
+        target, queue = room.desktop, room.pending_to_desktop
+    else:
+        target, queue = room.phone, room.pending_to_phone
+    if not target or not queue:
+        return
+    count = len(queue)
+    for raw in queue:
+        await target.send_text(raw)
+    queue.clear()
+    log.info("flushed %d pending message(s) to %s", count, role)
+
+
+async def _relay(room: Room, from_role: str, from_ws: WebSocket, raw: str, msg_type: str) -> None:
+    peer = _other_peer(room, from_role)
+    if peer is not None:
+        await peer.send_text(raw)
+        if msg_type in ("offer", "answer", "candidate"):
+            log.info("relay %s -> %s", msg_type, "desktop" if from_role == "phone" else "phone")
+        return
+
+    queue = room.pending_to_desktop if from_role == "phone" else room.pending_to_phone
+    if len(queue) < MAX_PENDING:
+        queue.append(raw)
+    if from_role == "phone" and msg_type in ("offer", "candidate"):
+        await from_ws.send_json({
+            "type": "waiting",
+            "message": "Waiting for SwitchX desktop — keep the pairing dialog open on your PC",
+        })
+    log.info("queued %s (no %s yet)", msg_type, "desktop" if from_role == "phone" else "phone")
+
+
+CAM_PAGE_HTML = r"""<!DOCTYPE html>
 <html>
 <head>
     <meta charset="utf-8">
@@ -30,7 +114,7 @@ QString html(const QString &token, quint16 sigPort, const QString &relayUrl) {
 </head>
 <body>
     <h1>SwitchX Phone Camera</h1>
-    <p class="status" id="status">Loading cameras…</p>
+    <p class="status" id="status">Loading…</p>
     <div class="controls">
         <div class="field">
             <label for="cameraSelect">Camera</label>
@@ -44,9 +128,6 @@ QString html(const QString &token, quint16 sigPort, const QString &relayUrl) {
     <video id="preview" autoplay playsinline muted></video>
     <p><button id="startBtn" disabled>Start streaming</button></p>
     <script>
-        const TOKEN = "%1";
-        const SIG_PORT = %2;
-        const RELAY = "%3";
         const RESOLUTIONS = [
             { label: '1280×720 (HD)', width: 1280, height: 720 },
             { label: '1920×1080 (Full HD)', width: 1920, height: 1080 },
@@ -59,6 +140,7 @@ QString html(const QString &token, quint16 sigPort, const QString &relayUrl) {
         const startBtn = document.getElementById('startBtn');
         const cameraSelect = document.getElementById('cameraSelect');
         const resolutionSelect = document.getElementById('resolutionSelect');
+        let pairing = null;
         let ws = null;
         let pc = null;
         let previewStream = null;
@@ -71,6 +153,39 @@ QString html(const QString &token, quint16 sigPort, const QString &relayUrl) {
             resolutionSelect.disabled = !enabled;
             startBtn.disabled = !enabled || streaming;
         }
+
+        function base64UrlDecode(value) {
+            let b64 = value.replace(/-/g, '+').replace(/_/g, '/');
+            while (b64.length % 4) b64 += '=';
+            return atob(b64);
+        }
+
+        function loadPairing() {
+            const params = new URLSearchParams(location.search);
+            const d = params.get('d');
+            if (!d) throw new Error('Missing pairing data (?d=…) in URL.');
+            const obj = JSON.parse(base64UrlDecode(d));
+            if (obj.app !== 'switchx') throw new Error('Invalid pairing payload.');
+            if (!obj.token) throw new Error('Pairing payload missing token.');
+            return obj;
+        }
+
+        function wsUrl() {
+            if (pairing.relay) return pairing.relay;
+            const scheme = location.protocol === 'https:' ? 'wss' : 'ws';
+            if (pairing.host && pairing.host === location.hostname)
+                return `${scheme}://${location.host}/ws`;
+            const sig = pairing.sig || 0;
+            if (sig > 0) {
+                const host = pairing.host || location.hostname || '127.0.0.1';
+                const defaultPort = scheme === 'wss' ? 443 : 80;
+                const port = sig === defaultPort ? '' : `:${sig}`;
+                return `${scheme}://${host}${port}/ws`;
+            }
+            return `${scheme}://${location.host}/ws`;
+        }
+
+        const ICE_SERVERS = [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }];
 
         function selectedResolution() {
             return RESOLUTIONS[resolutionSelect.selectedIndex] || RESOLUTIONS[0];
@@ -136,6 +251,12 @@ QString html(const QString &token, quint16 sigPort, const QString &relayUrl) {
         }
 
         async function initPage() {
+            try {
+                pairing = loadPairing();
+            } catch (err) {
+                setStatus(String(err));
+                return;
+            }
             populateResolutions();
             if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
                 setStatus('Camera API not available in this browser.');
@@ -164,34 +285,14 @@ QString html(const QString &token, quint16 sigPort, const QString &relayUrl) {
             }
         }
 
-        function wsUrl() {
-            if (RELAY) return RELAY;
-            const scheme = location.protocol === 'https:' ? 'wss' : 'ws';
-            if (SIG_PORT > 0) {
-                const host = location.hostname || '127.0.0.1';
-                const defaultPort = scheme === 'wss' ? 443 : 80;
-                const port = SIG_PORT === defaultPort ? '' : `:${SIG_PORT}`;
-                return `${scheme}://${host}${port}/`;
-            }
-            return `${scheme}://${location.host}/ws`;
-        }
-
-        const ICE_SERVERS = [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }];
-
         function send(msg) {
             if (ws && ws.readyState === WebSocket.OPEN)
                 ws.send(JSON.stringify(msg));
         }
 
         function teardownConnection() {
-            if (pc) {
-                pc.close();
-                pc = null;
-            }
-            if (ws) {
-                ws.close();
-                ws = null;
-            }
+            if (pc) { pc.close(); pc = null; }
+            if (ws) { ws.close(); ws = null; }
             streaming = false;
             setControlsEnabled(true);
         }
@@ -202,13 +303,12 @@ QString html(const QString &token, quint16 sigPort, const QString &relayUrl) {
                 setStatus('No camera preview available.');
                 return;
             }
-
             streaming = true;
             setControlsEnabled(false);
             setStatus('Connecting…');
             ws = new WebSocket(wsUrl());
             ws.onopen = async () => {
-                send({ type: 'hello', token: TOKEN, role: 'phone' });
+                send({ type: 'hello', token: pairing.token, role: 'phone' });
                 pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
                 const videoTrack = previewStream.getVideoTracks()[0];
                 const tr = pc.addTransceiver(videoTrack, { direction: 'sendonly' });
@@ -218,7 +318,7 @@ QString html(const QString &token, quint16 sigPort, const QString &relayUrl) {
                         const vp9 = caps.codecs.filter(c => /vp9/i.test(c.mimeType));
                         if (vp9.length) tr.setCodecPreferences(vp9);
                     }
-                } catch (e) { /* older browsers: fall back to default negotiation */ }
+                } catch (e) {}
                 pc.onicecandidate = (ev) => {
                     if (ev.candidate) {
                         send({
@@ -277,7 +377,80 @@ QString html(const QString &token, quint16 sigPort, const QString &relayUrl) {
         initPage();
     </script>
 </body>
-</html>)html").arg(safeToken, sigPortStr, safeRelay);
-}
+</html>"""
 
-} // namespace WebRtcCamPage
+
+@app.get("/health")
+async def health() -> dict:
+    return {"status": "ok", "rooms": len(rooms)}
+
+
+@app.get("/")
+async def root() -> PlainTextResponse:
+    return PlainTextResponse("SwitchX WebRTC signaling relay\n")
+
+
+@app.get("/cam")
+async def cam_page() -> HTMLResponse:
+    return HTMLResponse(CAM_PAGE_HTML)
+
+
+@app.websocket("/ws")
+async def websocket_relay(ws: WebSocket) -> None:
+    await ws.accept()
+    token: Optional[str] = None
+    role: Optional[str] = None
+
+    try:
+        while True:
+            raw = await ws.receive_text()
+            try:
+                msg = json.loads(raw)
+            except json.JSONDecodeError:
+                await ws.send_json({"type": "error", "message": "invalid json"})
+                continue
+
+            msg_type = msg.get("type")
+
+            if msg_type == "hello":
+                token = msg.get("token")
+                role = msg.get("role", "phone")
+                if not token or role not in ("phone", "desktop"):
+                    await ws.send_json({"type": "error", "message": "invalid hello"})
+                    continue
+
+                room = rooms.setdefault(token, Room())
+                if role == "desktop":
+                    if room.desktop and room.desktop is not ws:
+                        await room.desktop.close(code=4000, reason="replaced")
+                    room.desktop = ws
+                else:
+                    if room.phone and room.phone is not ws:
+                        await room.phone.close(code=4000, reason="replaced")
+                    room.phone = ws
+
+                log.info("hello token=%s role=%s rooms=%d", token[:8], role, len(rooms))
+                await ws.send_json({"type": "hello-ok"})
+                await _flush_pending(room, role)
+                continue
+
+            if not token or not role:
+                await ws.send_json({"type": "error", "message": "send hello first"})
+                continue
+
+            room = rooms.get(token)
+            if not room:
+                continue
+
+            await _relay(room, role, ws, raw, msg_type or "")
+
+    except WebSocketDisconnect:
+        pass
+    finally:
+        if token and token in rooms:
+            room = rooms[token]
+            if role:
+                _clear_peer(room, role, ws)
+            if room.phone is None and room.desktop is None:
+                del rooms[token]
+                log.info("room closed token=%s", token[:8])

@@ -39,10 +39,15 @@
 #include <QLineEdit>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QRadioButton>
+#include <QButtonGroup>
+#include <QSettings>
+#include <QUrl>
 
 #include <glob.h>
 #include <algorithm>
 #include <numeric>
+#include <optional>
 
 namespace SourcePrompt {
 
@@ -223,18 +228,23 @@ bool promptShader(QWidget *parent, SourceDescriptor &desc, QPixmap &thumb) {
 }
 
 bool promptHtml(QWidget *parent, SourceDescriptor &desc, QPixmap &thumb) {
-    HtmlEditDialog dlg(QString(), parent);
+    HtmlEditDialog dlg(QString(), QString(), parent);
     if (dlg.exec() != QDialog::Accepted) return false;
-    QString filePath = dlg.resultFilePath();
-    QString html     = dlg.resultHtml().trimmed();
-    if (filePath.isEmpty() && html.isEmpty()) return false;
 
-    desc.kind        = SourceDescriptor::Kind::Html;
-    desc.htmlContent = html;
-    desc.path        = filePath;
-    desc.displayName = filePath.isEmpty() ? "HTML Overlay"
-                                          : QFileInfo(filePath).fileName();
-    thumb = ThumbHelper::makeHtmlThumb(html, filePath);
+    const QString workspace = dlg.resultWorkspaceJson();
+    const QString bakedHtml = dlg.resultBakedHtml().trimmed();
+    const QString filePath  = dlg.resultFilePath();
+    if (workspace.isEmpty() && filePath.isEmpty() && bakedHtml.isEmpty())
+        return false;
+
+    desc.kind          = SourceDescriptor::Kind::Html;
+    desc.htmlWorkspace = workspace;
+    desc.htmlContent   = workspace.isEmpty() ? dlg.resultHtml().trimmed() : bakedHtml;
+    desc.path          = workspace.isEmpty() ? filePath : QString();
+    desc.displayName   = (!filePath.isEmpty() && workspace.isEmpty())
+                             ? QFileInfo(filePath).fileName()
+                             : QStringLiteral("HTML Overlay");
+    thumb = ThumbHelper::makeHtmlThumb(desc.htmlContent, desc.path);
     return true;
 }
 
@@ -280,10 +290,25 @@ bool promptNdi(QWidget *parent, SourceDescriptor &desc, QPixmap &thumb) {
 }
 
 #ifdef SWITCHX_HAVE_WEBRTC
+static QJsonObject webRtcQrPayload(const WebRtcPairingInfo &info) {
+    return WebRtcPairing::makePayload(
+        info.host, info.sigPort, info.token, info.httpPort, info.relayUrl);
+}
+
+static QString normalizeRelayUrl(const QString &raw) {
+    const QString trimmed = raw.trimmed();
+    if (trimmed.isEmpty())
+        return {};
+    QUrl url(trimmed);
+    if (!url.isValid() || url.host().isEmpty())
+        return {};
+    if (url.scheme() != QLatin1String("ws") && url.scheme() != QLatin1String("wss"))
+        return {};
+    return url.toString(QUrl::RemoveFragment);
+}
+
 bool showWebRtcConnectionDialog(QWidget *parent, const WebRtcPairingInfo &info, bool destroyOnCancel) {
-    QJsonObject qrObj = WebRtcPairing::makePayload(
-        info.host, info.sigPort, info.token, WebRtcManager::instance().httpPort());
-    const QString qrPayload = WebRtcPairing::toQrUrl(qrObj);
+    const QString qrPayload = WebRtcPairing::toQrUrl(webRtcQrPayload(info));
 
     QDialog dlg(parent);
     dlg.setWindowTitle(QObject::tr("Phone Camera (WebRTC)"));
@@ -297,8 +322,13 @@ bool showWebRtcConnectionDialog(QWidget *parent, const WebRtcPairingInfo &info, 
     statusLabel->setAlignment(Qt::AlignCenter);
 
     auto *hintLabel = new QLabel(
-        QObject::tr("Scan with your phone camera to open the browser streamer, or scan with the SwitchX app to pair natively.\n"
-                    "Your phone may warn about the self-signed certificate — accept it to enable the camera."), &dlg);
+        info.usesRelay()
+            ? QObject::tr("Open SwitchX on your PC first and keep the pairing dialog open, then tap Start here.\n"
+                          "Scan with your phone camera for the browser streamer, or use the SwitchX app.\n"
+                          "Internet pairing may require STUN/TURN for media on different networks.")
+            : QObject::tr("Scan with your phone camera to open the browser streamer, or scan with the SwitchX app to pair natively.\n"
+                          "Your phone may warn about the self-signed certificate — accept it to enable the camera."),
+        &dlg);
     hintLabel->setWordWrap(true);
     hintLabel->setAlignment(Qt::AlignCenter);
 
@@ -372,6 +402,74 @@ QString promptWebRtcBindAddress(QWidget *parent) {
         parent, ifaces, NetworkUtils::defaultInterfaceIndex(ifaces));
 }
 
+struct WebRtcSetupChoice {
+    QString relayUrl;
+    QString bindAddress;
+};
+
+static std::optional<WebRtcSetupChoice> promptWebRtcSetup(QWidget *parent) {
+    QDialog dlg(parent);
+    dlg.setWindowTitle(QObject::tr("Phone Camera (WebRTC)"));
+    dlg.setMinimumWidth(420);
+
+    auto *localRadio = new QRadioButton(QObject::tr("Local network (LAN)"), &dlg);
+    auto *relayRadio = new QRadioButton(QObject::tr("Public relay server"), &dlg);
+    localRadio->setChecked(true);
+
+    auto *modeGroup = new QButtonGroup(&dlg);
+    modeGroup->addButton(localRadio, 0);
+    modeGroup->addButton(relayRadio, 1);
+
+    auto *relayEdit = new QLineEdit(&dlg);
+    relayEdit->setPlaceholderText(QString::fromLatin1(WebRtcPairing::kDefaultRelayUrl));
+    relayEdit->setText(QSettings(QStringLiteral("SwitchX"), QStringLiteral("WebRTC"))
+                           .value(QStringLiteral("relayUrl"),
+                                  QString::fromLatin1(WebRtcPairing::kDefaultRelayUrl))
+                           .toString());
+    relayEdit->setEnabled(false);
+
+    QObject::connect(relayRadio, &QRadioButton::toggled, relayEdit, &QLineEdit::setEnabled);
+
+    auto *relayHint = new QLabel(
+        QObject::tr("Run scripts/webrtc_signaling_server.py on your VPS, then enter its WebSocket URL here."),
+        &dlg);
+    relayHint->setWordWrap(true);
+    relayHint->setEnabled(false);
+    QObject::connect(relayRadio, &QRadioButton::toggled, relayHint, &QLabel::setEnabled);
+
+    auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
+    QObject::connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+    QObject::connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+
+    auto *layout = new QVBoxLayout(&dlg);
+    layout->addWidget(localRadio);
+    layout->addWidget(relayRadio);
+    layout->addWidget(relayEdit);
+    layout->addWidget(relayHint);
+    layout->addWidget(buttons);
+
+    if (dlg.exec() != QDialog::Accepted)
+        return std::nullopt;
+
+    WebRtcSetupChoice choice;
+    if (relayRadio->isChecked()) {
+        choice.relayUrl = normalizeRelayUrl(relayEdit->text());
+        if (choice.relayUrl.isEmpty()) {
+            QMessageBox::warning(parent, QObject::tr("Phone Camera (WebRTC)"),
+                QObject::tr("Enter a valid relay WebSocket URL (ws:// or wss://)."));
+            return std::nullopt;
+        }
+        QSettings(QStringLiteral("SwitchX"), QStringLiteral("WebRTC"))
+            .setValue(QStringLiteral("relayUrl"), choice.relayUrl);
+        return choice;
+    }
+
+    choice.bindAddress = promptWebRtcBindAddress(parent);
+    if (choice.bindAddress.isEmpty())
+        return std::nullopt;
+    return choice;
+}
+
 bool promptWebRtc(QWidget *parent, SourceDescriptor &desc, QPixmap &thumb) {
     if (!WebRtcSource::isAvailable()) {
         QMessageBox::warning(parent, QObject::tr("Phone Camera (WebRTC)"),
@@ -380,39 +478,45 @@ bool promptWebRtc(QWidget *parent, SourceDescriptor &desc, QPixmap &thumb) {
         return false;
     }
 
-    const QString bindAddress = promptWebRtcBindAddress(parent);
-    if (bindAddress.isEmpty())
+    const auto setup = promptWebRtcSetup(parent);
+    if (!setup)
         return false;
 
-    if (!ensureWebRtcFirewall(parent))
+    const bool useRelay = !setup->relayUrl.isEmpty();
+    if (!useRelay && !ensureWebRtcFirewall(parent))
         return false;
 
-    const WebRtcPairingInfo info = WebRtcManager::instance().createSession(bindAddress);
+    const WebRtcPairingInfo info = useRelay
+        ? WebRtcManager::instance().createSession({}, setup->relayUrl)
+        : WebRtcManager::instance().createSession(setup->bindAddress);
     if (info.token.isEmpty()) {
         QMessageBox::warning(parent, QObject::tr("Phone Camera (WebRTC)"),
-            QObject::tr("Could not start the WebRTC servers on %1.\n"
-                        "Check that ports %2 (signaling) and %3 (browser) are free.")
-                .arg(bindAddress)
-                .arg(WebRtcPairing::kDefaultSigPort)
-                .arg(WebRtcPairing::kDefaultHttpPort));
+            useRelay
+                ? QObject::tr("Could not connect to the relay server at %1.\n"
+                              "Check the URL and that the signaling server is running.")
+                    .arg(setup->relayUrl)
+                : QObject::tr("Could not start the WebRTC servers on %1.\n"
+                              "Check that ports %2 (signaling) and %3 (browser) are free.")
+                    .arg(setup->bindAddress)
+                    .arg(WebRtcPairing::kDefaultSigPort)
+                    .arg(WebRtcPairing::kDefaultHttpPort));
         return false;
     }
 
-    QJsonObject qrObj = WebRtcPairing::makePayload(
-        info.host, info.sigPort, info.token, WebRtcManager::instance().httpPort());
-    const QString qrPayload = WebRtcPairing::toQrUrl(qrObj);
+    const QString qrPayload = WebRtcPairing::toQrUrl(webRtcQrPayload(info));
 
     if (!showWebRtcConnectionDialog(parent, info, true))
         return false;
 
-    desc.kind        = SourceDescriptor::Kind::WebRtc;
-    desc.path        = info.token;
-    desc.displayName = QObject::tr("Phone Camera");
+    desc.kind            = SourceDescriptor::Kind::WebRtc;
+    desc.path            = info.token;
+    desc.webrtcRelayUrl  = info.relayUrl;
+    desc.displayName     = QObject::tr("Phone Camera");
     thumb = QrCodeHelper::toPixmap(qrPayload, 4);
     return true;
 }
 
-bool reconnectWebRtcDialog(QWidget *parent, const QString &sessionToken) {
+bool reconnectWebRtcDialog(QWidget *parent, const QString &sessionToken, const QString &relayUrl) {
     if (sessionToken.isEmpty())
         return false;
 
@@ -423,24 +527,33 @@ bool reconnectWebRtcDialog(QWidget *parent, const QString &sessionToken) {
         return false;
     }
 
-    QString bindAddress = WebRtcManager::instance().bindAddress();
-    if (!WebRtcManager::instance().hasSession(sessionToken) || bindAddress.isEmpty()) {
-        bindAddress = promptWebRtcBindAddress(parent);
-        if (bindAddress.isEmpty())
+    const bool useRelay = !relayUrl.isEmpty();
+    QString bindAddress;
+    if (!useRelay) {
+        bindAddress = WebRtcManager::instance().bindAddress();
+        if (!WebRtcManager::instance().hasSession(sessionToken) || bindAddress.isEmpty()) {
+            bindAddress = promptWebRtcBindAddress(parent);
+            if (bindAddress.isEmpty())
+                return false;
+        }
+        if (!ensureWebRtcFirewall(parent))
             return false;
     }
 
-    if (!ensureWebRtcFirewall(parent))
-        return false;
-
-    const WebRtcPairingInfo info = WebRtcManager::instance().ensureSession(bindAddress, sessionToken);
+    const WebRtcPairingInfo info = useRelay
+        ? WebRtcManager::instance().ensureSession({}, sessionToken, relayUrl)
+        : WebRtcManager::instance().ensureSession(bindAddress, sessionToken);
     if (info.token.isEmpty()) {
         QMessageBox::warning(parent, QObject::tr("Phone Camera (WebRTC)"),
-            QObject::tr("Could not start the WebRTC servers on %1.\n"
-                        "Check that ports %2 (signaling) and %3 (browser) are free.")
-                .arg(bindAddress)
-                .arg(WebRtcPairing::kDefaultSigPort)
-                .arg(WebRtcPairing::kDefaultHttpPort));
+            useRelay
+                ? QObject::tr("Could not connect to the relay server at %1.\n"
+                              "Check the URL and that the signaling server is running.")
+                    .arg(relayUrl)
+                : QObject::tr("Could not start the WebRTC servers on %1.\n"
+                              "Check that ports %2 (signaling) and %3 (browser) are free.")
+                    .arg(bindAddress)
+                    .arg(WebRtcPairing::kDefaultSigPort)
+                    .arg(WebRtcPairing::kDefaultHttpPort));
         return false;
     }
 
@@ -451,8 +564,8 @@ bool reconnectWebRtcDialog(QWidget *parent, const QString &sessionToken) {
 } // namespace
 
 #ifdef SWITCHX_HAVE_WEBRTC
-bool reconnectWebRtc(QWidget *parent, const QString &sessionToken) {
-    return reconnectWebRtcDialog(parent, sessionToken);
+bool reconnectWebRtc(QWidget *parent, const QString &sessionToken, const QString &relayUrl) {
+    return reconnectWebRtcDialog(parent, sessionToken, relayUrl);
 }
 #endif
 

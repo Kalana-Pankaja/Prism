@@ -7,8 +7,12 @@
 
 struct WebRtcPairingInfo {
     QString host;
-    quint16 sigPort = 0;
+    quint16 sigPort  = 0;
+    quint16 httpPort = 0;
     QString token;
+    QString relayUrl; ///< Non-empty when using a public relay (wss://…/ws).
+
+    bool usesRelay() const { return !relayUrl.isEmpty(); }
 };
 
 /// Singleton owning the WebRTC signaling server and live peer sessions.
@@ -21,10 +25,12 @@ public:
     static bool isAvailable();
 
     /// Lazily starts servers on bindAddress and returns pairing details for a new session.
-    WebRtcPairingInfo createSession(const QString &bindAddress);
+    /// Pass relayUrl for public signaling (desktop connects outbound; no local WS server).
+    WebRtcPairingInfo createSession(const QString &bindAddress, const QString &relayUrl = {});
 
     /// Starts servers if needed and returns pairing details for an existing or new session token.
-    WebRtcPairingInfo ensureSession(const QString &bindAddress, const QString &token = {});
+    WebRtcPairingInfo ensureSession(const QString &bindAddress, const QString &token = {},
+                                    const QString &relayUrl = {});
 
     QString bindAddress() const;
     bool hasSession(const QString &token) const;

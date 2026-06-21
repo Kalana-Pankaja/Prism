@@ -17,7 +17,8 @@ bool prompt(SourceDescriptor::Kind kind, QWidget *parent,
 
 #ifdef SWITCHX_HAVE_WEBRTC
 /// Reopens the phone pairing dialog for an existing WebRTC session (reconnect after drop).
-bool reconnectWebRtc(QWidget *parent, const QString &sessionToken);
+bool reconnectWebRtc(QWidget *parent, const QString &sessionToken,
+                     const QString &relayUrl = {});
 #endif
 
 // Populates menu with the canonical Add Element list (icon + label per entry).
