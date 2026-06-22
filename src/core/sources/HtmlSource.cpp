@@ -8,8 +8,8 @@
 
 static constexpr QSize kFrameSize{1280, 720};
 
-HtmlSource::HtmlSource(const QString &html, const QString &filePath) {
-    m_frame = QImage(kFrameSize, QImage::Format_RGBA8888);
+HtmlSource::HtmlSource(const QString &html, const QString &filePath)
+    : m_frame(kFrameSize, QImage::Format_RGBA8888) {
     m_frame.fill(Qt::transparent);
 
     m_view = new QWebEngineView();

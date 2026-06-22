@@ -141,7 +141,7 @@ VideoWidget::NodeChainSource SourceFactory::makeChainEntry(ClipNodeModel *node,
         entry.playing = true;
         entry.source  = std::move(src);
 
-        if (desc.kind == Kind::Text && editor) {
+        if (desc.kind == Kind::Text) {
             if (auto data = editor->scriptOutputForDataNode(node->nodeId())) {
                 if (auto *textSrc = dynamic_cast<TextSource *>(entry.source.get()))
                     textSrc->setDataSource(data);

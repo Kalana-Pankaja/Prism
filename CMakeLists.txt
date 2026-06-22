@@ -46,7 +46,7 @@ endif()
 # Lua + sol2 (optional — Script node; Text source works without Lua)
 option(SWITCHX_WITH_LUA "Enable Lua script nodes" ON)
 if(SWITCHX_WITH_LUA)
-    pkg_check_modules(LUA REQUIRED lua54)
+    pkg_check_modules(LUA REQUIRED lua5.4)
 
     FetchContent_Declare(sol2
         GIT_REPOSITORY https://github.com/ThePhD/sol2.git

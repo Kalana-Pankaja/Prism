@@ -80,6 +80,7 @@ jobs:
             libre2-dev
             libzip-dev
             libssl-dev
+            liblua5.4-dev
             clang-tidy
           version: 1.0
 
