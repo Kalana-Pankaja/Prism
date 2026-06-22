@@ -1,4 +1,5 @@
 #include "ui/nodes/ClipNodeEditor.h"
+#include "ui/common/MaterialSymbols.h"
 #include "core/project/AssetPathResolver.h"
 #include "core/scripting/ScriptRuntime.h"
 #include "ui/editors/ScriptEditDialog.h"
@@ -39,6 +40,7 @@
 #include <QMessageBox>
 #include <QInputDialog>
 #include <QLineEdit>
+#include <QLabel>
 #include <QGraphicsSceneContextMenuEvent>
 #include <QSet>
 #include <QCheckBox>
@@ -57,6 +59,12 @@
 #include <QDropEvent>
 #include <QMimeData>
 #include <QUrl>
+#include <QToolButton>
+#include <QHBoxLayout>
+#include <QResizeEvent>
+#include <QMouseEvent>
+#include <QtMath>
+#include <algorithm>
 
 static constexpr qreal CARD_W        = 122.0;
 static constexpr qreal CARD_PROXY_H  = 175.0;
@@ -1478,8 +1486,14 @@ QVariant GroupNodeItem::itemChange(GraphicsItemChange change, const QVariant &va
 
 class ClipNodeView : public QGraphicsView {
 public:
+    static constexpr qreal kMinZoom     = 0.2;
+    static constexpr qreal kMaxZoom     = 3.0;
+    static constexpr qreal kDefaultZoom = 1.0;
+    static constexpr qreal kZoomStep    = 1.12;
+
     std::function<void()> onDeleteSelection;
     std::function<void(const QStringList &, const QPoint &)> onFileDrop;
+    std::function<void(qreal)> onZoomChanged;
 
     explicit ClipNodeView(QGraphicsScene *scene, QWidget *parent = nullptr)
         : QGraphicsView(scene, parent)
@@ -1495,6 +1509,36 @@ public:
         setFocusPolicy(Qt::StrongFocus);
         setAcceptDrops(true);
         scene->setItemIndexMethod(QGraphicsScene::NoIndex);
+    }
+
+    qreal zoomScale() const { return transform().m11(); }
+
+    void setZoomScale(qreal targetScale) {
+        targetScale = std::clamp(targetScale, kMinZoom, kMaxZoom);
+        const qreal current = zoomScale();
+        if (qFuzzyCompare(current, targetScale))
+            return;
+
+        setTransformationAnchor(AnchorViewCenter);
+        setResizeAnchor(AnchorViewCenter);
+        const qreal factor = targetScale / current;
+        QGraphicsView::scale(factor, factor);
+        notifyZoomChanged();
+    }
+
+    void zoomBy(qreal factor) {
+        setZoomScale(zoomScale() * factor);
+    }
+
+    void zoomIn() { zoomBy(kZoomStep); }
+
+    void zoomOut() { zoomBy(1.0 / kZoomStep); }
+
+    void resetZoom() {
+        const QPointF center = mapToScene(viewport()->rect().center());
+        resetTransform();
+        centerOn(center);
+        notifyZoomChanged();
     }
 
 protected:
@@ -1528,8 +1572,18 @@ protected:
     }
 
     void wheelEvent(QWheelEvent *e) override {
-        const qreal factor = e->angleDelta().y() > 0 ? 1.12 : 1.0 / 1.12;
-        scale(factor, factor);
+        const qreal current = zoomScale();
+        const qreal factor  = e->angleDelta().y() > 0 ? kZoomStep : 1.0 / kZoomStep;
+        const qreal target  = std::clamp(current * factor, kMinZoom, kMaxZoom);
+        if (qFuzzyCompare(current, target)) {
+            e->accept();
+            return;
+        }
+
+        setTransformationAnchor(AnchorUnderMouse);
+        setResizeAnchor(AnchorUnderMouse);
+        QGraphicsView::scale(target / current, target / current);
+        notifyZoomChanged();
         e->accept();
     }
 
@@ -1538,6 +1592,23 @@ protected:
             onDeleteSelection();
             e->accept();
             return;
+        }
+        if (e->modifiers() & Qt::ControlModifier) {
+            if (e->key() == Qt::Key_Equal || e->key() == Qt::Key_Plus) {
+                zoomIn();
+                e->accept();
+                return;
+            }
+            if (e->key() == Qt::Key_Minus) {
+                zoomOut();
+                e->accept();
+                return;
+            }
+            if (e->key() == Qt::Key_0) {
+                resetZoom();
+                e->accept();
+                return;
+            }
         }
         QGraphicsView::keyPressEvent(e);
     }
@@ -1576,8 +1647,237 @@ protected:
     }
 
 private:
+    void notifyZoomChanged() {
+        if (onZoomChanged)
+            onZoomChanged(zoomScale());
+    }
+
     QPoint m_panStart;
     bool   m_panning = false;
+};
+
+class ClipNodeMinimap : public QWidget {
+public:
+    explicit ClipNodeMinimap(ClipNodeView *view, QWidget *parent = nullptr)
+        : QWidget(parent), m_view(view)
+    {
+        setAttribute(Qt::WA_TransparentForMouseEvents, false);
+        setMouseTracking(true);
+        setToolTip(tr("Canvas minimap — click or drag to pan"));
+
+        if (m_view && m_view->scene()) {
+            connect(m_view->scene(), &QGraphicsScene::changed, this, qOverload<>(&QWidget::update));
+        }
+        if (m_view) {
+            connect(m_view->horizontalScrollBar(), &QScrollBar::valueChanged, this, qOverload<>(&QWidget::update));
+            connect(m_view->verticalScrollBar(), &QScrollBar::valueChanged, this, qOverload<>(&QWidget::update));
+        }
+    }
+
+protected:
+    void paintEvent(QPaintEvent *) override {
+        QPainter p(this);
+        p.setRenderHint(QPainter::Antialiasing);
+
+        p.fillRect(rect(), QColor(20, 22, 26, 230));
+        p.setPen(QColor(48, 52, 58));
+        p.drawRect(rect().adjusted(0, 0, -1, -1));
+
+        if (!m_view || !m_view->scene()) {
+            p.setPen(QColor(120, 120, 120));
+            p.drawText(rect(), Qt::AlignCenter, tr("—"));
+            return;
+        }
+
+        const QRectF bounds = contentBounds();
+        if (!bounds.isValid() || bounds.isEmpty()) {
+            p.setPen(QColor(120, 120, 120));
+            p.drawText(rect(), Qt::AlignCenter, tr("Empty"));
+            return;
+        }
+
+        const QRectF mini = innerRect();
+
+        p.setBrush(QColor(74, 158, 255, 100));
+        p.setPen(Qt::NoPen);
+        for (QGraphicsItem *item : m_view->scene()->items()) {
+            if (!item->isVisible() || !dynamic_cast<NodeItemBase *>(item))
+                continue;
+            const QPointF c = mapSceneToMini(item->sceneBoundingRect().center(), bounds, mini);
+            p.drawEllipse(c, 2.5, 2.5);
+        }
+
+        const QPointF tl = mapSceneToMini(m_view->mapToScene(m_view->viewport()->rect().topLeft()),
+                                          bounds, mini);
+        const QPointF br = mapSceneToMini(m_view->mapToScene(m_view->viewport()->rect().bottomRight()),
+                                          bounds, mini);
+        const QRectF vpMini(QPointF(std::min(tl.x(), br.x()), std::min(tl.y(), br.y())),
+                            QPointF(std::max(tl.x(), br.x()), std::max(tl.y(), br.y())));
+        p.setPen(QPen(QColor(74, 158, 255), 1.5));
+        p.setBrush(QColor(74, 158, 255, 35));
+        p.drawRect(vpMini);
+    }
+
+    void mousePressEvent(QMouseEvent *e) override {
+        m_dragging = true;
+        panToMiniPos(e->pos());
+        e->accept();
+    }
+
+    void mouseMoveEvent(QMouseEvent *e) override {
+        if (m_dragging)
+            panToMiniPos(e->pos());
+        e->accept();
+    }
+
+    void mouseReleaseEvent(QMouseEvent *e) override {
+        if (e->button() == Qt::LeftButton)
+            m_dragging = false;
+        QWidget::mouseReleaseEvent(e);
+    }
+
+private:
+    QRectF innerRect() const { return rect().adjusted(4, 4, -4, -4); }
+
+    QRectF contentBounds() const {
+        QRectF bounds = m_view->scene()->itemsBoundingRect();
+        if (!bounds.isValid() || bounds.isEmpty())
+            return bounds;
+        const qreal margin = 80.0;
+        return bounds.adjusted(-margin, -margin, margin, margin);
+    }
+
+    static QPointF mapSceneToMini(const QPointF &scenePos, const QRectF &bounds, const QRectF &mini) {
+        const qreal u = std::clamp((scenePos.x() - bounds.left()) / bounds.width(), 0.0, 1.0);
+        const qreal v = std::clamp((scenePos.y() - bounds.top()) / bounds.height(), 0.0, 1.0);
+        return QPointF(mini.left() + u * mini.width(), mini.top() + v * mini.height());
+    }
+
+    QPointF mapMiniToScene(const QPointF &miniPos, const QRectF &bounds, const QRectF &mini) const {
+        const qreal u = (miniPos.x() - mini.left()) / mini.width();
+        const qreal v = (miniPos.y() - mini.top()) / mini.height();
+        return QPointF(bounds.left() + u * bounds.width(), bounds.top() + v * bounds.height());
+    }
+
+    void panToMiniPos(const QPoint &pos) {
+        const QRectF bounds = contentBounds();
+        if (!bounds.isValid() || bounds.isEmpty())
+            return;
+        const QRectF mini = innerRect();
+        const QPointF clamped(
+            std::clamp(static_cast<qreal>(pos.x()), mini.left(), mini.right()),
+            std::clamp(static_cast<qreal>(pos.y()), mini.top(), mini.bottom()));
+        const QPointF scenePos = mapMiniToScene(clamped, bounds, mini);
+        m_view->centerOn(scenePos);
+        update();
+    }
+
+    ClipNodeView *m_view = nullptr;
+    bool          m_dragging = false;
+};
+
+class ClipNodeCanvasWidget : public QWidget {
+public:
+    explicit ClipNodeCanvasWidget(ClipNodeView *view, QWidget *parent = nullptr)
+        : QWidget(parent), m_view(view)
+    {
+        m_view->setParent(this);
+
+        m_minimap = new ClipNodeMinimap(m_view, this);
+        m_minimap->setStyleSheet(QStringLiteral("border-radius: 6px;"));
+
+        m_zoomBar = new QWidget(this);
+        m_zoomBar->setStyleSheet(QStringLiteral(
+            "background: rgba(20, 22, 26, 0.9); border: 1px solid #2a2d32; border-radius: 6px;"));
+        auto *zLayout = new QHBoxLayout(m_zoomBar);
+        zLayout->setContentsMargins(4, 4, 4, 4);
+        zLayout->setSpacing(2);
+
+        const QString btnStyle = QStringLiteral(
+            "QToolButton { background: transparent; border: none; border-radius: 4px; color: #ccc; }"
+            "QToolButton:hover { background: #2a5c66; }"
+            "QToolButton:disabled { color: #555; }");
+
+        auto *zoomOutBtn = new QToolButton(m_zoomBar);
+        MaterialSymbols::setIconText(zoomOutBtn, MaterialSymbols::Names::ZoomOut, 18);
+        zoomOutBtn->setToolTip(tr("Zoom out (Ctrl+-)"));
+        zoomOutBtn->setFixedSize(28, 28);
+        zoomOutBtn->setStyleSheet(btnStyle);
+
+        m_zoomLabel = new QLabel(m_zoomBar);
+        m_zoomLabel->setAlignment(Qt::AlignCenter);
+        m_zoomLabel->setFixedWidth(44);
+        m_zoomLabel->setStyleSheet(QStringLiteral("color: #aaa; font-size: 11px;"));
+        m_zoomLabel->setText(QStringLiteral("100%"));
+
+        auto *zoomResetBtn = new QToolButton(m_zoomBar);
+        MaterialSymbols::setIconText(zoomResetBtn, MaterialSymbols::Names::ZoomReset, 18);
+        zoomResetBtn->setToolTip(tr("Reset zoom to 100% (Ctrl+0)"));
+        zoomResetBtn->setFixedSize(28, 28);
+        zoomResetBtn->setStyleSheet(btnStyle);
+
+        auto *zoomInBtn = new QToolButton(m_zoomBar);
+        MaterialSymbols::setIconText(zoomInBtn, MaterialSymbols::Names::ZoomIn, 18);
+        zoomInBtn->setToolTip(tr("Zoom in (Ctrl++)"));
+        zoomInBtn->setFixedSize(28, 28);
+        zoomInBtn->setStyleSheet(btnStyle);
+
+        zLayout->addWidget(zoomOutBtn);
+        zLayout->addWidget(m_zoomLabel);
+        zLayout->addWidget(zoomResetBtn);
+        zLayout->addWidget(zoomInBtn);
+
+        connect(zoomOutBtn, &QToolButton::clicked, m_view, [this]() { m_view->zoomOut(); });
+        connect(zoomInBtn, &QToolButton::clicked, m_view, [this]() { m_view->zoomIn(); });
+        connect(zoomResetBtn, &QToolButton::clicked, m_view, [this]() { m_view->resetZoom(); });
+
+        m_zoomOutBtn = zoomOutBtn;
+        m_zoomInBtn  = zoomInBtn;
+
+        m_view->onZoomChanged = [this](qreal scale) {
+            syncZoomUi(scale);
+            if (m_minimap)
+                m_minimap->update();
+        };
+        syncZoomUi(m_view->zoomScale());
+    }
+
+    ClipNodeView *graphicsView() const { return m_view; }
+
+protected:
+    void resizeEvent(QResizeEvent *e) override {
+        QWidget::resizeEvent(e);
+        const QRect r = rect();
+        m_view->setGeometry(r);
+
+        constexpr int miniW = 148;
+        constexpr int miniH = 96;
+        m_minimap->setGeometry(r.width() - miniW - 10, r.height() - miniH - 10, miniW, miniH);
+
+        m_zoomBar->adjustSize();
+        const int barW = m_zoomBar->sizeHint().width();
+        m_zoomBar->setGeometry(10, r.height() - 36, barW, 32);
+
+        m_minimap->raise();
+        m_zoomBar->raise();
+    }
+
+private:
+    void syncZoomUi(qreal scale) {
+        const int pct = qRound(scale * 100.0);
+        m_zoomLabel->setText(QStringLiteral("%1%").arg(pct));
+        if (m_zoomOutBtn)
+            m_zoomOutBtn->setEnabled(scale > ClipNodeView::kMinZoom + 0.01);
+        if (m_zoomInBtn)
+            m_zoomInBtn->setEnabled(scale < ClipNodeView::kMaxZoom - 0.01);
+    }
+
+    ClipNodeView      *m_view = nullptr;
+    ClipNodeMinimap   *m_minimap = nullptr;
+    QWidget           *m_zoomBar = nullptr;
+    QLabel            *m_zoomLabel = nullptr;
+    QToolButton       *m_zoomOutBtn = nullptr;
+    QToolButton       *m_zoomInBtn = nullptr;
 };
 
 ClipNodeEditor::ClipNodeEditor(QWidget *parent)
@@ -1589,7 +1889,7 @@ ClipNodeEditor::ClipNodeEditor(QWidget *parent)
         emit audioGraphChanged();
     };
 
-    m_view = new ClipNodeView(m_scene, this);
+    m_view = new ClipNodeView(m_scene);
     auto *nodeView = static_cast<ClipNodeView *>(m_view);
     nodeView->onDeleteSelection = [this]() { deleteSelection(m_view); };
     nodeView->onFileDrop = [this](const QStringList &paths, const QPoint &viewPos) {
@@ -1603,9 +1903,11 @@ ClipNodeEditor::ClipNodeEditor(QWidget *parent)
         }
     };
 
+    auto *canvas = new ClipNodeCanvasWidget(nodeView, this);
+
     auto *layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
-    layout->addWidget(m_view);
+    layout->addWidget(canvas);
     setLayout(layout);
 
     connect(m_view, &QGraphicsView::customContextMenuRequested, this, &ClipNodeEditor::onCanvasContextMenu);
@@ -1613,6 +1915,12 @@ ClipNodeEditor::ClipNodeEditor(QWidget *parent)
 }
 
 ClipNodeEditor::~ClipNodeEditor() = default;
+
+QGraphicsView *ClipNodeEditor::graphicsViewFrom(QWidget *widget) {
+    if (auto *canvas = dynamic_cast<ClipNodeCanvasWidget *>(widget))
+        return canvas->graphicsView();
+    return qobject_cast<QGraphicsView *>(widget);
+}
 
 void ClipNodeEditor::registerItem(NodeItemBase *item) {
     m_itemMap[item->nodeId()] = item;
@@ -1667,7 +1975,7 @@ void ClipNodeEditor::renameGroupMemberClip(NodeId clipId) {
 }
 
 QWidget *ClipNodeEditor::makeSubSceneView(ClipNodeScene *scene, QWidget *parent, NodeId groupId) {
-    auto *view = new ClipNodeView(scene, parent);
+    auto *view = new ClipNodeView(scene);
     view->setContextMenuPolicy(Qt::CustomContextMenu);
     view->onDeleteSelection = [this, view]() { deleteSelection(view); };
     if (groupId != 0) {
@@ -1676,7 +1984,7 @@ QWidget *ClipNodeEditor::makeSubSceneView(ClipNodeScene *scene, QWidget *parent,
                     showGroupSceneContextMenu(groupId, view);
                 });
     }
-    return view;
+    return new ClipNodeCanvasWidget(view, parent);
 }
 
 static void wireDeleteCallback(NodeItemBase *item, const std::function<void(NodeId)> &cb) {

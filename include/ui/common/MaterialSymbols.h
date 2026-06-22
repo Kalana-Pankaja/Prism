@@ -64,5 +64,8 @@ public:
         inline static constexpr const char *Smartphone = "smartphone";
         inline static constexpr const char *TextFields = "text_fields";
         inline static constexpr const char *Warning = "warning";
+        inline static constexpr const char *ZoomIn = "zoom_in";
+        inline static constexpr const char *ZoomOut = "zoom_out";
+        inline static constexpr const char *ZoomReset = "restart_alt";
     };
 };

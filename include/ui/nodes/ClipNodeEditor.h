@@ -85,6 +85,9 @@ public:
     QJsonObject saveState(const QDir &sessionDir = {}) const;
     void restoreState(const QJsonObject &state);
 
+    /// Returns the inner QGraphicsView when @p widget is a canvas chrome wrapper.
+    static QGraphicsView *graphicsViewFrom(QWidget *widget);
+
 signals:
     void clipChainChanged();
     void deckAClipChanged(NodeId clipId);

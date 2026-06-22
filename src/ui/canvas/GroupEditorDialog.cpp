@@ -41,7 +41,7 @@ GroupEditorDialog::GroupEditorDialog(NodeId groupId, ClipNodeEditor *editor, QWi
         m_view = editor->makeSubSceneView(subScene, this, groupId);
         layout->addWidget(m_view);
 
-        auto *view = qobject_cast<QGraphicsView *>(m_view);
+        auto *view = ClipNodeEditor::graphicsViewFrom(m_view);
         QMenu *addMenu = new QMenu(addElementBtn);
         SourcePrompt::buildMenu(addMenu,
             [editor, groupId, view]() {
