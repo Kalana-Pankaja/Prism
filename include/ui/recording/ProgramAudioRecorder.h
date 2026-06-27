@@ -13,6 +13,7 @@ struct AVStream;
 struct SwrContext;
 struct AVFrame;
 struct AVPacket;
+struct AVAudioFifo;
 
 /// Encodes the program audio mix to disk as FLAC (44.1 kHz stereo).
 /// Intended to pair with a separate video recording file for sync in post.
@@ -70,6 +71,8 @@ private:
     void drainMixQueues();
     void drainPcmQueue(bool flushPartial);
     void encodeMixedBlock(const float *samples, int sampleCount);
+    void drainFifo(bool flushPartial);
+    void sendFrame(int sampleCount);
 
     bool     m_recording = false;
     bool     m_writeMarkersOnStop = true;
@@ -91,6 +94,8 @@ private:
     SwrContext      *m_swrCtx   = nullptr;
     AVFrame         *m_pcmFrame = nullptr;
     AVPacket        *m_packet   = nullptr;
+    AVAudioFifo     *m_fifo     = nullptr;
+    int              m_frameSize = 0;
     int64_t          m_sampleIndex = 0;
 
     static constexpr int kMixBlockSamples = 1024;

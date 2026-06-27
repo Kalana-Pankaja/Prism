@@ -3,6 +3,7 @@
 extern "C" {
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
+#include <libavutil/audio_fifo.h>
 #include <libavutil/channel_layout.h>
 #include <libavutil/opt.h>
 #include <libswresample/swresample.h>
@@ -142,13 +143,25 @@ bool ProgramAudioRecorder::startRecording(const QString &outputPath, const QStri
     }
     av_channel_layout_uninit(&inLayout);
 
+    // The FLAC encoder requires every frame except the last to contain exactly
+    // codec frame_size samples, so buffer converted samples in a FIFO and only
+    // hand the encoder full frames.
+    m_frameSize = m_codecCtx->frame_size > 0 ? m_codecCtx->frame_size : kMixBlockSamples;
+
     m_pcmFrame = av_frame_alloc();
     m_pcmFrame->format      = m_codecCtx->sample_fmt;
     m_pcmFrame->sample_rate = kSampleRate;
     av_channel_layout_copy(&m_pcmFrame->ch_layout, &m_codecCtx->ch_layout);
-    m_pcmFrame->nb_samples = kMixBlockSamples;
+    m_pcmFrame->nb_samples = m_frameSize;
     if (av_frame_get_buffer(m_pcmFrame, 0) < 0) {
         emit errorOccurred(tr("Could not allocate audio frame."));
+        cleanup();
+        return false;
+    }
+
+    m_fifo = av_audio_fifo_alloc(m_codecCtx->sample_fmt, kChannels, m_frameSize * 2);
+    if (!m_fifo) {
+        emit errorOccurred(tr("Could not allocate audio buffer."));
         cleanup();
         return false;
     }
@@ -260,11 +273,41 @@ void ProgramAudioRecorder::drainMixQueues() {
 }
 
 void ProgramAudioRecorder::encodeMixedBlock(const float *samples, int sampleCount) {
-    if (!m_codecCtx || !m_swrCtx || !m_pcmFrame || sampleCount <= 0)
+    if (!m_codecCtx || !m_swrCtx || !m_fifo || sampleCount <= 0)
         return;
 
+    QVector<int32_t> converted(sampleCount * kChannels);
+    uint8_t *outData[1] = { reinterpret_cast<uint8_t *>(converted.data()) };
     const uint8_t *inData[1] = { reinterpret_cast<const uint8_t *>(samples) };
-    if (swr_convert(m_swrCtx, m_pcmFrame->data, sampleCount, inData, sampleCount) < 0)
+    const int outSamples = swr_convert(m_swrCtx, outData, sampleCount, inData, sampleCount);
+    if (outSamples <= 0)
+        return;
+
+    void *writePtr[1] = { converted.data() };
+    if (av_audio_fifo_write(m_fifo, writePtr, outSamples) < outSamples)
+        return;
+
+    drainFifo(false);
+}
+
+void ProgramAudioRecorder::drainFifo(bool flushPartial) {
+    if (!m_fifo)
+        return;
+
+    while (av_audio_fifo_size(m_fifo) >= m_frameSize)
+        sendFrame(m_frameSize);
+
+    if (flushPartial) {
+        const int remaining = av_audio_fifo_size(m_fifo);
+        if (remaining > 0)
+            sendFrame(remaining);
+    }
+}
+
+void ProgramAudioRecorder::sendFrame(int sampleCount) {
+    if (av_frame_make_writable(m_pcmFrame) < 0)
+        return;
+    if (av_audio_fifo_read(m_fifo, reinterpret_cast<void **>(m_pcmFrame->data), sampleCount) < sampleCount)
         return;
 
     m_pcmFrame->nb_samples = sampleCount;
@@ -285,6 +328,7 @@ void ProgramAudioRecorder::encodeMixedBlock(const float *samples, int sampleCoun
 bool ProgramAudioRecorder::flushEncoder() {
     if (!m_codecCtx || !m_packet) return true;
 
+    drainFifo(true);
     avcodec_send_frame(m_codecCtx, nullptr);
     while (true) {
         const int ret = avcodec_receive_packet(m_codecCtx, m_packet);
@@ -345,6 +389,11 @@ void ProgramAudioRecorder::cleanup() {
     m_micQueue.clear();
     m_pcmQueue.clear();
 
+    if (m_fifo) {
+        av_audio_fifo_free(m_fifo);
+        m_fifo = nullptr;
+    }
+    m_frameSize = 0;
     if (m_packet) {
         av_packet_free(&m_packet);
         m_packet = nullptr;
