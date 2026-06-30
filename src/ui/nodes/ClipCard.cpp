@@ -6,6 +6,10 @@
 #include "ui/editors/TextEditDialog.h"
 #include "ui/common/ThumbHelper.h"
 #include "ui/common/MaterialSymbols.h"
+#include "ui/common/CameraEnumerator.h"
+#ifndef Q_OS_LINUX
+#include "ui/common/CapturePicker.h"
+#endif
 #include "core/sources/ImageSource.h"
 #include "core/sources/SlideshowSource.h"
 #include "core/sources/ShaderSource.h"
@@ -332,8 +336,9 @@ void ClipCard::onEditClicked() {
     }
 
     case Kind::Camera: {
-        const auto cameras = QMediaDevices::videoInputs();
-        if (cameras.isEmpty()) {
+        const auto devices = CameraEnumerator::listDevices(parent);
+        const auto qtDevices = QMediaDevices::videoInputs();
+        if (devices.size() <= 1) {
             QDialog info(parent);
             info.setWindowTitle("No Cameras");
             auto *lbl = new QLabel("No camera devices were found.", &info);
@@ -352,17 +357,15 @@ void ClipCard::onEditClicked() {
 
         auto *combo = new QComboBox(&dlg);
         int currentIdx = 0;
-        for (int i = 0; i < cameras.size(); ++i) {
-            const auto &cam = cameras[i];
-            const QString id = QString::fromUtf8(cam.id());
-            const QString label = cam.description().isEmpty() ? id : cam.description();
-            combo->addItem(label);
-            if (!m_sourceDesc.path.isEmpty() && id == m_sourceDesc.path)
+        for (int i = 0; i < devices.size(); ++i) {
+            const auto &entry = devices[i];
+            combo->addItem(entry.label);
+            if (!m_sourceDesc.path.isEmpty() && entry.id == m_sourceDesc.path)
                 currentIdx = i;
             else if (m_sourceDesc.path.isEmpty() && i == m_sourceDesc.cameraIndex)
                 currentIdx = i;
         }
-        combo->setCurrentIndex(qBound(0, currentIdx, cameras.size() - 1));
+        combo->setCurrentIndex(qBound(0, currentIdx, devices.size() - 1));
 
         auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
         connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
@@ -374,11 +377,22 @@ void ClipCard::onEditClicked() {
         layout->addWidget(buttons);
 
         if (dlg.exec() == QDialog::Accepted) {
-            const auto &cam = cameras[combo->currentIndex()];
-            m_sourceDesc.cameraIndex = combo->currentIndex();
-            m_sourceDesc.path = QString::fromUtf8(cam.id());
-            const QString desc = cam.description();
-            m_sourceDesc.displayName = desc.isEmpty() ? m_sourceDesc.path : desc;
+            const auto &entry = devices[combo->currentIndex()];
+            m_sourceDesc.path = entry.id;
+            m_sourceDesc.cameraIndex = 0;
+            if (!entry.isDefault) {
+                for (int i = 0; i < qtDevices.size(); ++i) {
+                    if (QString::fromUtf8(qtDevices[i].id()) == entry.id) {
+                        m_sourceDesc.cameraIndex = i;
+                        break;
+                    }
+                }
+            }
+            m_sourceDesc.displayName = entry.isDefault ? QStringLiteral("Default Camera")
+                : entry.label.section(QStringLiteral("  ["), 0, 0).trimmed();
+            if (m_sourceDesc.displayName.isEmpty())
+                m_sourceDesc.displayName = entry.id.isEmpty()
+                    ? QStringLiteral("Default Camera") : entry.id;
             QFontMetrics fm(ui->titleLabel->font());
             ui->titleLabel->setText(fm.elidedText(m_sourceDesc.displayName, Qt::ElideRight, 108));
             ui->titleLabel->setToolTip(m_sourceDesc.displayName);
@@ -387,71 +401,79 @@ void ClipCard::onEditClicked() {
         break;
     }
 
-    case Kind::Screen: {
-        const auto screens = QGuiApplication::screens();
-        QDialog dlg(parent);
-        dlg.setWindowTitle("Select Screen");
-        dlg.setMinimumWidth(360);
-
-        auto *combo = new QComboBox(&dlg);
-        for (int i = 0; i < screens.size(); ++i)
-            combo->addItem(QString("Screen %1 — %2").arg(i + 1).arg(screens[i]->name()));
-        combo->setCurrentIndex(qBound(0, m_sourceDesc.screenIndex, screens.size() - 1));
-
-        auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
-        connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
-        connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
-
-        auto *layout = new QVBoxLayout(&dlg);
-        layout->addWidget(new QLabel("Choose screen to capture:", &dlg));
-        layout->addWidget(combo);
-        layout->addWidget(buttons);
-
-        if (dlg.exec() == QDialog::Accepted) {
-            m_sourceDesc.screenIndex  = combo->currentIndex();
-            m_sourceDesc.displayName  = QString("Screen %1").arg(combo->currentIndex() + 1);
-            QFontMetrics fm(ui->titleLabel->font());
-            ui->titleLabel->setText(fm.elidedText(m_sourceDesc.displayName, Qt::ElideRight, 108));
-            ui->titleLabel->setToolTip(m_sourceDesc.displayName);
-            emit sourceDescriptorChanged(m_index, m_sourceDesc);
-        }
-        break;
-    }
-
+    case Kind::Screen:
     case Kind::Window: {
-        const auto windows = QWindowCapture::capturableWindows();
-        if (windows.isEmpty()) {
-            // Nothing to choose from on Wayland — just keep existing
-            break;
-        }
-
-        QDialog dlg(parent);
-        dlg.setWindowTitle("Select Window / Tab");
-        dlg.setMinimumWidth(400);
-
-        auto *combo = new QComboBox(&dlg);
-        for (const auto &w : windows)
-            combo->addItem(w.description().isEmpty() ? "(unnamed)" : w.description());
-        combo->setCurrentIndex(qBound(0, m_sourceDesc.windowIndex, windows.size() - 1));
-
-        auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
-        connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
-        connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
-
-        auto *layout = new QVBoxLayout(&dlg);
-        layout->addWidget(new QLabel("Choose window to capture:", &dlg));
-        layout->addWidget(combo);
-        layout->addWidget(buttons);
-
-        if (dlg.exec() == QDialog::Accepted) {
-            m_sourceDesc.windowIndex  = combo->currentIndex();
-            m_sourceDesc.displayName  = combo->currentText();
+#ifndef Q_OS_LINUX
+        if (CapturePicker::prompt(parent, m_sourceDesc, m_sourceDesc.kind)) {
             QFontMetrics fm(ui->titleLabel->font());
             ui->titleLabel->setText(fm.elidedText(m_sourceDesc.displayName, Qt::ElideRight, 108));
             ui->titleLabel->setToolTip(m_sourceDesc.displayName);
             emit sourceDescriptorChanged(m_index, m_sourceDesc);
         }
         break;
+#else
+        if (m_sourceDesc.kind == Kind::Screen) {
+            const auto screens = QGuiApplication::screens();
+            QDialog dlg(parent);
+            dlg.setWindowTitle("Select Screen");
+            dlg.setMinimumWidth(360);
+
+            auto *combo = new QComboBox(&dlg);
+            for (int i = 0; i < screens.size(); ++i)
+                combo->addItem(QString("Screen %1 — %2").arg(i + 1).arg(screens[i]->name()));
+            combo->setCurrentIndex(qBound(0, m_sourceDesc.screenIndex, screens.size() - 1));
+
+            auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
+            connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+            connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+
+            auto *layout = new QVBoxLayout(&dlg);
+            layout->addWidget(new QLabel("Choose screen to capture:", &dlg));
+            layout->addWidget(combo);
+            layout->addWidget(buttons);
+
+            if (dlg.exec() == QDialog::Accepted) {
+                m_sourceDesc.screenIndex  = combo->currentIndex();
+                m_sourceDesc.displayName  = QString("Screen %1").arg(combo->currentIndex() + 1);
+                QFontMetrics fm(ui->titleLabel->font());
+                ui->titleLabel->setText(fm.elidedText(m_sourceDesc.displayName, Qt::ElideRight, 108));
+                ui->titleLabel->setToolTip(m_sourceDesc.displayName);
+                emit sourceDescriptorChanged(m_index, m_sourceDesc);
+            }
+        } else {
+            const auto windows = QWindowCapture::capturableWindows();
+            if (windows.isEmpty())
+                break;
+
+            QDialog dlg(parent);
+            dlg.setWindowTitle("Select Window / Tab");
+            dlg.setMinimumWidth(400);
+
+            auto *combo = new QComboBox(&dlg);
+            for (const auto &w : windows)
+                combo->addItem(w.description().isEmpty() ? "(unnamed)" : w.description());
+            combo->setCurrentIndex(qBound(0, m_sourceDesc.windowIndex, windows.size() - 1));
+
+            auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
+            connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+            connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+
+            auto *layout = new QVBoxLayout(&dlg);
+            layout->addWidget(new QLabel("Choose window to capture:", &dlg));
+            layout->addWidget(combo);
+            layout->addWidget(buttons);
+
+            if (dlg.exec() == QDialog::Accepted) {
+                m_sourceDesc.windowIndex  = combo->currentIndex();
+                m_sourceDesc.displayName  = combo->currentText();
+                QFontMetrics fm(ui->titleLabel->font());
+                ui->titleLabel->setText(fm.elidedText(m_sourceDesc.displayName, Qt::ElideRight, 108));
+                ui->titleLabel->setToolTip(m_sourceDesc.displayName);
+                emit sourceDescriptorChanged(m_index, m_sourceDesc);
+            }
+        }
+        break;
+#endif
     }
 
     case Kind::Canvas: {

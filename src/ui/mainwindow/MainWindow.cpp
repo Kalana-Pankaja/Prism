@@ -88,7 +88,7 @@ MainWindow::MainWindow(QWidget *parent)
 
     const RecordingOptions recOpts = RecordingSettingsDialog::loadSavedOptions();
 
-    m_outputWindow = new OutputWindow(this);
+    m_outputWindow = new OutputWindow();
     m_outputWindow->show();
 
     setupPreviewSplitters();
@@ -615,12 +615,9 @@ void MainWindow::setupConnections() {
     connect(m_obsIntegration, &ObsIntegration::sceneListUpdated,
             this, &MainWindow::rebuildObsScenesMenu);
     connect(ui->actionStayOnTop, &QAction::toggled, this, [this](bool on) {
-        Qt::WindowFlags flags = m_outputWindow->windowFlags();
-        if (on) flags |= Qt::WindowStaysOnTopHint;
-        else    flags &= ~Qt::WindowStaysOnTopHint;
-        m_outputWindow->setWindowFlags(flags);
-        m_outputWindow->show();
+        m_outputWindow->setStayOnTop(on);
     });
+    ui->actionStayOnTop->setChecked(true);
 
     connect(ui->actionStartRemoteControl, &QAction::triggered, this, &MainWindow::onStartRemoteControl);
 

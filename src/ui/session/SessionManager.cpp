@@ -24,19 +24,29 @@
 #ifndef _WIN32
 #include <unistd.h>
 #include <signal.h>
+#else
+#define NOMINMAX
+#include <windows.h>
 #endif
 
 namespace {
 
 bool isProcessAlive(qint64 pid)
 {
-#ifndef _WIN32
     if (pid <= 0)
         return false;
+#ifndef _WIN32
     return kill(static_cast<pid_t>(pid), 0) == 0;
 #else
-    Q_UNUSED(pid);
-    return false;
+    HANDLE handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE,
+                                static_cast<DWORD>(pid));
+    if (!handle)
+        return false;
+    DWORD exitCode = 0;
+    const bool alive = GetExitCodeProcess(handle, &exitCode)
+                    && exitCode == STILL_ACTIVE;
+    CloseHandle(handle);
+    return alive;
 #endif
 }
 

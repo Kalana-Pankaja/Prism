@@ -11,6 +11,9 @@ find_path(NDI_INCLUDE_DIR
     NAMES Processing.NDI.Lib.h
     HINTS
         ${NDI_ROOT}/include
+        ${NDI_ROOT}/Include
+        "$ENV{ProgramFiles}/NDI/NDI 6 SDK/Include"
+        "$ENV{ProgramFiles}/NDI/NDI 5 SDK/Include"
         /usr/include
         /usr/local/include
         "$ENV{HOME}/NDI SDK for Linux/include"
@@ -20,7 +23,10 @@ find_library(NDI_LIBRARY
     NAMES ndi Processing.NDI.Lib.x64 Processing.NDI.Lib.x86
     HINTS
         ${NDI_ROOT}/lib
+        ${NDI_ROOT}/Lib/x64
         ${NDI_ROOT}/lib/x86_64-linux-gnu
+        "$ENV{ProgramFiles}/NDI/NDI 6 SDK/Lib/x64"
+        "$ENV{ProgramFiles}/NDI/NDI 5 SDK/Lib/x64"
         /usr/lib
         /usr/local/lib
         "$ENV{HOME}/NDI SDK for Linux/lib/x86_64-linux-gnu"

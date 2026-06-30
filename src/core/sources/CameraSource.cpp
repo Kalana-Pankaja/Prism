@@ -82,19 +82,30 @@ bool CameraSource::start(const QCameraDevice &device) {
     return true;  // starting is async — success is confirmed when frames arrive
 }
 
-bool CameraSource::startDevice(const QString &v4l2Path) {
-    // Try to find a matching QCameraDevice whose id equals the V4L2 path.
+bool CameraSource::startDevice(const QString &devicePath) {
     const auto all = QMediaDevices::videoInputs();
     for (const auto &dev : all) {
-        if (QString::fromUtf8(dev.id()) == v4l2Path)
+        const QString id = QString::fromUtf8(dev.id());
+        if (id == devicePath)
             return start(dev);
+#ifdef Q_OS_WIN
+        // Media Foundation symbolic links may appear with or without a @device: prefix.
+        if (!devicePath.isEmpty()) {
+            const QString normalized = id.startsWith(QStringLiteral("@device:"))
+                ? id.mid(8) : id;
+            const QString pathNorm = devicePath.startsWith(QStringLiteral("@device:"))
+                ? devicePath.mid(8) : devicePath;
+            if (normalized.compare(pathNorm, Qt::CaseInsensitive) == 0)
+                return start(dev);
+        }
+#endif
     }
     // No Qt device matched the path — fall back to QCamera() with no device
     // argument (system default).  This works even for Intel IPU6 / MIPI cameras
     // where QMediaDevices::videoInputs() returns empty.
-    qDebug() << "CameraSource: path" << v4l2Path
+    qDebug() << "CameraSource: path" << devicePath
              << "not in Qt device list — using QCamera() default";
-    m_name = v4l2Path.isEmpty() ? "Default Camera" : v4l2Path;
+    m_name = devicePath.isEmpty() ? "Default Camera" : devicePath;
     return start({});   // {} = null QCameraDevice → QCamera() with no device
 }
 

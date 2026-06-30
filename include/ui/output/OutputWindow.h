@@ -16,6 +16,7 @@ public:
     ~OutputWindow();
 
     void setRecordingActive(bool active);
+    void setStayOnTop(bool on);
 
     VideoWidget *videoWidget() const;
 

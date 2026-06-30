@@ -228,7 +228,9 @@ void RemoteControlServer::sendTextResponse(QTcpSocket *socket, const QString &te
 }
 
 QString RemoteControlServer::getWebPageHtml() const {
-    return QString(R"html(<!DOCTYPE html>
+    // MSVC limits raw string literals to 64 KiB; concatenate chunks.
+    return QString(
+    R"html(<!DOCTYPE html>
 <html>
 <head>
     <meta charset="utf-8">
@@ -699,6 +701,8 @@ QString RemoteControlServer::getWebPageHtml() const {
             font-style: italic;
         }
     </style>
+)html"
+    R"html(
 </head>
 <body>
     <div class="wrapper">
@@ -772,7 +776,8 @@ QString RemoteControlServer::getWebPageHtml() const {
             </div>
         </section>
     </div>
-
+)html"
+    R"html(
     <script>
         const slider = document.getElementById('faderSlider');
         const mixPct = document.getElementById('mixPct');

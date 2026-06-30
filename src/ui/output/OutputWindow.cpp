@@ -8,7 +8,7 @@
 OutputWindow::OutputWindow(QWidget *parent)
     : QMainWindow(parent), ui(new Ui::OutputWindow) {
     ui->setupUi(this);
-    setWindowFlags(windowFlags() | Qt::FramelessWindowHint);
+    setWindowFlags(Qt::Window | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint);
 
     ui->outputWidget->setFramelessWindowChrome(true);
     connect(ui->outputWidget, &VideoWidget::framelessToggleFullscreenRequested,
@@ -25,6 +25,14 @@ void OutputWindow::setRecordingActive(bool active) {
     ui->outputWidget->setStyleSheet(active
         ? QStringLiteral("background-color: #000; border: 3px solid #e04545;")
         : QStringLiteral("background-color: #000;"));
+}
+
+void OutputWindow::setStayOnTop(bool on) {
+    Qt::WindowFlags flags = Qt::Window | Qt::FramelessWindowHint;
+    if (on)
+        flags |= Qt::WindowStaysOnTopHint;
+    setWindowFlags(flags);
+    show();
 }
 
 VideoWidget *OutputWindow::videoWidget() const {

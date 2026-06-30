@@ -448,7 +448,7 @@ void VideoWidget::cacheDeckFrameFromFbo(bool deckA) {
     glReadPixels(0, 0, kProgramWidth, kProgramHeight,
                  GL_RGBA, GL_UNSIGNED_BYTE, cache.bits());
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    cache = cache.flipped(Qt::Vertical);
+    cache = cache.mirrored(false, true);
 }
 
 void VideoWidget::cacheProgramFrameFromFbo() {
@@ -469,7 +469,7 @@ void VideoWidget::cacheDeckPreviewFromFbo(bool deckA) {
                  GL_RGBA, GL_UNSIGNED_BYTE, full.bits());
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
-    full = full.flipped(Qt::Vertical);
+    full = full.mirrored(false, true);
     QImage &cache = deckA ? m_deckPreviewA : m_deckPreviewB;
     cache = full.scaled(kDeckPreviewWidth, kDeckPreviewHeight,
                         Qt::IgnoreAspectRatio, Qt::SmoothTransformation);

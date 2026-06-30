@@ -4,6 +4,7 @@
 #include "core/sources/SlideshowSource.h"
 #include "core/sources/CameraSource.h"
 #include "core/sources/ScreenSource.h"
+#include "core/sources/WindowCaptureSource.h"
 #include "core/sources/CanvasSource.h"
 #include "core/sources/ShaderSource.h"
 #include "core/sources/HtmlSource.h"
@@ -14,6 +15,7 @@
 #include "core/sources/WebRtcSource.h"
 #endif
 #include <QObject>
+#include <QtGlobal>
 #include <QMediaDevices>
 #include <QCameraDevice>
 
@@ -58,12 +60,19 @@ std::unique_ptr<MediaSource> SourceFactory::create(const SourceDescriptor &desc)
     }
     case Kind::Screen: {
         auto src = std::make_unique<ScreenSource>();
+#ifdef Q_OS_LINUX
         if (!src->start(ScreenSource::CaptureType::Monitor)) return nullptr;
+#else
+        if (!src->start(desc.screenIndex)) return nullptr;
+#endif
         return src;
     }
     case Kind::Window: {
-        auto src = std::make_unique<ScreenSource>();
-        if (!src->start(ScreenSource::CaptureType::Window)) return nullptr;
+        auto src = std::make_unique<WindowCaptureSource>();
+        const auto windows = WindowCaptureSource::capturableWindows();
+        if (windows.isEmpty()) return nullptr;
+        const int idx = qBound(0, desc.windowIndex, windows.size() - 1);
+        if (!src->start(windows.at(idx))) return nullptr;
         return src;
     }
     case Kind::Canvas:

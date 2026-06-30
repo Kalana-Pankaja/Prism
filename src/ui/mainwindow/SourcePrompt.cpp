@@ -1,6 +1,10 @@
 #include "ui/mainwindow/SourcePrompt.h"
 #include "ui/common/ThumbHelper.h"
 #include "ui/common/MaterialSymbols.h"
+#include "ui/common/CameraEnumerator.h"
+#ifndef Q_OS_LINUX
+#include "ui/common/CapturePicker.h"
+#endif
 #include "ui/editors/ShaderEditDialog.h"
 #include "ui/editors/HtmlEditDialog.h"
 #include "ui/editors/TextEditDialog.h"
@@ -25,8 +29,6 @@
 #include <QMessageBox>
 #include <QDir>
 #include <QFileInfo>
-#include <QEventLoop>
-#include <QTimer>
 #include <QMediaDevices>
 #include <QCameraDevice>
 #include <QDialog>
@@ -44,7 +46,6 @@
 #include <QSettings>
 #include <QUrl>
 
-#include <glob.h>
 #include <algorithm>
 #include <numeric>
 #include <optional>
@@ -79,54 +80,29 @@ bool promptSlideshow(QWidget *parent, SourceDescriptor &desc, QPixmap &thumb) {
 }
 
 bool promptCamera(QWidget *parent, SourceDescriptor &desc, QPixmap &thumb) {
-    auto qtDevices = QMediaDevices::videoInputs();
-    if (qtDevices.isEmpty()) {
-        QEventLoop loop;
-        QTimer::singleShot(1200, &loop, &QEventLoop::quit);
-        loop.exec();
-        qtDevices = QMediaDevices::videoInputs();
-    }
-
-    struct CamEntry { QString id, label; bool isDefault = false; };
-    QList<CamEntry> devices;
-
-    for (const auto &d : qtDevices) {
-        QString id    = QString::fromUtf8(d.id());
-        QString label = d.description().isEmpty() ? id
-                      : QString("%1  [%2]").arg(d.description(), id);
-        devices.append({id, label, false});
-    }
-
-    {
-        glob_t g{};
-        if (::glob("/dev/video*", GLOB_NOSORT, nullptr, &g) == 0) {
-            for (size_t i = 0; i < g.gl_pathc; ++i) {
-                QString path = QString::fromLocal8Bit(g.gl_pathv[i]);
-                bool already = std::any_of(devices.begin(), devices.end(),
-                                           [&](const CamEntry &e){ return e.id == path; });
-                if (!already) devices.append({path, path, false});
-            }
-        }
-        ::globfree(&g);
-    }
-    devices.append({"", "Default Camera  (let the system choose)", true});
+    const auto devices = CameraEnumerator::listDevices(parent);
 
     QStringList names;
-    for (const auto &e : devices) names << e.label;
+    for (const auto &e : devices)
+        names << e.label;
 
     bool ok = false;
     QString chosen = QInputDialog::getItem(parent, "Select Camera",
                                            "Camera device:", names, 0, false, &ok);
     if (!ok) return false;
 
-    int idx = names.indexOf(chosen);
-    const CamEntry &entry = devices[idx];
+    const int idx = names.indexOf(chosen);
+    if (idx < 0 || idx >= devices.size())
+        return false;
+    const CameraDeviceInfo &entry = devices.at(idx);
 
+    const auto qtDevices = QMediaDevices::videoInputs();
     desc.kind        = SourceDescriptor::Kind::Camera;
     desc.path        = entry.id;
     desc.displayName = entry.isDefault ? "Default Camera"
                      : entry.label.section("  [", 0, 0).trimmed();
-    if (desc.displayName.isEmpty()) desc.displayName = entry.id.isEmpty() ? "Default Camera" : entry.id;
+    if (desc.displayName.isEmpty())
+        desc.displayName = entry.id.isEmpty() ? "Default Camera" : entry.id;
     desc.cameraIndex = 0;
     if (!entry.isDefault) {
         for (int i = 0; i < qtDevices.size(); ++i) {
@@ -141,20 +117,42 @@ bool promptCamera(QWidget *parent, SourceDescriptor &desc, QPixmap &thumb) {
     return true;
 }
 
-bool promptScreen(SourceDescriptor &desc, QPixmap &thumb) {
+bool promptScreen(QWidget *parent, SourceDescriptor &desc, QPixmap &thumb) {
+#ifndef Q_OS_LINUX
+    if (!CapturePicker::prompt(parent, desc, SourceDescriptor::Kind::Screen))
+        return false;
+    thumb = ThumbHelper::makeIconThumb(
+        desc.kind == SourceDescriptor::Kind::Window
+            ? MaterialSymbols::Names::SelectWindow
+            : MaterialSymbols::Names::DesktopWindows);
+    return true;
+#else
+    Q_UNUSED(parent);
     desc.kind        = SourceDescriptor::Kind::Screen;
     desc.displayName = "Screen Capture";
     desc.screenIndex = 0;
     thumb = ThumbHelper::makeIconThumb(MaterialSymbols::Names::DesktopWindows);
     return true;
+#endif
 }
 
-bool promptWindow(SourceDescriptor &desc, QPixmap &thumb) {
+bool promptWindow(QWidget *parent, SourceDescriptor &desc, QPixmap &thumb) {
+#ifndef Q_OS_LINUX
+    if (!CapturePicker::prompt(parent, desc, SourceDescriptor::Kind::Window))
+        return false;
+    thumb = ThumbHelper::makeIconThumb(
+        desc.kind == SourceDescriptor::Kind::Window
+            ? MaterialSymbols::Names::SelectWindow
+            : MaterialSymbols::Names::DesktopWindows);
+    return true;
+#else
+    Q_UNUSED(parent);
     desc.kind        = SourceDescriptor::Kind::Window;
     desc.displayName = "Window / Tab";
     desc.windowIndex = 0;
     thumb = ThumbHelper::makeIconThumb(MaterialSymbols::Names::SelectWindow);
     return true;
+#endif
 }
 
 bool promptCanvas(QWidget *parent, SourceDescriptor &desc, QPixmap &thumb) {
@@ -578,9 +576,9 @@ bool prompt(SourceDescriptor::Kind kind, QWidget *parent,
     case SourceDescriptor::Kind::Camera:
         return promptCamera(parent, outDesc, outThumb);
     case SourceDescriptor::Kind::Screen:
-        return promptScreen(outDesc, outThumb);
+        return promptScreen(parent, outDesc, outThumb);
     case SourceDescriptor::Kind::Window:
-        return promptWindow(outDesc, outThumb);
+        return promptWindow(parent, outDesc, outThumb);
     case SourceDescriptor::Kind::Canvas:
         return promptCanvas(parent, outDesc, outThumb);
     case SourceDescriptor::Kind::Shader:

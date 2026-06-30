@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(Prism VERSION 0.1.0 LANGUAGES CXX)
+project(Prism VERSION 0.1.0 LANGUAGES CXX C)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -10,7 +10,11 @@ set(CMAKE_AUTOUIC ON)
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/CMakeModules")
 
 # Qt
-find_package(Qt6 REQUIRED COMPONENTS Core Widgets OpenGL OpenGLWidgets Gui Multimedia WebEngineWidgets DBus Network)
+set(_switchx_qt_components Core Widgets OpenGL OpenGLWidgets Gui Multimedia WebEngineWidgets Network)
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    list(APPEND _switchx_qt_components DBus)
+endif()
+find_package(Qt6 REQUIRED COMPONENTS ${_switchx_qt_components})
 find_package(Qt6 QUIET COMPONENTS WebSockets)
 if(TARGET Qt6::WebSockets)
     set(SWITCHX_HAVE_OBS_WS TRUE)
@@ -18,13 +22,21 @@ if(TARGET Qt6::WebSockets)
 else()
     message(STATUS "Qt6 WebSockets not found — OBS integration disabled (install qt6-websockets)")
 endif()
-find_package(re2 REQUIRED)
 
-# GStreamer (for ScreenSource PipeWire frame capture)
-find_package(PkgConfig REQUIRED)
-pkg_check_modules(GSTREAMER REQUIRED gstreamer-1.0)
-pkg_check_modules(GSTREAMER_APP REQUIRED gstreamer-app-1.0)
-pkg_check_modules(LIBZIP REQUIRED libzip)
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    find_package(re2 REQUIRED)
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(GSTREAMER REQUIRED gstreamer-1.0)
+    pkg_check_modules(GSTREAMER_APP REQUIRED gstreamer-app-1.0)
+    pkg_check_modules(LIBZIP REQUIRED libzip)
+elseif(WIN32)
+    find_package(re2 CONFIG REQUIRED)
+    find_package(libzip CONFIG REQUIRED)
+else()
+    find_package(re2 REQUIRED)
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(LIBZIP REQUIRED libzip)
+endif()
 
 # FFmpeg
 find_package(FFmpeg REQUIRED COMPONENTS avcodec avformat avutil swscale swresample)
@@ -46,7 +58,27 @@ endif()
 # Lua + sol2 (optional — Script node; Text source works without Lua)
 option(SWITCHX_WITH_LUA "Enable Lua script nodes" ON)
 if(SWITCHX_WITH_LUA)
-    pkg_check_modules(LUA REQUIRED lua5.4)
+    if(WIN32)
+        # vcpkg ships Lua 5.5; sol2 v3.5.0 supports through 5.4 — bundle 5.4 on Windows.
+        FetchContent_Declare(lua54
+            GIT_REPOSITORY https://github.com/lua/lua.git
+            GIT_TAG        v5.4.7)
+        FetchContent_MakeAvailable(lua54)
+        set(_lua_src_dir ${lua54_SOURCE_DIR})
+        file(GLOB _lua_sources "${_lua_src_dir}/*.c")
+        list(REMOVE_ITEM _lua_sources
+            "${_lua_src_dir}/lua.c" "${_lua_src_dir}/luac.c"
+            "${_lua_src_dir}/onelua.c" "${_lua_src_dir}/ltests.c")
+        add_library(switchx_lua STATIC ${_lua_sources})
+        target_include_directories(switchx_lua PUBLIC ${_lua_src_dir})
+        if(MSVC)
+            target_compile_definitions(switchx_lua PRIVATE _CRT_SECURE_NO_WARNINGS)
+        endif()
+        set(SWITCHX_LUA_TARGET switchx_lua)
+    else()
+        pkg_check_modules(LUA REQUIRED lua5.4)
+        set(SWITCHX_LUA_TARGET ${LUA_LIBRARIES})
+    endif()
 
     FetchContent_Declare(sol2
         GIT_REPOSITORY https://github.com/ThePhD/sol2.git
@@ -55,11 +87,15 @@ if(SWITCHX_WITH_LUA)
 
     add_library(switchx_sol2 INTERFACE)
     target_include_directories(switchx_sol2 INTERFACE
-        ${sol2_SOURCE_DIR}/include
-        ${LUA_INCLUDE_DIRS})
-    target_link_libraries(switchx_sol2 INTERFACE ${LUA_LIBRARIES})
+        ${sol2_SOURCE_DIR}/include)
+    if(WIN32)
+        target_link_libraries(switchx_sol2 INTERFACE ${SWITCHX_LUA_TARGET})
+    else()
+        target_include_directories(switchx_sol2 INTERFACE ${LUA_INCLUDE_DIRS})
+        target_link_libraries(switchx_sol2 INTERFACE ${SWITCHX_LUA_TARGET})
+    endif()
     set(SWITCHX_HAVE_LUA TRUE)
-    message(STATUS "Lua scripting enabled (sol2 + system Lua 5.4)")
+    message(STATUS "Lua scripting enabled (sol2 + Lua 5.4)")
 else()
     message(STATUS "Lua scripting disabled")
 endif()
@@ -106,7 +142,6 @@ set(SOURCES
     src/core/sources/SlideshowSource.cpp
     src/core/sources/CanvasSource.cpp
     src/core/sources/CameraSource.cpp
-    src/core/sources/ScreenSource.cpp
     src/core/sources/WindowCaptureSource.cpp
     src/core/project/ClipManager.cpp
     src/core/media/ThumbnailExtractor.cpp
@@ -161,6 +196,8 @@ set(SOURCES
     src/ui/editors/TextEditDialog.cpp
     # Extracted helper / controller classes
     src/ui/common/ThumbHelper.cpp
+    src/ui/common/CameraEnumerator.cpp
+    src/ui/common/CapturePicker.cpp
     src/ui/common/MaterialSymbols.cpp
     src/ui/hotkeys/HotkeyManager.cpp
     src/ui/hotkeys/HotkeyEditorDialog.cpp
@@ -177,6 +214,12 @@ set(SOURCES
     src/ui/common/QrCodeHelper.cpp
     third_party/qrcodegen/qrcodegen.cpp
 )
+
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    list(APPEND SOURCES src/core/sources/ScreenSource_linux.cpp)
+else()
+    list(APPEND SOURCES src/core/sources/ScreenSource_win.cpp)
+endif()
 
 set(HEADERS
     include/core/sources/MediaSource.h
@@ -251,6 +294,8 @@ set(HEADERS
     include/ui/editors/TextEditDialog.h
     # Extracted helper / controller headers
     include/ui/common/ThumbHelper.h
+    include/ui/common/CameraEnumerator.h
+    include/ui/common/CapturePicker.h
     include/ui/common/MaterialSymbols.h
     include/ui/hotkeys/HotkeyManager.h
     include/ui/hotkeys/HotkeyEditorDialog.h
@@ -293,10 +338,16 @@ target_include_directories(switchx_core PUBLIC
     include
     third_party/qrcodegen
     ${FFMPEG_INCLUDE_DIRS}
-    ${GSTREAMER_INCLUDE_DIRS}
-    ${GSTREAMER_APP_INCLUDE_DIRS}
-    ${LIBZIP_INCLUDE_DIRS}
 )
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    target_include_directories(switchx_core PUBLIC
+        ${GSTREAMER_INCLUDE_DIRS}
+        ${GSTREAMER_APP_INCLUDE_DIRS}
+        ${LIBZIP_INCLUDE_DIRS}
+    )
+elseif(NOT WIN32)
+    target_include_directories(switchx_core PUBLIC ${LIBZIP_INCLUDE_DIRS})
+endif()
 
 target_link_libraries(switchx_core PUBLIC
     Qt6::Core
@@ -306,15 +357,23 @@ target_link_libraries(switchx_core PUBLIC
     Qt6::Gui
     Qt6::Multimedia
     Qt6::WebEngineWidgets
-    Qt6::DBus
     Qt6::Network
     re2::re2
     ${FFMPEG_LIBRARIES}
-    ${GSTREAMER_LIBRARIES}
-    ${GSTREAMER_APP_LIBRARIES}
-    ${LIBZIP_LIBRARIES}
     kissfft::kissfft
 )
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    target_link_libraries(switchx_core PUBLIC
+        Qt6::DBus
+        ${GSTREAMER_LIBRARIES}
+        ${GSTREAMER_APP_LIBRARIES}
+        ${LIBZIP_LIBRARIES}
+    )
+elseif(WIN32)
+    target_link_libraries(switchx_core PUBLIC libzip::zip opengl32 mf mfplat mfuuid ole32)
+else()
+    target_link_libraries(switchx_core PUBLIC ${LIBZIP_LIBRARIES})
+endif()
 
 if(SWITCHX_HAVE_LUA)
     target_compile_definitions(switchx_core PUBLIC SWITCHX_HAVE_LUA)

@@ -35,6 +35,11 @@ ScreenSource::~ScreenSource() {
     stop();
 }
 
+bool ScreenSource::start(int screenIndex) {
+    Q_UNUSED(screenIndex);
+    return start(CaptureType::Monitor);
+}
+
 bool ScreenSource::start(CaptureType type) {
     if (m_state != State::Idle)
         stop();
