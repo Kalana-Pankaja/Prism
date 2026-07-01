@@ -219,17 +219,7 @@ public:
     NodeId fromNodeId() const;
     NodeId toNodeId()   const;
 
-    void updatePath() {
-        const QPointF p1 = m_from->sceneCenter();
-        const QPointF p2 = m_to->sceneCenter();
-        const qreal dy   = std::abs(p2.y() - p1.y()) * 0.5;
-        QPainterPath path;
-        path.moveTo(p1);
-        path.cubicTo(QPointF(p1.x(), p1.y() + dy),
-                     QPointF(p2.x(), p2.y() - dy),
-                     p2);
-        setPath(path);
-    }
+    void updatePath();
 
     QPainterPath shape() const override {
         QPainterPathStroker stroker;
@@ -263,6 +253,26 @@ public:
     virtual NodeId nodeId() const = 0;
     virtual void paint(QPainter *p, const QStyleOptionGraphicsItem *o, QWidget *w) override = 0;
 };
+
+void ConnectionItem::updatePath() {
+    const QPointF p1 = m_from->sceneCenter();
+    const QPointF p2 = m_to->sceneCenter();
+    // Ports sit on the vertical left/right edges of their nodes, so leave and arrive
+    // horizontally (perpendicular to the edge) in each port's outward direction
+    // rather than tilting the wire up/down.
+    auto outwardX = [](PortItem *port) -> qreal {
+        NodeItemBase *n = port->nodeItem();
+        const qreal nodeCenterX = n->mapToScene(n->boundingRect().center()).x();
+        return port->sceneCenter().x() < nodeCenterX ? -1.0 : 1.0;
+    };
+    const qreal dx = std::max(std::abs(p2.x() - p1.x()) * 0.4, 40.0);
+    QPainterPath path;
+    path.moveTo(p1);
+    path.cubicTo(QPointF(p1.x() + outwardX(m_from) * dx, p1.y()),
+                 QPointF(p2.x() + outwardX(m_to) * dx, p2.y()),
+                 p2);
+    setPath(path);
+}
 
 class ClipNodeItem : public NodeItemBase {
 public:
@@ -2866,7 +2876,9 @@ QVector<ClipNodeEditor::LayerSlotView> ClipNodeEditor::layerSlotViews(NodeId lay
     QVector<LayerSlotView> views;
     auto *ly = dynamic_cast<LayerNodeItem *>(m_itemMap.value(layerId));
     if (!ly) return views;
-    for (int i = 0; i < ly->slotCount(); ++i) {
+    // Reversed so the canvas z-order matches the output (bottom of the node list =
+    // bottom layer, drawn first; top of the list = top layer, drawn last/on top).
+    for (int i = ly->slotCount() - 1; i >= 0; --i) {
         const NodeId up = m_scene->producerForInputPort(ly->inPort(i));
         if (up == 0) continue;   // skip the trailing empty input
         LayerSlotView v;
