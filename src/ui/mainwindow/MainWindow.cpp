@@ -394,87 +394,19 @@ void MainWindow::handleStartupRecovery() {
 // ── Preview splitters (manual resize via dividers) ────────────────────────────
 
 void MainWindow::setupDeckPreviewSplitter(bool deckA) {
-    QVBoxLayout *deckLayout = deckA ? ui->aDeckLayout : ui->bDeckLayout;
-    QLabel *preview = deckA ? ui->aPreviewLabel : ui->bPreviewLabel;
-    QGroupBox *group = deckA ? ui->aDeckGroup : ui->bDeckGroup;
+    QSplitter *split = deckA ? ui->aPreviewSplitter : ui->bPreviewSplitter;
+    split->setStretchFactor(0, 0);
+    split->setStretchFactor(1, 1);
+    split->setSizes({120, 160});
 
-    auto *controls = new QWidget(group);
-    auto *controlsLayout = new QVBoxLayout(controls);
-    controlsLayout->setContentsMargins(0, 0, 0, 0);
-    controlsLayout->setSpacing(4);
-
-    const int previewIndex = deckLayout->indexOf(preview);
-    while (deckLayout->count() > previewIndex + 1) {
-        QLayoutItem *item = deckLayout->takeAt(previewIndex + 1);
-        if (!item)
-            break;
-        if (QWidget *w = item->widget()) {
-            controlsLayout->addWidget(w);
-            delete item;
-        } else {
-            // Spacer (or other non-widget item): transfer ownership to the new layout.
-            controlsLayout->addItem(item);
-        }
-    }
-
-    if (QLayoutItem *previewItem = deckLayout->takeAt(previewIndex))
-        delete previewItem;
-
-    auto *vSplit = new QSplitter(Qt::Vertical, group);
-    vSplit->setObjectName(deckA ? QStringLiteral("aPreviewSplitter")
-                                : QStringLiteral("bPreviewSplitter"));
-    vSplit->setChildrenCollapsible(false);
-    vSplit->addWidget(preview);
-    vSplit->addWidget(controls);
-    vSplit->setStretchFactor(0, 0);
-    vSplit->setStretchFactor(1, 1);
-    vSplit->setSizes({120, 160});
-
-    deckLayout->addWidget(vSplit, 1);
+    (deckA ? ui->aDeckLayout : ui->bDeckLayout)->setStretch(1, 1);
 }
 
 void MainWindow::setupPreviewSplitters() {
-    auto *mainLayout = qobject_cast<QVBoxLayout *>(ui->centralwidget->layout());
-    if (!mainLayout)
-        return;
-
-    auto *mainSplitter = new QSplitter(Qt::Vertical);
-    mainSplitter->setObjectName(QStringLiteral("mainVerticalSplitter"));
-    mainSplitter->setChildrenCollapsible(false);
-
-    mainLayout->removeWidget(ui->gridGroup);
-    mainLayout->removeWidget(ui->controlGroup);
-    mainSplitter->addWidget(ui->gridGroup);
-    mainSplitter->addWidget(ui->controlGroup);
-    mainLayout->insertWidget(0, mainSplitter, 1);
-    mainSplitter->setStretchFactor(0, 1);
-    mainSplitter->setStretchFactor(1, 0);
-    mainSplitter->setSizes({700, 300});
-
-    while (ui->controlLayout->count() > 0) {
-        QLayoutItem *item = ui->controlLayout->takeAt(0);
-        delete item;
-    }
-
-    auto *centerWidget = new QWidget();
-    auto *centerLayout = new QVBoxLayout(centerWidget);
-    centerLayout->setContentsMargins(0, 0, 0, 0);
-    centerLayout->setSpacing(4);
-    centerLayout->addWidget(ui->faderGroup);
-    centerLayout->addWidget(ui->panicGroup);
-    centerLayout->addStretch(1);
-
-    auto *deckHSplitter = new QSplitter(Qt::Horizontal);
-    deckHSplitter->setObjectName(QStringLiteral("deckHorizontalSplitter"));
-    deckHSplitter->setChildrenCollapsible(false);
-    deckHSplitter->addWidget(ui->aDeckGroup);
-    deckHSplitter->addWidget(centerWidget);
-    deckHSplitter->addWidget(ui->bDeckGroup);
-    deckHSplitter->setStretchFactor(0, 0);
-    deckHSplitter->setStretchFactor(1, 1);
-    deckHSplitter->setStretchFactor(2, 0);
-    deckHSplitter->setSizes({220, 200, 220});
-    ui->controlLayout->addWidget(deckHSplitter);
+    ui->deckHorizontalSplitter->setStretchFactor(0, 0);
+    ui->deckHorizontalSplitter->setStretchFactor(1, 1);
+    ui->deckHorizontalSplitter->setStretchFactor(2, 0);
+    ui->deckHorizontalSplitter->setSizes({220, 200, 220});
 
     setupDeckPreviewSplitter(true);
     setupDeckPreviewSplitter(false);
@@ -483,12 +415,9 @@ void MainWindow::setupPreviewSplitters() {
         connect(splitter, &QSplitter::splitterMoved,
                 this, &MainWindow::refreshPreviewPixmaps);
     };
-    connectSplitter(mainSplitter);
-    connectSplitter(deckHSplitter);
-    if (auto *s = findChild<QSplitter *>(QStringLiteral("aPreviewSplitter")))
-        connectSplitter(s);
-    if (auto *s = findChild<QSplitter *>(QStringLiteral("bPreviewSplitter")))
-        connectSplitter(s);
+    connectSplitter(ui->deckHorizontalSplitter);
+    connectSplitter(ui->aPreviewSplitter);
+    connectSplitter(ui->bPreviewSplitter);
 }
 
 void MainWindow::refreshPreviewPixmaps() {
