@@ -20,6 +20,18 @@ int main(int argc, char *argv[]) {
     // Force software rendering to avoid the libgallium SIGSEGV.
     qputenv("QTWEBENGINE_CHROMIUM_FLAGS", "--disable-gpu");
 
+#ifdef Q_OS_LINUX
+    // The app themes itself with a global qApp stylesheet. On a normal desktop
+    // (non-Flatpak) QFileDialog uses the platform theme's *in-process* native
+    // dialog (e.g. KDE/GTK), so that stylesheet bleeds into it and produces a
+    // broken, half-styled file picker. Routing dialogs through the out-of-process
+    // xdg-desktop-portal chooser leaves them as the clean, unstyled native picker
+    // — the same path the Flatpak build already takes. Only set when the user or
+    // distro hasn't chosen a platform theme themselves.
+    if (!qEnvironmentVariableIsSet("QT_QPA_PLATFORMTHEME"))
+        qputenv("QT_QPA_PLATFORMTHEME", "xdgdesktopportal");
+#endif
+
     // Let offscreen GL contexts (e.g. SlideshowSource's transition FBO) share
     // textures with the VideoWidget QOpenGLWidget contexts, so rendered frames
     // can be drawn directly without a GPU→CPU→GPU readback.
