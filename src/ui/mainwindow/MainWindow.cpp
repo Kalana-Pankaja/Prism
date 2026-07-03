@@ -28,6 +28,10 @@
 #include "ui/recording/RecordingSettingsDialog.h"
 #include "core/project/ClipManager.h"
 #include "ui/common/AssetLibrary.h"
+#include "ui/common/ThumbHelper.h"
+#include <QDialog>
+#include <QFormLayout>
+#include <QDialogButtonBox>
 #include <QApplication>
 #include <QCoreApplication>
 #include <QDir>
@@ -702,6 +706,71 @@ void MainWindow::onAddFilesClicked() {
     m_stackWidget->setCurrentWidget(m_clipNodeEditor);
 }
 
+void MainWindow::onAddVideoUrlClicked() {
+    QDialog dlg(this);
+    dlg.setWindowTitle(tr("Add Video from URL"));
+    dlg.setMinimumWidth(450);
+
+    QFormLayout *layout = new QFormLayout(&dlg);
+    layout->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
+
+    QLineEdit *urlEdit = new QLineEdit(&dlg);
+    urlEdit->setPlaceholderText("e.g. http://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4");
+    urlEdit->setClearButtonEnabled(true);
+    layout->addRow(tr("Video URL:"), urlEdit);
+
+    QLineEdit *nameEdit = new QLineEdit(&dlg);
+    nameEdit->setPlaceholderText(tr("Optional custom name"));
+    nameEdit->setClearButtonEnabled(true);
+    layout->addRow(tr("Display Name:"), nameEdit);
+
+    QDialogButtonBox *buttons = new QDialogButtonBox(
+        QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
+    connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+    connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+    layout->addRow(buttons);
+
+    if (dlg.exec() != QDialog::Accepted) {
+        return;
+    }
+
+    QString url = urlEdit->text().trimmed();
+    if (url.isEmpty()) {
+        return;
+    }
+
+    // Determine default name
+    QString name = nameEdit->text().trimmed();
+    if (name.isEmpty()) {
+        QUrl parsedUrl(url);
+        name = parsedUrl.fileName();
+        if (name.isEmpty()) {
+            name = tr("Network Video");
+        }
+    }
+
+    // Validate the URL using VideoPlayer before adding the node
+    QApplication::setOverrideCursor(Qt::WaitCursor);
+    VideoPlayer testPlayer;
+    bool canOpen = testPlayer.open(url);
+    QApplication::restoreOverrideCursor();
+
+    if (!canOpen) {
+        QMessageBox::critical(this, tr("Invalid Video URL"),
+            tr("Could not open or play the video from URL:\n%1\n\n"
+               "Please check the URL and ensure the video stream is accessible and valid.").arg(url));
+        return;
+    }
+
+    // Create the Clip Node
+    QPixmap thumb = ThumbHelper::makeIconThumb(MaterialSymbols::Names::Link);
+    ClipNodeModel *node = m_clipNodeEditor->addClipNode(url, thumb);
+    if (node) {
+        node->setDisplayName(name);
+    }
+    m_stackWidget->setCurrentWidget(m_clipNodeEditor);
+}
+
 void MainWindow::onClearAllClicked() {
     m_clipNodeEditor->clearAllNodes();
     m_deckController->setActiveNodeA(0);
@@ -738,6 +807,7 @@ void MainWindow::setupAddElementMenu(QMenu *menu) {
     if (!menu) return;
     SourcePrompt::buildMenu(menu,
                             [this]() { onAddFilesClicked(); },
+                            [this]() { onAddVideoUrlClicked(); },
                             [this](SourceDescriptor::Kind kind) { addSourceOfKind(kind); },
                             NdiSource::isAvailable(),
 #ifdef PRISM_HAVE_WEBRTC

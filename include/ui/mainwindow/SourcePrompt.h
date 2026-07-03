@@ -26,6 +26,7 @@ bool reconnectWebRtc(QWidget *parent, const QString &sessionToken,
 // single-descriptor kind.
 void buildMenu(QMenu *menu,
                std::function<void()> onFile,
+               std::function<void()> onUrl,
                std::function<void(SourceDescriptor::Kind)> onKind,
                bool ndiAvailable = true,
                bool webrtcAvailable = true);

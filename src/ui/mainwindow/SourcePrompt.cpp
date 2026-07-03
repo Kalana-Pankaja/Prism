@@ -605,6 +605,7 @@ bool prompt(SourceDescriptor::Kind kind, QWidget *parent,
 
 void buildMenu(QMenu *menu,
                std::function<void()> onFile,
+               std::function<void()> onUrl,
                std::function<void(SourceDescriptor::Kind)> onKind,
                bool ndiAvailable,
                bool webrtcAvailable)
@@ -618,6 +619,7 @@ void buildMenu(QMenu *menu,
     };
 
     addIconAction(MaterialSymbols::Names::Movie, QObject::tr("Media File…"), std::move(onFile));
+    addIconAction(MaterialSymbols::Names::Link, QObject::tr("Video URL…"), std::move(onUrl));
     addIconAction(MaterialSymbols::Names::Folder, QObject::tr("Slideshow…"),
                   [onKind]() { onKind(SourceDescriptor::Kind::Slideshow); });
     menu->addSeparator();

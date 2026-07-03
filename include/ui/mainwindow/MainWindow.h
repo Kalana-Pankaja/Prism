@@ -59,6 +59,7 @@ private slots:
     void onLoadFolderClicked();
     void onAddFolderClicked();
     void onAddFilesClicked();
+    void onAddVideoUrlClicked();
     void onClearAllClicked();
 
     // ── Node editor signals ───────────────────────────────────────────────────

@@ -1,7 +1,13 @@
 #include "core/media/VideoPlayer.h"
 #include <QDebug>
 
-VideoPlayer::VideoPlayer() = default;
+VideoPlayer::VideoPlayer() {
+    static bool networkInitialized = false;
+    if (!networkInitialized) {
+        avformat_network_init();
+        networkInitialized = true;
+    }
+}
 
 VideoPlayer::~VideoPlayer() {
     close();
@@ -199,6 +205,11 @@ QSize VideoPlayer::getFrameSize() const {
 }
 
 bool VideoPlayer::fileHasAudio(const QString &filePath) {
+    static bool networkInitialized = false;
+    if (!networkInitialized) {
+        avformat_network_init();
+        networkInitialized = true;
+    }
     const QByteArray utf8Path = filePath.toUtf8();
     AVFormatContext *ctx = nullptr;
     if (avformat_open_input(&ctx, utf8Path.constData(), nullptr, nullptr) < 0)

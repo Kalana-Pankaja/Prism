@@ -231,8 +231,8 @@ cmake --build build --config Release --parallel
 **4. Deploy Qt DLLs and run**
 
 ```powershell
-C:\Qt\6.8.0\msvc2022_64\bin\windeployqt.exe --no-translations build\Release\CutWire Prism.exe
-.\build\Release\CutWire Prism.exe
+C:\Qt\6.8.0\msvc2022_64\bin\windeployqt.exe --no-translations build\Release\Prism.exe
+.\build\Release\Prism.exe
 ```
 
 Or use the helper script (installs vcpkg deps, configures, builds):
@@ -248,7 +248,7 @@ Or use the helper script (installs vcpkg deps, configures, builds):
 | Video, images, shaders, HTML, webcam | Supported |
 | Screen / window capture | `QScreenCapture` / `QWindowCapture` |
 | NDI | Supported when [NDI SDK](https://ndi.video/) is installed (`-DNDI_ROOT="C:\Program Files\NDI\NDI 6 SDK"`) |
-| Virtual camera output | Built-in via [softcam](https://github.com/tshino/softcam) (MIT) — appears as **DirectShow Softcam**; `softcam.dll` is copied next to `CutWire Prism.exe` at build time |
+| Virtual camera output | Built-in via [softcam](https://github.com/tshino/softcam) (MIT) — appears as **DirectShow Softcam**; `softcam.dll` is copied next to `Prism.exe` at build time |
 | WebRTC phone camera | Build with `-DPRISM_WITH_WEBRTC=ON` + OpenSSL; firewall rules are not auto-opened yet |
 
 Enable virtual camera output from **View → Virtual Camera Output**. In OBS, Zoom, or a browser, pick the camera named **DirectShow Softcam**. Only one softcam sender can run at a time on the system.
@@ -265,8 +265,8 @@ cmake -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --config Release
 
 # Run
-./build/CutWire Prism        # Linux/macOS
-# build\Release\CutWire Prism.exe  # Windows
+./build/Prism                # Linux/macOS
+# build\Release\Prism.exe    # Windows
 ```
 
 #### CMake Options
@@ -381,7 +381,7 @@ GStreamer is required on **Linux** for PipeWire screen capture. It is not used o
 
 ### Missing DLLs at runtime (Windows)
 
-Run `windeployqt` on `CutWire Prism.exe` after building (see Windows build steps). FFmpeg and other vcpkg DLLs may need to be copied from `vcpkg\installed\x64-windows\bin` into the same folder as the executable.
+Run `windeployqt` on `Prism.exe` after building (see Windows build steps). FFmpeg and other vcpkg DLLs may need to be copied from `vcpkg\installed\x64-windows\bin` into the same folder as the executable.
 
 ### NDI or OBS features disabled
 
