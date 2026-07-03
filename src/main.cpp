@@ -1,5 +1,6 @@
 #include <QApplication>
 #include <QByteArray>
+#include <QIcon>
 #include <QTimer>
 #include <QtGlobal>
 #include "ui/mainwindow/MainWindow.h"
@@ -32,6 +33,12 @@ int main(int argc, char *argv[]) {
     MaterialSymbols::init();
     app.setOrganizationName("Prism");
     app.setApplicationName("Prism");
+    // Wayland compositors resolve the window icon by matching the surface's
+    // app_id to an installed .desktop file. Qt derives app_id from the desktop
+    // file name, so this must equal the installed org.cutwire.Prism.desktop or
+    // the window falls back to the generic icon. setWindowIcon covers X11.
+    app.setDesktopFileName(QStringLiteral("org.cutwire.Prism"));
+    app.setWindowIcon(QIcon::fromTheme(QStringLiteral("org.cutwire.Prism")));
     app.setStyle("fusion");
 
     MainWindow window;

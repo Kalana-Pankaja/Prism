@@ -17,8 +17,16 @@ finish-args:
   # Webcam capture and v4l2 virtual-camera output need raw /dev/video* access,
   # which the camera portal cannot provide; --device=dri covers GPU rendering.
   - --device=all
-  # VJ asset library loads and relinks media from arbitrary user locations.
-  - --filesystem=home
+  # No blanket --filesystem=home: files the user opens/saves come through the
+  # xdg-desktop-portal FileChooser (QFileDialog uses it automatically in the
+  # sandbox), so only explicitly picked files/folders are exposed. The standard
+  # media dirs are granted directly because default recording/snapshot output
+  # (~/Videos, ~/Pictures) and the asset library live there; the rest of $HOME
+  # (Documents, .ssh, .config, ...) stays private.
+  - --filesystem=xdg-videos
+  - --filesystem=xdg-pictures
+  - --filesystem=xdg-music:ro
+  - --filesystem=xdg-download:ro
   - --env=QTWEBENGINEPROCESS_PATH=/app/bin/QtWebEngineProcess
 
 add-extensions:
@@ -119,7 +127,14 @@ modules:
       # builddir:true runs these from _flatpak_build/, so reach back to the source root.
       - install -Dm644 ../flatpak/org.cutwire.Prism.desktop /app/share/applications/org.cutwire.Prism.desktop
       - install -Dm644 ../flatpak/org.cutwire.Prism.metainfo.xml /app/share/metainfo/org.cutwire.Prism.metainfo.xml
-      - install -Dm644 ../flatpak/share/icons/hicolor/1024x1024/apps/org.cutwire.Prism.png /app/share/icons/hicolor/1024x1024/apps/org.cutwire.Prism.png
+      # Install hicolor sizes up to 512px. appstreamcli compose needs a standard
+      # raster size (<=256px) to embed, and flatpak build-export rejects icons
+      # larger than 512x512 — so the 1024px source is intentionally not shipped.
+      - |
+        for s in 64 128 256 512; do
+          install -Dm644 "../flatpak/share/icons/hicolor/${s}x${s}/apps/org.cutwire.Prism.png" \
+            "/app/share/icons/hicolor/${s}x${s}/apps/org.cutwire.Prism.png"
+        done
     sources:
       - type: dir
         path: ..
