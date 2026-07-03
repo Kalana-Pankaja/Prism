@@ -12,11 +12,13 @@ finish-args:
   - --socket=fallback-x11
   - --socket=wayland
   - --socket=pulseaudio
-  - --device=all
   - --share=network
-  - --filesystem=home
   - --filesystem=xdg-run/pipewire-0
-  - --talk-name=org.freedesktop.portal.*
+  # Webcam capture and v4l2 virtual-camera output need raw /dev/video* access,
+  # which the camera portal cannot provide; --device=dri covers GPU rendering.
+  - --device=all
+  # VJ asset library loads and relinks media from arbitrary user locations.
+  - --filesystem=home
   - --env=QTWEBENGINEPROCESS_PATH=/app/bin/QtWebEngineProcess
 
 add-extensions:
@@ -105,12 +107,14 @@ modules:
       - -DPRISM_WITH_LUA=ON
       - -DPRISM_WITH_WEBRTC=ON
       - -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+      # sol2 and libdatachannel are still consumed via CMake FetchContent, but
+      # their sources are vendored below and pointed at with FETCHCONTENT_SOURCE_DIR
+      # so the build never touches the network. FULLY_DISCONNECTED enforces that.
+      - -DFETCHCONTENT_FULLY_DISCONNECTED=ON
+      - -DFETCHCONTENT_SOURCE_DIR_SOL2=/run/build/Prism/vendor/sol2
+      - -DFETCHCONTENT_SOURCE_DIR_LIBDATACHANNEL=/run/build/Prism/vendor/libdatachannel
     build-options:
       prepend-pkg-config-path: /app/lib/pkgconfig
-      # sol2 (Lua) and libdatachannel (WebRTC) are pulled via CMake FetchContent
-      # at configure time, so the build sandbox needs network access.
-      build-args:
-        - --share=network
     post-install:
       # builddir:true runs these from _flatpak_build/, so reach back to the source root.
       - install -Dm644 ../flatpak/org.cutwire.Prism.desktop /app/share/applications/org.cutwire.Prism.desktop
@@ -124,3 +128,36 @@ modules:
           - flatpak/build-dir
           - flatpak/repo
           - build
+
+      # Header-only Lua binding, matches the FetchContent tag in CMakeLists.txt.
+      - type: archive
+        url: https://github.com/ThePhD/sol2/archive/refs/tags/v3.5.0.tar.gz
+        sha256: 86c0f6d2836b184a250fc2907091c076bf53c9603dd291eaebade36cc342e13c
+        dest: vendor/sol2
+
+      # libdatachannel v0.24.5 plus its git submodules (it add_subdirectory()s
+      # deps/* at configure time), pinned to the exact commits it references.
+      - type: archive
+        url: https://github.com/paullouisageneau/libdatachannel/archive/refs/tags/v0.24.5.tar.gz
+        sha256: 454537c3cd526bed935d847bb2dff4046f266eef84d43b2a5f2f2f293c0026f4
+        dest: vendor/libdatachannel
+      - type: archive
+        url: https://github.com/SergiusTheBest/plog/archive/94899e0b926ac1b0f4750bfbd495167b4a6ae9ef.tar.gz
+        sha256: 92a08bce559b5f28aa88d3fd9071567414b9f43a83fe2a05a6dd14f1da536072
+        dest: vendor/libdatachannel/deps/plog
+      - type: archive
+        url: https://github.com/paullouisageneau/usrsctp/archive/fec583d54493f879d2ae44a743423bf8a04371ab.tar.gz
+        sha256: e5c114afe73c9a0ec419fab5f5b3f63f3ce57b09b90d06ea85e63dca8aed3e7c
+        dest: vendor/libdatachannel/deps/usrsctp
+      - type: archive
+        url: https://github.com/cisco/libsrtp/archive/24b3bf8f19b6f5ab4cd2bcceb4f4064efca86fd5.tar.gz
+        sha256: 063478e368d7cd13d04a908d152a46f90bfa728c4b324be6d413b0b92728207c
+        dest: vendor/libdatachannel/deps/libsrtp
+      - type: archive
+        url: https://github.com/paullouisageneau/libjuice/archive/3c40a3545b6b1b62c7adee7f8f2bd58aa290afd6.tar.gz
+        sha256: a6b1d55338ea12adc0177eaafd9521ac0101b6a8716c71024a668f4896fd6b7c
+        dest: vendor/libdatachannel/deps/libjuice
+      - type: archive
+        url: https://github.com/nlohmann/json/archive/55f93686c01528224f448c19128836e7df245f72.tar.gz
+        sha256: 67f4cdd9ca930c9c1e130af4a437c7fc98fab77a2846fc2d2a14b4943831f8ef
+        dest: vendor/libdatachannel/deps/json
