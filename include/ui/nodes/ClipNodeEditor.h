@@ -89,10 +89,14 @@ public:
         int     index = 0;
         QRectF  rect;       // normalized base placement
         QPixmap thumb;
+        QString name;
+        bool    visible = true;
     };
     QVector<LayerSlotView> layerSlotViews(NodeId layerId) const;
     void setLayerSlotRect(NodeId layerId, int index, float x, float y, float w, float h);
+    void setLayerSlotVisible(NodeId layerId, int index, bool visible);
     bool layerCanvasSize(NodeId layerId, int &w, int &h) const;
+    void setLayerCanvasSize(NodeId layerId, int w, int h);
 
     // ── Output-node querying ─────────────────────────────────────────────────
     NodeId outputNodeId() const { return m_outputNode; }

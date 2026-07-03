@@ -2885,6 +2885,8 @@ QVector<ClipNodeEditor::LayerSlotView> ClipNodeEditor::layerSlotViews(NodeId lay
         v.index = i;
         const LayerSlot &s = ly->slot(i);
         v.rect = QRectF(s.baseX, s.baseY, s.baseW, s.baseH);
+        v.name = s.name.isEmpty() ? QStringLiteral("in %1").arg(i + 1) : s.name;
+        v.visible = s.visible;
         ResolvedStream sub = evaluateVideoInput(up);
         if (!sub.layers.isEmpty()) {
             if (auto *m = nodeAt(sub.layers.first().inputNodeId))
@@ -2901,6 +2903,21 @@ void ClipNodeEditor::setLayerSlotRect(NodeId layerId, int index, float x, float 
     LayerSlot &s = ly->slotsRef()[index];
     s.baseX = x; s.baseY = y; s.baseW = w; s.baseH = h;
     ly->update();
+    emit clipChainChanged();
+}
+
+void ClipNodeEditor::setLayerSlotVisible(NodeId layerId, int index, bool visible) {
+    auto *ly = dynamic_cast<LayerNodeItem *>(m_itemMap.value(layerId));
+    if (!ly || index < 0 || index >= ly->slotCount()) return;
+    ly->slotsRef()[index].visible = visible;
+    ly->update();
+    emit clipChainChanged();
+}
+
+void ClipNodeEditor::setLayerCanvasSize(NodeId layerId, int w, int h) {
+    auto *ly = dynamic_cast<LayerNodeItem *>(m_itemMap.value(layerId));
+    if (!ly) return;
+    ly->setCanvasSize(w, h);
     emit clipChainChanged();
 }
 
