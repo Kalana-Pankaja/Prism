@@ -46,6 +46,11 @@ struct ProcessEffectDescriptor {
     QString editLabel;
     std::function<bool(QWidget *parent, QJsonObject &params,
                        const QImage &referenceFrame)> editDialog;
+
+    /// Optional: overrides the node body's edit-button text with the current
+    /// param state (e.g. "Vertical" instead of the static "Direction"). Falls
+    /// back to editLabel when unset.
+    std::function<QString(const QJsonObject &params)> dynamicLabel;
 };
 
 namespace ProcessEffects {

@@ -53,8 +53,12 @@ QVector<QPointF> cornersFromParams(const QJsonObject &p) {
 
 // A framed reference preview plus OK/Cancel; returns the dialog's exec() result.
 // The @p build callback populates the form area with effect-specific controls.
+// The optional @p collect callback runs on acceptance while the dialog (and its
+// child widgets) are still alive — read widget state there, not after this
+// function returns, since the QDialog and its children are destroyed on return.
 bool runEffectDialog(QWidget *parent, const QString &title,
-                     const std::function<void(QDialog *, QVBoxLayout *)> &build) {
+                     const std::function<void(QDialog *, QVBoxLayout *)> &build,
+                     const std::function<void()> &collect = {}) {
     QDialog dialog(parent);
     dialog.setWindowTitle(title);
     auto *layout = new QVBoxLayout(&dialog);
@@ -63,7 +67,9 @@ bool runEffectDialog(QWidget *parent, const QString &title,
     QObject::connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
     QObject::connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
     layout->addWidget(buttons);
-    return dialog.exec() == QDialog::Accepted;
+    const bool accepted = dialog.exec() == QDialog::Accepted;
+    if (accepted && collect) collect();
+    return accepted;
 }
 
 // ── Crop (fold) ──────────────────────────────────────────────────────────────
@@ -155,26 +161,31 @@ ProcessEffectDescriptor makeFlip() {
     d.id = 4;
     d.name = "Flip";
     d.menuLabel = "Flip";
-    d.defaultParams = QJsonObject{{"direction", 0}};   // 0=H, 1=V, 2=Both
+    d.defaultParams = QJsonObject{{"direction", 1}};   // 0=H, 1=V, 2=Both
     d.fold = [](ResolvedLayer &l, const QJsonObject &p) {
-        const int dir = p["direction"].toInt(0);
+        const int dir = p["direction"].toInt(1);
         if (dir == 0 || dir == 2) l.flipH = !l.flipH;
         if (dir == 1 || dir == 2) l.flipV = !l.flipV;
     };
     d.editLabel = "Direction";
+    d.dynamicLabel = [](const QJsonObject &p) {
+        switch (p["direction"].toInt(1)) {
+        case 0: return QStringLiteral("Horizontal");
+        case 2: return QStringLiteral("Both");
+        default: return QStringLiteral("Vertical");
+        }
+    };
     d.editDialog = [](QWidget *parent, QJsonObject &params, const QImage &) {
         QComboBox *combo = nullptr;
         const bool ok = runEffectDialog(parent, "Flip", [&](QDialog *, QVBoxLayout *layout) {
             auto *form = new QFormLayout;
             combo = new QComboBox;
             combo->addItems({"Horizontal", "Vertical", "Both"});
-            combo->setCurrentIndex(qBound(0, params["direction"].toInt(0), 2));
+            combo->setCurrentIndex(qBound(0, params["direction"].toInt(1), 2));
             form->addRow("Direction", combo);
             layout->addLayout(form);
-        });
-        if (!ok) return false;
-        params["direction"] = combo->currentIndex();
-        return true;
+        }, [&]() { params["direction"] = combo->currentIndex(); });
+        return ok;
     };
     return d;
 }

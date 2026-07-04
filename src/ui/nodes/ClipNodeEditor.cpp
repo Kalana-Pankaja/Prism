@@ -514,7 +514,8 @@ public:
             p->drawRoundedRect(r, 3, 3);
             p->setPen(QColor(200, 220, 255));
             p->setFont(QFont("Monospace", 7));
-            p->drawText(r, Qt::AlignCenter, m_desc->editLabel);
+            const QString label = m_desc->dynamicLabel ? m_desc->dynamicLabel(m_params) : m_desc->editLabel;
+            p->drawText(r, Qt::AlignCenter, label);
         }
 
         if (isSelected()) {
