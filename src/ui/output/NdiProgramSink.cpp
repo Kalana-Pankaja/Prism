@@ -1,5 +1,4 @@
 #include "ui/output/NdiProgramSink.h"
-#include "ui/canvas/VideoWidget.h"
 #include "core/sources/NdiLibrary.h"
 
 #ifdef PRISM_HAVE_NDI
@@ -101,11 +100,6 @@ void NdiProgramSink::submitFrame(const QImage &frame) {
     QImage rgba = frame;
     if (rgba.format() != QImage::Format_RGBA8888)
         rgba = rgba.convertToFormat(QImage::Format_RGBA8888);
-
-    if (rgba.width() != VideoWidget::kProgramWidth ||
-        rgba.height() != VideoWidget::kProgramHeight)
-        rgba = rgba.scaled(VideoWidget::kProgramWidth, VideoWidget::kProgramHeight,
-                           Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
 
     m_frameBuffer = rgba;
 

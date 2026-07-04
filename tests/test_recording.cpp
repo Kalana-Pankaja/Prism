@@ -25,12 +25,12 @@ public:
     int deckConsumerCount() const { return m_deckConsumers; }
     int captureCalls() const { return m_captureCalls; }
 
-    QImage m_program = TestSupport::makeSolidImage(VideoWidget::kProgramWidth,
-                                                   VideoWidget::kProgramHeight, Qt::red);
-    QImage m_deckA   = TestSupport::makeSolidImage(VideoWidget::kProgramWidth,
-                                                   VideoWidget::kProgramHeight, Qt::green);
-    QImage m_deckB   = TestSupport::makeSolidImage(VideoWidget::kProgramWidth,
-                                                   VideoWidget::kProgramHeight, Qt::blue);
+    QImage m_program = TestSupport::makeSolidImage(VideoWidget::programWidth(),
+                                                   VideoWidget::programHeight(), Qt::red);
+    QImage m_deckA   = TestSupport::makeSolidImage(VideoWidget::programWidth(),
+                                                   VideoWidget::programHeight(), Qt::green);
+    QImage m_deckB   = TestSupport::makeSolidImage(VideoWidget::programWidth(),
+                                                   VideoWidget::programHeight(), Qt::blue);
     int m_programConsumers = 0;
     int m_deckConsumers    = 0;
     int m_captureCalls     = 0;
@@ -52,8 +52,8 @@ private slots:
         const QString path = dir.filePath(QStringLiteral("out.mkv"));
         QVERIFY(recorder.startRecording(path, QStringLiteral("Program"), false));
 
-        const QImage frame = TestSupport::makeSolidImage(VideoWidget::kProgramWidth,
-                                                         VideoWidget::kProgramHeight);
+        const QImage frame = TestSupport::makeSolidImage(VideoWidget::programWidth(),
+                                                         VideoWidget::programHeight());
         for (int i = 0; i < 10; ++i) {
             recorder.submitFrame(frame);
         }
@@ -94,8 +94,8 @@ private slots:
         {
             ProgramRecorder recorder;
             QVERIFY(recorder.startRecording(path, QStringLiteral("Program"), false));
-            recorder.submitFrame(TestSupport::makeSolidImage(VideoWidget::kProgramWidth,
-                                                             VideoWidget::kProgramHeight));
+            recorder.submitFrame(TestSupport::makeSolidImage(VideoWidget::programWidth(),
+                                                             VideoWidget::programHeight()));
         }
         QVERIFY(QFileInfo(path).size() > 0);
     }
@@ -107,8 +107,8 @@ private slots:
         ProgramRecorder recorder;
         const QString path1 = dir.filePath(QStringLiteral("a.mkv"));
         const QString path2 = dir.filePath(QStringLiteral("b.mkv"));
-        const QImage frame = TestSupport::makeSolidImage(VideoWidget::kProgramWidth,
-                                                         VideoWidget::kProgramHeight);
+        const QImage frame = TestSupport::makeSolidImage(VideoWidget::programWidth(),
+                                                         VideoWidget::programHeight());
 
         QVERIFY(recorder.startRecording(path1, QStringLiteral("A"), false));
         recorder.submitFrame(frame);
@@ -182,8 +182,8 @@ private slots:
         QCOMPARE(recordingChanged.count(), 1);
 
         recorder.addMarker(QStringLiteral("intro"));
-        recorder.submitFrame(TestSupport::makeSolidImage(VideoWidget::kProgramWidth,
-                                                         VideoWidget::kProgramHeight));
+        recorder.submitFrame(TestSupport::makeSolidImage(VideoWidget::programWidth(),
+                                                         VideoWidget::programHeight()));
         recorder.addMarker(QStringLiteral("outro"));
         recorder.stopRecording();
 

@@ -42,7 +42,8 @@ public:
     const QVector<Marker> &markers() const { return m_markers; }
     int capturedFrameCount() const { return static_cast<int>(m_frameIndex); }
     bool startRecording(const QString &outputPath, const QString &trackLabel = {},
-                        bool writeMarkersOnStop = true);
+                        bool writeMarkersOnStop = true,
+                        int width = 1280, int height = 720);
     void stopRecording();
 
     void submitFrame(const QImage &frame);
@@ -75,7 +76,7 @@ private:
     int64_t          m_frameIndex = 0;
     int64_t          m_lastPts    = -1;   // wall-clock PTS guard (monotonic)
 
-    static constexpr int kWidth  = 1280;
-    static constexpr int kHeight = 720;
-    static constexpr int kFps    = 30;
+    int m_width  = 1280;
+    int m_height = 720;
+    static constexpr int kFps = 30;
 };

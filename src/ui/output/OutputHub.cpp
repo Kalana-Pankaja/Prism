@@ -376,7 +376,8 @@ bool OutputHub::startProgramRecording() {
     QMutexLocker locker(&m_sinkMutex);
     if (!m_frameSource || m_programRecorder->isRecording()) return m_programRecorder->isRecording();
     const QString path = makeTrackOutputPath(QStringLiteral("program"));
-    if (!m_programRecorder->startRecording(path, tr("Program"), true))
+    if (!m_programRecorder->startRecording(path, tr("Program"), true,
+                                       VideoWidget::programWidth(), VideoWidget::programHeight()))
         return false;
     m_programRecorder->addMarker(tr("Recording started"));
     syncFrameConsumers();
@@ -400,7 +401,8 @@ bool OutputHub::startDeckARecording() {
     QMutexLocker locker(&m_sinkMutex);
     if (!m_frameSource || m_deckARecorder->isRecording()) return m_deckARecorder->isRecording();
     const QString path = makeTrackOutputPath(QStringLiteral("deckA"));
-    if (!m_deckARecorder->startRecording(path, tr("Deck A"), true))
+    if (!m_deckARecorder->startRecording(path, tr("Deck A"), true,
+                                     VideoWidget::programWidth(), VideoWidget::programHeight()))
         return false;
     m_deckARecorder->addMarker(tr("Recording started"));
     syncFrameConsumers();
@@ -424,7 +426,8 @@ bool OutputHub::startDeckBRecording() {
     QMutexLocker locker(&m_sinkMutex);
     if (!m_frameSource || m_deckBRecorder->isRecording()) return m_deckBRecorder->isRecording();
     const QString path = makeTrackOutputPath(QStringLiteral("deckB"));
-    if (!m_deckBRecorder->startRecording(path, tr("Deck B"), true))
+    if (!m_deckBRecorder->startRecording(path, tr("Deck B"), true,
+                                     VideoWidget::programWidth(), VideoWidget::programHeight()))
         return false;
     m_deckBRecorder->addMarker(tr("Recording started"));
     syncFrameConsumers();
@@ -454,7 +457,8 @@ bool OutputHub::startSourceRecording(NodeId nodeId, const QString &label) {
     const QString suffix = sanitizeFileStem(label);
     const QString path = makeTrackOutputPath(suffix);
     const QString trackLabel = label.isEmpty() ? suffix : label;
-    if (!rec->startRecording(path, trackLabel, true))
+    if (!rec->startRecording(path, trackLabel, true,
+                        VideoWidget::programWidth(), VideoWidget::programHeight()))
         return false;
     rec->addMarker(tr("Recording started"));
     m_sourceRecorders[nodeId] = std::move(rec);

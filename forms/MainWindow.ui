@@ -913,13 +913,20 @@ Split 4-Corner: split into 4 quadrants sliding outwards
      <string>Add Element</string>
     </property>
    </widget>
-   <widget class="QMenu" name="menuView">
+   <widget class="QMenu" name="menuOutput">
     <property name="title">
-     <string>View</string>
+     <string>Output</string>
     </property>
+    <addaction name="actionSetOutputResolution"/>
+    <addaction name="separator"/>
     <addaction name="actionShowOutput"/>
     <addaction name="actionShowPreview"/>
-    <addaction name="separator"/>
+    <addaction name="actionStayOnTop"/>
+   </widget>
+   <widget class="QMenu" name="menuTools">
+    <property name="title">
+     <string>Tools</string>
+    </property>
     <addaction name="actionEditHotkeys"/>
     <addaction name="separator"/>
     <addaction name="actionNdiOutput"/>
@@ -930,7 +937,6 @@ Split 4-Corner: split into 4 quadrants sliding outwards
     <addaction name="separator"/>
     <addaction name="actionConnectObs"/>
     <addaction name="actionLinkClipObsScene"/>
-    <addaction name="actionStayOnTop"/>
    </widget>
    <widget class="QMenu" name="menuRun">
     <property name="title">
@@ -939,7 +945,8 @@ Split 4-Corner: split into 4 quadrants sliding outwards
     <addaction name="actionStartRemoteControl"/>
    </widget>
    <addaction name="menuMedia"/>
-   <addaction name="menuView"/>
+   <addaction name="menuOutput"/>
+   <addaction name="menuTools"/>
    <addaction name="menuRun"/>
   </widget>
   <!-- ── Actions ──────────────────────────────────────────────────────── -->
@@ -997,6 +1004,14 @@ Split 4-Corner: split into 4 quadrants sliding outwards
    </property>
    <property name="toolTip">
     <string>Remove all clips from the grid</string>
+   </property>
+  </action>
+  <action name="actionSetOutputResolution">
+   <property name="text">
+    <string>Set Output Resolution…</string>
+   </property>
+   <property name="toolTip">
+    <string>Change the resolution the program mix is rendered and output at</string>
    </property>
   </action>
   <action name="actionShowOutput">

@@ -187,12 +187,12 @@ bool VirtualCameraProgramSink::start(const QString &streamName) {
     }
 
     if (!configureOutputFormat(m_impl->fd,
-                               VideoWidget::kProgramWidth,
-                               VideoWidget::kProgramHeight,
+                               VideoWidget::programWidth(),
+                               VideoWidget::programHeight(),
                                m_impl->width,
                                m_impl->height)) {
         qWarning() << "VirtualCamera: could not set YUYV"
-                   << VideoWidget::kProgramWidth << "x" << VideoWidget::kProgramHeight
+                   << VideoWidget::programWidth() << "x" << VideoWidget::programHeight()
                    << "on" << m_devicePath;
         ::close(m_impl->fd);
         m_impl->fd = -1;

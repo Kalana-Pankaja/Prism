@@ -18,6 +18,7 @@ extern "C" {
 #include <QJsonObject>
 #include <QRegularExpression>
 #include <QStandardPaths>
+#include <algorithm>
 
 ProgramRecorder::ProgramRecorder(QObject *parent)
     : QObject(parent)
@@ -55,9 +56,13 @@ qint64 ProgramRecorder::recordingDurationMs() const {
 }
 
 bool ProgramRecorder::startRecording(const QString &outputPath, const QString &trackLabel,
-                                     bool writeMarkersOnStop) {
+                                     bool writeMarkersOnStop, int width, int height) {
     if (m_recording)
         stopRecording();
+
+    // libx264/yuv420p requires even dimensions.
+    m_width  = std::max(2, width  - (width  % 2));
+    m_height = std::max(2, height - (height % 2));
 
     m_outputPath  = outputPath.isEmpty() ? defaultOutputPath() : outputPath;
     m_trackLabel  = trackLabel;
@@ -88,8 +93,8 @@ bool ProgramRecorder::startRecording(const QString &outputPath, const QString &t
     }
 
     m_codecCtx = avcodec_alloc_context3(codec);
-    m_codecCtx->width      = kWidth;
-    m_codecCtx->height     = kHeight;
+    m_codecCtx->width      = m_width;
+    m_codecCtx->height     = m_height;
     m_codecCtx->time_base  = AVRational{1, kFps};
     m_codecCtx->framerate  = AVRational{kFps, 1};
     m_codecCtx->gop_size   = kFps;
@@ -138,16 +143,16 @@ bool ProgramRecorder::startRecording(const QString &outputPath, const QString &t
 
     m_yuvFrame = av_frame_alloc();
     m_yuvFrame->format = AV_PIX_FMT_YUV420P;
-    m_yuvFrame->width  = kWidth;
-    m_yuvFrame->height = kHeight;
+    m_yuvFrame->width  = m_width;
+    m_yuvFrame->height = m_height;
     if (av_frame_get_buffer(m_yuvFrame, 32) < 0) {
         emit errorOccurred(tr("Could not allocate video frame."));
         cleanup();
         return false;
     }
 
-    m_swsCtx = sws_getContext(kWidth, kHeight, AV_PIX_FMT_RGB24,
-                              kWidth, kHeight, AV_PIX_FMT_YUV420P,
+    m_swsCtx = sws_getContext(m_width, m_height, AV_PIX_FMT_RGB24,
+                              m_width, m_height, AV_PIX_FMT_YUV420P,
                               SWS_BILINEAR, nullptr, nullptr, nullptr);
     if (!m_swsCtx) {
         emit errorOccurred(tr("Could not create color converter."));
@@ -217,15 +222,15 @@ void ProgramRecorder::submitFrame(const QImage &frame) {
     if (rgb.format() != QImage::Format_RGB888) {
         rgb = rgb.convertToFormat(QImage::Format_RGB888);
     }
-    if (rgb.width() != kWidth || rgb.height() != kHeight) {
-        rgb = rgb.scaled(kWidth, kHeight, Qt::IgnoreAspectRatio, Qt::FastTransformation);
+    if (rgb.width() != m_width || rgb.height() != m_height) {
+        rgb = rgb.scaled(m_width, m_height, Qt::IgnoreAspectRatio, Qt::FastTransformation);
         if (rgb.format() != QImage::Format_RGB888)
             rgb = rgb.convertToFormat(QImage::Format_RGB888);
     }
 
     const uint8_t *srcSlice[1] = { rgb.constBits() };
     int srcStride[1] = { static_cast<int>(rgb.bytesPerLine()) };
-    sws_scale(m_swsCtx, srcSlice, srcStride, 0, kHeight,
+    sws_scale(m_swsCtx, srcSlice, srcStride, 0, m_height,
               m_yuvFrame->data, m_yuvFrame->linesize);
 
     // Timestamp by wall clock rather than a frame counter: under load the

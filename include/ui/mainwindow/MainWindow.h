@@ -75,6 +75,7 @@ private slots:
     void onSessionLoaded();
 
     void onFreezeFrameCapture();
+    void onSetOutputResolution();
 
     void onConnectObs();
     void onLinkClipObsScene();

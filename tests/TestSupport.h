@@ -69,8 +69,8 @@ inline QString encodeSampleMkv(const QString &dirPath, int frameCount = 30,
         return {};
     }
 
-    const QImage frame = makeSolidImage(VideoWidget::kProgramWidth,
-                                        VideoWidget::kProgramHeight, color);
+    const QImage frame = makeSolidImage(VideoWidget::programWidth(),
+                                        VideoWidget::programHeight(), color);
     for (int i = 0; i < frameCount; ++i) {
         recorder.submitFrame(frame);
     }

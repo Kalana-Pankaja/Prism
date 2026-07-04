@@ -18,6 +18,9 @@
 #include <QWindow>
 #include <algorithm>
 
+int VideoWidget::s_programWidth  = 1280;
+int VideoWidget::s_programHeight = 720;
+
 VideoWidget::VideoWidget(QWidget *parent)
     : QOpenGLWidget(parent) {
     setAcceptDrops(true);
@@ -117,8 +120,8 @@ void VideoWidget::composeProgramFrame() {
     ensureProgramFbo();
     ensureDeckFbos();
 
-    m_compW = kProgramWidth;
-    m_compH = kProgramHeight;
+    m_compW = s_programWidth;
+    m_compH = s_programHeight;
 
     renderDeckToFbo(true);
     renderDeckToFbo(false);
@@ -169,10 +172,10 @@ void VideoWidget::renderDeckToFbo(bool deckA) {
     QRectF &outRect = deckA ? m_videoRectProgramA : m_videoRectProgramB;
 
     glBindFramebuffer(GL_FRAMEBUFFER, fbo);
-    glViewport(0, 0, kProgramWidth, kProgramHeight);
+    glViewport(0, 0, s_programWidth, s_programHeight);
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
-    glOrtho(0, kProgramWidth, kProgramHeight, 0, -1, 1);
+    glOrtho(0, s_programWidth, s_programHeight, 0, -1, 1);
     glMatrixMode(GL_MODELVIEW);
     glLoadIdentity();
 
@@ -349,7 +352,7 @@ void VideoWidget::ensureProgramFbo() {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, kProgramWidth, kProgramHeight,
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, s_programWidth, s_programHeight,
                  0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
     glBindTexture(GL_TEXTURE_2D, 0);
 
@@ -371,7 +374,7 @@ void VideoWidget::ensureDeckFbos() {
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, kProgramWidth, kProgramHeight,
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, s_programWidth, s_programHeight,
                      0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
         glBindTexture(GL_TEXTURE_2D, 0);
 
@@ -392,6 +395,28 @@ void VideoWidget::destroyProgramFbo() {
     if (m_deckFboB)      { glDeleteFramebuffers(1, &m_deckFboB); m_deckFboB = 0; }
     if (m_programColorTex) { glDeleteTextures(1, &m_programColorTex); m_programColorTex = 0; }
     if (m_programFbo)      { glDeleteFramebuffers(1, &m_programFbo); m_programFbo = 0; }
+}
+
+void VideoWidget::setProgramResolution(int width, int height) {
+    if (width == s_programWidth && height == s_programHeight)
+        return;
+
+    s_programWidth  = width;
+    s_programHeight = height;
+
+    // Program/deck FBOs are lazily (re)created at the new size on the next
+    // composeProgramFrame() (see ensureProgramFbo/ensureDeckFbos).
+    if (isValid()) {
+        makeCurrent();
+        destroyProgramFbo();
+        doneCurrent();
+    }
+    m_programFrameCache = QImage();
+    m_deckFrameCacheA   = QImage();
+    m_deckFrameCacheB   = QImage();
+    m_deckPreviewA      = QImage();
+    m_deckPreviewB      = QImage();
+    update();
 }
 
 void VideoWidget::blitProgramToScreen() {
@@ -418,8 +443,8 @@ void VideoWidget::blitProgramToScreen() {
 QRectF VideoWidget::scaleRectToWidget(const QRectF &programRect) const {
     if (programRect.isEmpty() || width() <= 0 || height() <= 0)
         return programRect;
-    const double sx = (double)width()  / kProgramWidth;
-    const double sy = (double)height() / kProgramHeight;
+    const double sx = (double)width()  / s_programWidth;
+    const double sy = (double)height() / s_programHeight;
     return QRectF(programRect.x() * sx, programRect.y() * sy,
                   programRect.width() * sx, programRect.height() * sy);
 }
@@ -457,9 +482,9 @@ void VideoWidget::cacheDeckFrameFromFbo(bool deckA) {
     if (!fbo) return;
 
     QImage &cache = deckA ? m_deckFrameCacheA : m_deckFrameCacheB;
-    cache = QImage(kProgramWidth, kProgramHeight, QImage::Format_RGBA8888);
+    cache = QImage(s_programWidth, s_programHeight, QImage::Format_RGBA8888);
     glBindFramebuffer(GL_FRAMEBUFFER, fbo);
-    glReadPixels(0, 0, kProgramWidth, kProgramHeight,
+    glReadPixels(0, 0, s_programWidth, s_programHeight,
                  GL_RGBA, GL_UNSIGNED_BYTE, cache.bits());
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     cache = cache.mirrored(false, true);
@@ -468,8 +493,8 @@ void VideoWidget::cacheDeckFrameFromFbo(bool deckA) {
 void VideoWidget::cacheProgramFrameFromFbo() {
     if (!m_programFbo) return;
 
-    m_programFrameCache = QImage(kProgramWidth, kProgramHeight, QImage::Format_RGBA8888);
-    glReadPixels(0, 0, kProgramWidth, kProgramHeight,
+    m_programFrameCache = QImage(s_programWidth, s_programHeight, QImage::Format_RGBA8888);
+    glReadPixels(0, 0, s_programWidth, s_programHeight,
                  GL_RGBA, GL_UNSIGNED_BYTE, m_programFrameCache.bits());
 }
 
@@ -477,9 +502,9 @@ void VideoWidget::cacheDeckPreviewFromFbo(bool deckA) {
     const GLuint fbo = deckA ? m_deckFboA : m_deckFboB;
     if (!fbo) return;
 
-    QImage full(kProgramWidth, kProgramHeight, QImage::Format_RGBA8888);
+    QImage full(s_programWidth, s_programHeight, QImage::Format_RGBA8888);
     glBindFramebuffer(GL_FRAMEBUFFER, fbo);
-    glReadPixels(0, 0, kProgramWidth, kProgramHeight,
+    glReadPixels(0, 0, s_programWidth, s_programHeight,
                  GL_RGBA, GL_UNSIGNED_BYTE, full.bits());
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
@@ -1180,8 +1205,8 @@ QImage VideoWidget::deckPreviewWithOverlays(bool deckA) const {
     p.setRenderHint(QPainter::Antialiasing);
 
     const QRectF &programRect = deckA ? m_videoRectProgramA : m_videoRectProgramB;
-    const double sx = (double)kDeckPreviewWidth  / kProgramWidth;
-    const double sy = (double)kDeckPreviewHeight / kProgramHeight;
+    const double sx = (double)kDeckPreviewWidth  / s_programWidth;
+    const double sy = (double)kDeckPreviewHeight / s_programHeight;
     const QRectF vr = programRect.isEmpty()
         ? QRectF(0, 0, kDeckPreviewWidth, kDeckPreviewHeight)
         : QRectF(programRect.x() * sx, programRect.y() * sy,
@@ -1203,7 +1228,7 @@ QImage VideoWidget::deckProgramFrameWithOverlays(bool deckA) const {
 
     const QRectF &programRect = deckA ? m_videoRectProgramA : m_videoRectProgramB;
     const QRectF vr = programRect.isEmpty()
-        ? QRectF(0, 0, kProgramWidth, kProgramHeight)
+        ? QRectF(0, 0, s_programWidth, s_programHeight)
         : programRect;
     const_cast<VideoWidget *>(this)->renderOverlays(p, overlays, vr, 1.f);
     return frame;

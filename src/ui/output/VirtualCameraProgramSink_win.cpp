@@ -75,8 +75,8 @@ bool VirtualCameraProgramSink::start(const QString &streamName) {
     if (m_devicePath.isEmpty())
         m_devicePath = defaultDevicePath();
 
-    m_impl->width  = VideoWidget::kProgramWidth;
-    m_impl->height = VideoWidget::kProgramHeight;
+    m_impl->width  = VideoWidget::programWidth();
+    m_impl->height = VideoWidget::programHeight();
 
     m_impl->camera = scCreateCamera(m_impl->width, m_impl->height, kRealtimeFramerate);
     if (!m_impl->camera) {

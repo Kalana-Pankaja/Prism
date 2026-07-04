@@ -110,7 +110,7 @@ MainWindow::MainWindow(QWidget *parent)
 
     m_obsIntegration = new ObsIntegration(this);
     m_obsScenesMenu = new QMenu(tr("OBS Scenes"), this);
-    ui->menuView->insertMenu(ui->actionStayOnTop, m_obsScenesMenu);
+    ui->menuTools->insertMenu(ui->actionConnectObs, m_obsScenesMenu);
     m_obsScenesMenu->setEnabled(false);
     rebuildObsScenesMenu({});
     ui->actionConnectObs->setEnabled(ObsWebSocketClient::isAvailable());
@@ -396,7 +396,8 @@ void MainWindow::setupConnections() {
 
     connect(ui->actionFreezeFrameCapture, &QAction::triggered, this, &MainWindow::onFreezeFrameCapture);
 
-    // View menu
+    // Output menu
+    connect(ui->actionSetOutputResolution, &QAction::triggered, this, &MainWindow::onSetOutputResolution);
     connect(ui->actionShowOutput, &QAction::triggered, this, [this]() {
         m_outputWindow->show();
         m_outputWindow->raise();
@@ -1609,6 +1610,48 @@ void MainWindow::onFreezeFrameCapture() {
         summary += QLatin1Char('\n') + tr("Added as a new image element.");
 
     QMessageBox::information(this, tr("Freeze Frame Capture"), summary);
+}
+
+void MainWindow::onSetOutputResolution() {
+    static const QList<QSize> kPresets = {
+        {1280, 720}, {1920, 1080}, {2560, 1440}, {3840, 2160},
+    };
+
+    auto *videoWidget = m_outputWindow->videoWidget();
+    const QSize current = videoWidget->programFrameSize();
+
+    QStringList items;
+    for (const QSize &s : kPresets)
+        items << tr("%1 x %2").arg(s.width()).arg(s.height());
+    items << tr("Custom…");
+
+    int currentIndex = kPresets.indexOf(current);
+    if (currentIndex < 0) currentIndex = items.size() - 1;
+
+    bool ok = false;
+    const QString choice = QInputDialog::getItem(
+        this, tr("Set Output Resolution"), tr("Program output resolution:"),
+        items, currentIndex, false, &ok);
+    if (!ok) return;
+
+    QSize target;
+    const int presetIndex = items.indexOf(choice);
+    if (presetIndex >= 0 && presetIndex < kPresets.size()) {
+        target = kPresets[presetIndex];
+    } else {
+        const int width = QInputDialog::getInt(
+            this, tr("Set Output Resolution"), tr("Width:"),
+            current.width(), 160, 7680, 2, &ok);
+        if (!ok) return;
+        const int height = QInputDialog::getInt(
+            this, tr("Set Output Resolution"), tr("Height:"),
+            current.height(), 90, 4320, 2, &ok);
+        if (!ok) return;
+        target = QSize(width, height);
+    }
+
+    if (target == current) return;
+    videoWidget->setProgramResolution(target.width(), target.height());
 }
 
 void MainWindow::onConnectObs() {

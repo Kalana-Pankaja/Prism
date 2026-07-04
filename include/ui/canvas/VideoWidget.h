@@ -163,15 +163,17 @@ public:
     QSize sizeHint() const override { return QSize(1280, 720); }
 
     // ── Program output (offscreen compositor) ─────────────────────────────────
-    // The A/B mix is rendered to a fixed-size FBO; the widget displays a scaled
-    // blit. Future outputs (NDI, recording, second monitor) read the same FBO.
-    static constexpr int kProgramWidth  = 1280;
-    static constexpr int kProgramHeight = 720;
+    // The A/B mix is rendered to a configurable-size FBO; the widget displays a
+    // scaled blit. Future outputs (NDI, recording, second monitor) read the same FBO.
+    static int programWidth()  { return s_programWidth; }
+    static int programHeight() { return s_programHeight; }
+    /// Change the compositor's render resolution, reallocating the program/deck FBOs.
+    void setProgramResolution(int width, int height);
     static constexpr int kDeckPreviewWidth  = 640;
     static constexpr int kDeckPreviewHeight = 360;
 
     GLuint programColorTexture() const { return m_programColorTex; }
-    QSize  programFrameSize()    const { return {kProgramWidth, kProgramHeight}; }
+    QSize  programFrameSize()    const { return {s_programWidth, s_programHeight}; }
 
     /// Enable CPU readback of the program FBO for mirror outputs / recording.
     void addProgramFrameConsumer();
@@ -358,6 +360,9 @@ private:
     QRectF scaleRectToWidget(const QRectF &programRect) const;
     QImage deckPreviewWithOverlays(bool deckA) const;
     QImage deckProgramFrameWithOverlays(bool deckA) const;
+
+    static int s_programWidth;
+    static int s_programHeight;
 
     GLuint m_programFbo      = 0;
     GLuint m_programColorTex = 0;
