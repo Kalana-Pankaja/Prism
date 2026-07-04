@@ -10,61 +10,64 @@
 </p>
 
 <p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-blue.svg" alt="License: GPL-3.0"></a>
+  <img src="https://img.shields.io/badge/platform-Linux%20%7C%20Windows%20%7C%20macOS-lightgrey" alt="Platform: Linux | Windows | macOS">
+</p>
+
+<p align="center">
+  <strong>CutWire Prism is free and open source (GPLv3).</strong>
+</p>
+
+<p align="center">
   <a href="https://github.com/CutWire-Studios/Prism">GitHub</a> ·
-  <a href="https://github.com/CutWire-Studios/Prism/issues">Issues</a>
+  <a href="https://github.com/CutWire-Studios/Prism/issues">Issues</a> ·
+  <a href="LICENSE">License</a>
 </p>
 
 ## Features
 
-- **Node-based Clip Canvas**: Visual clip graph with groups, transform contexts, and audio routing — not locked to a fixed grid
-- **Multiple Media Source Types**: Video files, images, slideshows, webcams, screen/window capture, custom canvases, GLSL shaders, HTML/QML overlays, text, Lua-scripted sources, NDI inputs, and phone cameras (WebRTC)
-- **Live A/B Deck Mixing**: Crossfade between two sources with per-deck speed control
-- **Master Audio Routing**: Audio-input capture nodes routed to master-output nodes for per-device audio mixing inside the node graph
-- **Asset Library**: Reusable panel of imported media that can be dropped onto the clip canvas
-- **Dockable Control Area**: The deck / crossfader / panic control strip is a dock widget that can be floated or repositioned
-- **Clip Editor**: Per-clip trim, crop, transform, and overlay editing via a dedicated dialog
+- **Node Graph Canvas**: Free-form visual pipeline — wire **Input → Process → Layer → A/B Select → Output** nodes; zoom, pan, and minimap for large shows
+- **Process & Layer Nodes**: Crop and flip in Process nodes; stack and layout multiple inputs in Layer nodes with canvas sizing and transform editing
+- **Multiple Media Source Types**: Video files, images, slideshows, webcams, screen/window capture, custom canvases, GLSL shaders, HTML/QML overlays, text, NDI inputs, and phone cameras (WebRTC)
+- **Live A/B Deck Mixing**: Crossfade between two decks with per-deck speed, **AUTO** / **CUT**, and many transition modes (wipes, slides, dips, 3D cube/flip, and more)
+- **Master Audio Routing**: Master audio-input and master audio-output nodes for per-device capture and mixing inside the graph
+- **Asset Library**: Reusable sidebar of imported media — drag assets onto the node canvas or double-click to add files
+- **Dockable Control Panel**: Deck previews, crossfader, transitions, and panic controls in a dock widget that can be floated or repositioned
+- **Source Editing**: Per-input trim, crop, transform, and composited text/image overlays via dedicated edit dialogs
   - **Trim**: Set in/out points with frame-accurate playback preview
   - **Crop**: Visual move/resize crop selector with numeric spinbox controls
-  - **Base Canvas**: Drag/resize the clip image inside a fixed canvas
+  - **Base Canvas**: Drag/resize the source inside a fixed canvas
   - **Overlays**: Composited text and image overlays with font size, color, opacity, and visibility controls
 - **GLSL Shader Sources**: Built-in visual generators plus custom fragment shaders, including audio-reactive presets
 - **HTML / QML Overlays**: Dynamic scoreboards, clocks, and countdown timers via Qt WebEngine
-- **Lua Scripting**: Script nodes that generate live text/data overlays via an embedded Lua runtime (sol2)
+- **Lua Scripting**: Script nodes that generate live text/data overlays via an embedded Lua runtime (sol2, optional at build time)
 - **Phone Camera (WebRTC)**: Stream a smartphone camera into CutWire Prism over LAN or a public relay, paired by QR code
 - **Audio FFT Visualization**: Real-time spectrum analysis with kissfft-driven shader inputs
-- **Hotkey Grid**: Keyboard trigger map (1–0, Q–P, A–L, Z–M) with Shift variants for Deck B
-- **Session Management**: Save/load sessions, autosave, portable asset paths, and smart asset relinking
-- **Panic Controls**: Emergency blackout, freeze-frame hold, and “stay tuned” overlay
-- **Program Output Hub**: Mirror windows, optional NDI program output, virtual-camera output, and program video recording with markers plus FLAC program-audio recording
-- **OBS Integration**: Optional WebSocket connection for scene switching and per-clip OBS scene links
-- **Remote Control**: Built-in server for triggering clips and decks from another device on the network
+- **Hotkey Grid**: Keyboard trigger map (1–0, Q–P, A–L, Z–M); bare key → Deck A, Shift+key → Deck B
+- **Session & Project Management**: Save/load sessions, autosave, smart asset relinking, and portable `.prism` project export/import
+- **Panic Controls**: Emergency **Blackout**, **Pause** (freeze on current frame), and **Stay Tuned** overlay
+- **Program Output Hub**: Mirror windows, optional NDI program output, virtual-camera output, program video recording with markers, FLAC program-audio recording, and freeze-frame capture
+- **OBS Integration**: Optional WebSocket connection for scene switching and per-source OBS scene links
+- **Remote Control**: Built-in server for triggering sources and decks from another device on the network
 - **Real-time Playback**: FFmpeg-powered video decoding with low-latency OpenGL compositing
-- **Drag & Drop**: Load media files directly onto clip cards
-- **Dark VJ Theme**: Resolume Arena-inspired UI with cyan accents, optimized for low-light events
+- **Drag & Drop**: Import media into the asset library or drop files directly onto the node canvas
+- **Dark VJ Theme**: Charcoal UI with teal accents, optimized for low-light live events
 
 ## Architecture
 
 ### UI Layout
 
-```
-┌────────────────────────────────────────────────────────────┐
-│  CutWire Prism — Live Media Control (menubar: Media/Add/View)    │
-├────────────────────────────────────────────────────────────┤
-│  Clip Node Canvas (scrollable graph of clip cards)         │
-│  [Clip][Clip][Group]...[Add Element ▼]                  │
-├──────────────────────────────┬─────────────────────────────┤
-│  A Deck    │   Crossfader    │  B Deck                     │
-│  [Play]    │  ◄────●────►   │  [Play]                     │
-│  Speed: 100%      50/50        Speed: 100%                 │
-├──────────────────────────────┴─────────────────────────────┤
-│  Panic: [Blackout] [Freeze Frame] [Stay Tuned]             │
-└────────────────────────────────────────────────────────────┘
-                  ↕ (separate window(s))
-┌────────────────────────────────────────────────────────────┐
-│  Output Monitor / Mirror Windows / NDI / Recording         │
-│                    (fullscreen capable)                    │
-└────────────────────────────────────────────────────────────┘
-```
+<p align="center">
+  <img src="docs/prism-ui-screenshot.png" alt="CutWire Prism main window — asset library, node graph canvas, and control panel" width="900">
+</p>
+
+The main window is split into three areas:
+
+1. **Asset library** (left) — imported media thumbnails; drag clips onto the node canvas or double-click to add files
+2. **Node graph canvas** (center) — visual pipeline of Input, Process, Layer, A/B Select, and Output nodes
+3. **Control panel** (bottom dock) — A/B deck previews, crossfader, transition controls, and panic buttons
+
+Program output opens in a separate window (mirror, NDI, virtual camera, or recording).
 
 ### Tech Stack
 
@@ -137,7 +140,7 @@ resources/
   ├── html/               # HTML overlay templates
   └── qml/                # QML overlay templates
 
-flatpak/                  # Flatpak packaging (org.cutwire.CutWire Prism)
+flatpak/                  # Flatpak packaging (org.cutwire.Prism)
 CMakeModules/             # FindFFmpeg / FindNDI / Findre2
 .github/workflows/        # GitHub Actions CI (build.yml, flatpak.yml)
 ```
@@ -146,7 +149,7 @@ CMakeModules/             # FindFFmpeg / FindNDI / Findre2
 
 CutWire Prism prioritizes **simplicity over features**. Every button should feel intuitive even for users touching VJ software for the first time. Unlike Resolume Arena (complex, $$$) or TouchDesigner (steep learning curve), CutWire Prism is:
 
-- **Node-based**: A visual clip graph with groups, transform contexts, and audio routing — click-to-trigger, no scenes or playlists to manage
+- **Node-based**: A visual node graph with process, layer, and audio routing — wire sources to decks without scenes or playlists to manage
 - **Tactile**: Real-time feedback, instant controls (< 50ms latency)
 - **Open**: Free, community-driven, built on open-source (FFmpeg, Qt)
 - **Modular**: Abstract `MediaSource` interface makes adding new source types straightforward
@@ -216,7 +219,7 @@ cd C:\path\to\vcpkg
 **3. Configure and build**
 
 ```powershell
-cd C:\path\to\CutWire Prism
+cd C:\path\to\Prism
 
 cmake -B build -G "Visual Studio 17 2022" -A x64 `
   -DCMAKE_TOOLCHAIN_FILE=C:\path\to\vcpkg\scripts\buildsystems\vcpkg.cmake `
@@ -258,7 +261,7 @@ Enable virtual camera output from **View → Virtual Camera Output**. In OBS, Zo
 ```bash
 # Clone and enter project
 git clone https://github.com/CutWire-Studios/Prism.git
-cd CutWire Prism
+cd Prism
 
 # Configure and build
 cmake -B build -DCMAKE_BUILD_TYPE=Release
@@ -294,16 +297,16 @@ Requires `flatpak` and `flatpak-builder`.
 
 ## Quick Start
 
-1. **Load Media**: Use **Media → Load Folder**, **Add Files**, or **Add Photos** to populate the clip canvas
-2. **Trigger Clips**: Click a clip card’s **A** or **B** button, or use assigned hotkeys (Shift+key for Deck B)
-3. **Add Sources**: Use **Add Element ▼** or the **Add** menu to insert video, photos, slideshows, cameras, screen/window capture, canvases, shaders, HTML overlays, or NDI sources
-4. **Edit a Clip**: Open the clip editor to trim, crop, transform, or add overlays
-5. **Mix with Crossfader**: Blend the A and B decks in real time
-6. **Control Speed**: Adjust playback speed per deck (100% = normal)
-7. **Open Output**: Use **View → Show Output** for projection, or enable NDI/recording from the **View** menu
-8. **Save Your Show**: Use **Media → Save Session**; sessions autosave and relink missing assets on load
-9. **Panic if Needed**: Use blackout, freeze-frame, or stay-tuned controls during live events
-10. **Drag & Drop**: Drop video or image files onto clip cards to reassign them
+1. **Import media**: Use **Media → Add Files…** or **Add Folder…** to populate the asset library on the left
+2. **Add sources**: Click **Add Element** on the canvas (or **Media → Add Element**) to insert video, photos, slideshows, cameras, screen/window capture, canvases, shaders, HTML overlays, or NDI sources
+3. **Wire the graph**: Connect **Input → Process → Layer → A/B Select → Output** nodes to build your pipeline
+4. **Assign decks**: Use **A/B Select** node slots (or hotkeys — **View → Edit Hotkeys**) to route sources to Deck A or B
+5. **Mix live**: Blend decks with the crossfader, **AUTO** / **CUT**, and per-deck speed controls in the control panel
+6. **Edit a source**: Open node edit dialogs for trim, crop, transform, layout, and overlays
+7. **Open output**: Use **View → Show Output** for projection, or enable NDI, virtual camera, or recording from **View**
+8. **Save your show**: Use **Media → Save Session**; sessions autosave and relink missing assets on load
+9. **Panic if needed**: Use **Blackout**, **Pause**, or **Stay Tuned** during live events
+10. **Drag & drop**: Drop video or image files onto the asset library or node canvas
 
 ## Supported Media
 
