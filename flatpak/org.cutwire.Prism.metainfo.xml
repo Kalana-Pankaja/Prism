@@ -46,6 +46,40 @@
   <url type="help">https://docs.cutwire.org/prism</url>
   <url type="bugtracker">https://github.com/CutWire-Studios/Prism/issues</url>
   <url type="vcs-browser">https://github.com/CutWire-Studios/Prism</url>
+  <screenshots>
+    <screenshot type="default" xml:lang="en">
+      <image>https://raw.githubusercontent.com/CutWire-Studios/Prism/main/docs/screenshots/main-window.png</image>
+      <caption>The main window with asset library, node graph canvas, and control panel</caption>
+    </screenshot>
+    <screenshot xml:lang="en">
+      <image>https://raw.githubusercontent.com/CutWire-Studios/Prism/main/docs/screenshots/node-editor.png</image>
+      <caption>Wiring inputs, effects, and outputs on the node graph canvas</caption>
+    </screenshot>
+    <screenshot xml:lang="en">
+      <image>https://raw.githubusercontent.com/CutWire-Studios/Prism/main/docs/screenshots/input-types.png</image>
+      <caption>Choosing from many supported media source types</caption>
+    </screenshot>
+    <screenshot xml:lang="en">
+      <image>https://raw.githubusercontent.com/CutWire-Studios/Prism/main/docs/screenshots/video-effects.png</image>
+      <caption>Applying live video effects in a process node</caption>
+    </screenshot>
+    <screenshot xml:lang="en">
+      <image>https://raw.githubusercontent.com/CutWire-Studios/Prism/main/docs/screenshots/text-overlays.png</image>
+      <caption>Compositing animated text overlays onto a source</caption>
+    </screenshot>
+    <screenshot xml:lang="en">
+      <image>https://raw.githubusercontent.com/CutWire-Studios/Prism/main/docs/screenshots/overlay-editor.png</image>
+      <caption>Editing composited text and image overlays</caption>
+    </screenshot>
+    <screenshot xml:lang="en">
+      <image>https://raw.githubusercontent.com/CutWire-Studios/Prism/main/docs/screenshots/html-editor.png</image>
+      <caption>Designing dynamic HTML overlays in the built-in visual editor</caption>
+    </screenshot>
+    <screenshot xml:lang="en">
+      <image>https://raw.githubusercontent.com/CutWire-Studios/Prism/main/docs/screenshots/lua-scripting.png</image>
+      <caption>Generating live overlays with the embedded Lua scripting runtime</caption>
+    </screenshot>
+  </screenshots>
   <releases>
     <release version="0.1.0" date="2025-06-17">
       <description>

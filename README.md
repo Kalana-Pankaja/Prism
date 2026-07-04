@@ -54,6 +54,54 @@
 - **Drag & Drop**: Import media into the asset library or drop files directly onto the node canvas
 - **Dark VJ Theme**: Charcoal UI with teal accents, optimized for low-light live events
 
+## Screenshots
+
+<p align="center">
+  <img src="docs/screenshots/main-window.png" alt="Main window with asset library, node graph canvas, and control panel" width="900">
+</p>
+
+<p align="center"><em>The main window — asset library, node graph canvas, and control panel</em></p>
+
+<table>
+  <tr>
+    <td width="50%">
+      <img src="docs/screenshots/node-editor.png" alt="Node graph canvas" width="100%"><br>
+      <sub>Wiring inputs, effects, and outputs on the node graph canvas</sub>
+    </td>
+    <td width="50%">
+      <img src="docs/screenshots/input-types.png" alt="Supported media source types" width="100%"><br>
+      <sub>Choosing from many supported media source types</sub>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%">
+      <img src="docs/screenshots/video-effects.png" alt="Live video effects in a process node" width="100%"><br>
+      <sub>Applying live video effects in a process node</sub>
+    </td>
+    <td width="50%">
+      <img src="docs/screenshots/text-overlays.png" alt="Animated text overlays" width="100%"><br>
+      <sub>Compositing animated text overlays onto a source</sub>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%">
+      <img src="docs/screenshots/overlay-editor.png" alt="Overlay editor" width="100%"><br>
+      <sub>Editing composited text and image overlays</sub>
+    </td>
+    <td width="50%">
+      <img src="docs/screenshots/html-editor.png" alt="Built-in visual HTML overlay editor" width="100%"><br>
+      <sub>Designing dynamic HTML overlays in the built-in visual editor</sub>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%">
+      <img src="docs/screenshots/lua-scripting.png" alt="Lua scripting" width="100%"><br>
+      <sub>Generating live overlays with the embedded Lua scripting runtime</sub>
+    </td>
+    <td width="50%"></td>
+  </tr>
+</table>
+
 ## Architecture
 
 ### UI Layout
