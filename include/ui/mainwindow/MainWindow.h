@@ -98,11 +98,9 @@ private:
     Ui::MainWindow *ui;
     OutputWindow   *m_outputWindow   = nullptr;
 
-    class QStackedWidget *m_stackWidget       = nullptr;
     class QSplitter      *m_editorSplitter    = nullptr;
     AssetLibrary         *m_assetLibrary      = nullptr;
     ClipNodeEditor       *m_clipNodeEditor    = nullptr;
-    QWidget              *m_emptyPlaceholder  = nullptr;
 
     bool m_aSliderDragging = false;
     bool m_bSliderDragging = false;
@@ -158,8 +156,6 @@ private:
     void onRecordingPanel();
     void showRecordingPanel();
 
-    void buildEmptyPlaceholder();
-    void updateCanvasStack();
     void syncPanicButtons(QPushButton *activeBtn);
     void applyPanicFromButtons();
     void clearPanicState();

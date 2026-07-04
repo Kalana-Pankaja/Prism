@@ -5,6 +5,7 @@
 #include <QtGlobal>
 #include <QThread>
 #include "ui/mainwindow/MainWindow.h"
+#include "ui/mainwindow/GetStartedDialog.h"
 #include "ui/common/MaterialSymbols.h"
 #include "ui/mainwindow/PrismSplashScreen.h"
 
@@ -76,6 +77,7 @@ int main(int argc, char *argv[]) {
 
     window.show();
     splash.finish(&window);
+    GetStartedDialog::showIfNeeded(&window);
 
     if (qEnvironmentVariableIsSet("PRISM_AUTO_QUIT_MS")) {
         const int ms = qEnvironmentVariableIntValue("PRISM_AUTO_QUIT_MS");

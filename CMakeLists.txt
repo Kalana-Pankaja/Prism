@@ -179,6 +179,7 @@ set(SOURCES
     src/core/webrtc/WebRtcManager.cpp
     src/core/sources/WebRtcSource.cpp
     src/ui/mainwindow/MainWindow.cpp
+    src/ui/mainwindow/GetStartedDialog.cpp
     src/ui/canvas/VideoWidget.cpp
     src/ui/transitions/Transition.cpp
     src/ui/nodes/ClipCard.cpp
@@ -290,6 +291,7 @@ set(HEADERS
     include/core/webrtc/WebRtcManager.h
     include/core/sources/WebRtcSource.h
     include/ui/mainwindow/MainWindow.h
+    include/ui/mainwindow/GetStartedDialog.h
     include/ui/canvas/VideoWidget.h
     include/ui/transitions/Transition.h
     include/ui/nodes/ClipCard.h
