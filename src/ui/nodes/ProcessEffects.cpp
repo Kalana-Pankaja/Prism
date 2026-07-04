@@ -1,19 +1,72 @@
 #include "ui/nodes/ProcessEffects.h"
 #include "ui/nodes/ClipNodeEditor.h"
 #include "ui/canvas/CropSelectorWidget.h"
+#include "ui/canvas/PerspectiveSelectorWidget.h"
+#include "ui/canvas/PolygonSelectorWidget.h"
 #include "core/sources/MediaSource.h"
+#include "core/sources/EffectSources.h"
 #ifdef PRISM_HAVE_SEGMENTATION
 #include "core/sources/SegmentationSource.h"
 #endif
 
+#include <QCheckBox>
+#include <QColor>
+#include <QColorDialog>
+#include <QComboBox>
 #include <QDialog>
 #include <QDialogButtonBox>
+#include <QFormLayout>
+#include <QHBoxLayout>
 #include <QImage>
+#include <QJsonArray>
 #include <QJsonDocument>
+#include <QLabel>
+#include <QPushButton>
+#include <QSlider>
 #include <QVBoxLayout>
 
 namespace {
 
+// ── JSON helpers for polygon / corner params ────────────────────────────────
+QVector<QPointF> pointsFromArray(const QJsonArray &arr) {
+    QVector<QPointF> pts;
+    for (const QJsonValue &v : arr) {
+        const QJsonArray pair = v.toArray();
+        if (pair.size() == 2)
+            pts << QPointF(pair.at(0).toDouble(), pair.at(1).toDouble());
+    }
+    return pts;
+}
+
+QJsonArray pointsToArray(const QVector<QPointF> &pts) {
+    QJsonArray arr;
+    for (const QPointF &p : pts)
+        arr.append(QJsonArray{p.x(), p.y()});
+    return arr;
+}
+
+QVector<QPointF> cornersFromParams(const QJsonObject &p) {
+    QVector<QPointF> c = pointsFromArray(p["corners"].toArray());
+    if (c.size() != 4) c = {{0, 0}, {1, 0}, {1, 1}, {0, 1}};
+    return c;
+}
+
+// A framed reference preview plus OK/Cancel; returns the dialog's exec() result.
+// The @p build callback populates the form area with effect-specific controls.
+bool runEffectDialog(QWidget *parent, const QString &title,
+                     const std::function<void(QDialog *, QVBoxLayout *)> &build) {
+    QDialog dialog(parent);
+    dialog.setWindowTitle(title);
+    auto *layout = new QVBoxLayout(&dialog);
+    build(&dialog, layout);
+    auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dialog);
+    QObject::connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+    QObject::connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+    layout->addWidget(buttons);
+    return dialog.exec() == QDialog::Accepted;
+}
+
+// ── Crop (fold) ──────────────────────────────────────────────────────────────
 ProcessEffectDescriptor makeCrop() {
     ProcessEffectDescriptor d;
     d.id = 0;
@@ -25,7 +78,6 @@ ProcessEffectDescriptor makeCrop() {
         const float ny = (float)p["y"].toDouble(0.0);
         const float nw = (float)p["w"].toDouble(1.0);
         const float nh = (float)p["h"].toDouble(1.0);
-        // The rect is authored on the flipped image, so mirror it into pre-flip space.
         const float ax = l.flipH ? (1.f - nx - nw) : nx;
         const float ay = l.flipV ? (1.f - ny - nh) : ny;
         l.cropX = l.cropX + ax * l.cropW;
@@ -58,11 +110,13 @@ ProcessEffectDescriptor makeCrop() {
     return d;
 }
 
+// ── Legacy separate flips (id 1/2): kept for project load, hidden from menu ───
 ProcessEffectDescriptor makeFlipH() {
     ProcessEffectDescriptor d;
     d.id = 1;
     d.name = "Flip H";
     d.menuLabel = "Flip Horizontal";
+    d.available = false;   // superseded by the combined Flip node
     d.fold = [](ResolvedLayer &l, const QJsonObject &) { l.flipH = !l.flipH; };
     return d;
 }
@@ -72,10 +126,12 @@ ProcessEffectDescriptor makeFlipV() {
     d.id = 2;
     d.name = "Flip V";
     d.menuLabel = "Flip Vertical";
+    d.available = false;   // superseded by the combined Flip node
     d.fold = [](ResolvedLayer &l, const QJsonObject &) { l.flipV = !l.flipV; };
     return d;
 }
 
+// ── Remove Background (decorator) ────────────────────────────────────────────
 ProcessEffectDescriptor makeSegment() {
     ProcessEffectDescriptor d;
     d.id = 3;
@@ -93,13 +149,321 @@ ProcessEffectDescriptor makeSegment() {
     return d;
 }
 
+// ── Flip (fold, combined direction) ──────────────────────────────────────────
+ProcessEffectDescriptor makeFlip() {
+    ProcessEffectDescriptor d;
+    d.id = 4;
+    d.name = "Flip";
+    d.menuLabel = "Flip";
+    d.defaultParams = QJsonObject{{"direction", 0}};   // 0=H, 1=V, 2=Both
+    d.fold = [](ResolvedLayer &l, const QJsonObject &p) {
+        const int dir = p["direction"].toInt(0);
+        if (dir == 0 || dir == 2) l.flipH = !l.flipH;
+        if (dir == 1 || dir == 2) l.flipV = !l.flipV;
+    };
+    d.editLabel = "Direction";
+    d.editDialog = [](QWidget *parent, QJsonObject &params, const QImage &) {
+        QComboBox *combo = nullptr;
+        const bool ok = runEffectDialog(parent, "Flip", [&](QDialog *, QVBoxLayout *layout) {
+            auto *form = new QFormLayout;
+            combo = new QComboBox;
+            combo->addItems({"Horizontal", "Vertical", "Both"});
+            combo->setCurrentIndex(qBound(0, params["direction"].toInt(0), 2));
+            form->addRow("Direction", combo);
+            layout->addLayout(form);
+        });
+        if (!ok) return false;
+        params["direction"] = combo->currentIndex();
+        return true;
+    };
+    return d;
+}
+
+// ── Rotate (decorator) ───────────────────────────────────────────────────────
+ProcessEffectDescriptor makeRotate() {
+    ProcessEffectDescriptor d;
+    d.id = 5;
+    d.name = "Rotate";
+    d.menuLabel = "Rotate";
+    d.isDecorator = true;
+    d.defaultParams = QJsonObject{{"angle", 90}};
+    d.wrapSource = [](std::unique_ptr<MediaSource> inner, const QJsonObject &p)
+        -> std::unique_ptr<MediaSource> {
+        return std::make_unique<RotateSource>(std::move(inner), p["angle"].toInt(90));
+    };
+    d.editLabel = "Angle";
+    d.editDialog = [](QWidget *parent, QJsonObject &params, const QImage &) {
+        QComboBox *combo = nullptr;
+        const int angles[] = {0, 90, 180, 270};
+        const bool ok = runEffectDialog(parent, "Rotate", [&](QDialog *, QVBoxLayout *layout) {
+            auto *form = new QFormLayout;
+            combo = new QComboBox;
+            combo->addItems({"0\u00B0", "90\u00B0", "180\u00B0", "270\u00B0"});
+            const int cur = params["angle"].toInt(90);
+            for (int i = 0; i < 4; ++i)
+                if (angles[i] == cur) combo->setCurrentIndex(i);
+            form->addRow("Angle", combo);
+            layout->addLayout(form);
+        });
+        if (!ok) return false;
+        params["angle"] = angles[combo->currentIndex()];
+        return true;
+    };
+    return d;
+}
+
+// ── Opacity (decorator) ──────────────────────────────────────────────────────
+ProcessEffectDescriptor makeOpacity() {
+    ProcessEffectDescriptor d;
+    d.id = 6;
+    d.name = "Opacity";
+    d.menuLabel = "Opacity";
+    d.isDecorator = true;
+    d.defaultParams = QJsonObject{{"opacity", 1.0}};
+    d.wrapSource = [](std::unique_ptr<MediaSource> inner, const QJsonObject &p)
+        -> std::unique_ptr<MediaSource> {
+        return std::make_unique<OpacitySource>(std::move(inner), p["opacity"].toDouble(1.0));
+    };
+    d.editLabel = "Opacity";
+    d.editDialog = [](QWidget *parent, QJsonObject &params, const QImage &) {
+        QSlider *slider = nullptr;
+        const bool ok = runEffectDialog(parent, "Opacity", [&](QDialog *, QVBoxLayout *layout) {
+            auto *row = new QHBoxLayout;
+            slider = new QSlider(Qt::Horizontal);
+            slider->setRange(0, 100);
+            slider->setValue(qRound(params["opacity"].toDouble(1.0) * 100));
+            auto *val = new QLabel(QString::number(slider->value()) + "%");
+            QObject::connect(slider, &QSlider::valueChanged, val,
+                             [val](int v) { val->setText(QString::number(v) + "%"); });
+            row->addWidget(new QLabel("Opacity"));
+            row->addWidget(slider);
+            row->addWidget(val);
+            layout->addLayout(row);
+        });
+        if (!ok) return false;
+        params["opacity"] = slider->value() / 100.0;
+        return true;
+    };
+    return d;
+}
+
+// ── Chroma Key (decorator) ───────────────────────────────────────────────────
+ProcessEffectDescriptor makeChromaKey() {
+    ProcessEffectDescriptor d;
+    d.id = 7;
+    d.name = "Chroma Key";
+    d.menuLabel = "Chroma Key";
+    d.isDecorator = true;
+    d.defaultParams = QJsonObject{{"r", 0}, {"g", 255}, {"b", 0},
+                                  {"threshold", 0.25}, {"smoothness", 0.10}};
+    d.wrapSource = [](std::unique_ptr<MediaSource> inner, const QJsonObject &p)
+        -> std::unique_ptr<MediaSource> {
+        const QColor key(p["r"].toInt(0), p["g"].toInt(255), p["b"].toInt(0));
+        return std::make_unique<ChromaKeySource>(std::move(inner), key,
+                                                 p["threshold"].toDouble(0.25),
+                                                 p["smoothness"].toDouble(0.10));
+    };
+    d.editLabel = "Settings";
+    d.editDialog = [](QWidget *parent, QJsonObject &params, const QImage &) {
+        auto key = std::make_shared<QColor>(params["r"].toInt(0), params["g"].toInt(255),
+                                            params["b"].toInt(0));
+        QSlider *thr = nullptr;
+        QSlider *soft = nullptr;
+        const bool ok = runEffectDialog(parent, "Chroma Key", [&](QDialog *dlg, QVBoxLayout *layout) {
+            auto *form = new QFormLayout;
+            auto *colorBtn = new QPushButton;
+            colorBtn->setAutoFillBackground(true);
+            auto paint = [colorBtn, key] {
+                colorBtn->setText(key->name());
+                colorBtn->setStyleSheet(QString("background:%1; color:%2;")
+                    .arg(key->name(), key->lightness() < 128 ? "white" : "black"));
+            };
+            paint();
+            QObject::connect(colorBtn, &QPushButton::clicked, dlg, [dlg, key, paint] {
+                const QColor c = QColorDialog::getColor(*key, dlg, "Key Colour");
+                if (c.isValid()) { *key = c; paint(); }
+            });
+            form->addRow("Key Colour", colorBtn);
+
+            thr = new QSlider(Qt::Horizontal);
+            thr->setRange(0, 100);
+            thr->setValue(qRound(params["threshold"].toDouble(0.25) * 100));
+            form->addRow("Threshold", thr);
+
+            soft = new QSlider(Qt::Horizontal);
+            soft->setRange(0, 100);
+            soft->setValue(qRound(params["smoothness"].toDouble(0.10) * 100));
+            form->addRow("Smoothness", soft);
+            layout->addLayout(form);
+        });
+        if (!ok) return false;
+        params["r"] = key->red();
+        params["g"] = key->green();
+        params["b"] = key->blue();
+        params["threshold"] = thr->value() / 100.0;
+        params["smoothness"] = soft->value() / 100.0;
+        return true;
+    };
+    return d;
+}
+
+// ── Blur (decorator) ─────────────────────────────────────────────────────────
+ProcessEffectDescriptor makeBlur() {
+    ProcessEffectDescriptor d;
+    d.id = 8;
+    d.name = "Blur";
+    d.menuLabel = "Blur";
+    d.isDecorator = true;
+    d.defaultParams = QJsonObject{{"radius", 6}};
+    d.wrapSource = [](std::unique_ptr<MediaSource> inner, const QJsonObject &p)
+        -> std::unique_ptr<MediaSource> {
+        return std::make_unique<BlurSource>(std::move(inner), p["radius"].toInt(6));
+    };
+    d.editLabel = "Radius";
+    d.editDialog = [](QWidget *parent, QJsonObject &params, const QImage &) {
+        QSlider *slider = nullptr;
+        const bool ok = runEffectDialog(parent, "Blur", [&](QDialog *, QVBoxLayout *layout) {
+            auto *row = new QHBoxLayout;
+            slider = new QSlider(Qt::Horizontal);
+            slider->setRange(0, 64);
+            slider->setValue(params["radius"].toInt(6));
+            auto *val = new QLabel(QString::number(slider->value()) + " px");
+            QObject::connect(slider, &QSlider::valueChanged, val,
+                             [val](int v) { val->setText(QString::number(v) + " px"); });
+            row->addWidget(new QLabel("Radius"));
+            row->addWidget(slider);
+            row->addWidget(val);
+            layout->addLayout(row);
+        });
+        if (!ok) return false;
+        params["radius"] = slider->value();
+        return true;
+    };
+    return d;
+}
+
+// ── Sharpen (decorator) ──────────────────────────────────────────────────────
+ProcessEffectDescriptor makeSharpen() {
+    ProcessEffectDescriptor d;
+    d.id = 9;
+    d.name = "Sharpen";
+    d.menuLabel = "Sharpen";
+    d.isDecorator = true;
+    d.defaultParams = QJsonObject{{"amount", 1.0}};
+    d.wrapSource = [](std::unique_ptr<MediaSource> inner, const QJsonObject &p)
+        -> std::unique_ptr<MediaSource> {
+        return std::make_unique<SharpenSource>(std::move(inner), p["amount"].toDouble(1.0));
+    };
+    d.editLabel = "Amount";
+    d.editDialog = [](QWidget *parent, QJsonObject &params, const QImage &) {
+        QSlider *slider = nullptr;
+        const bool ok = runEffectDialog(parent, "Sharpen", [&](QDialog *, QVBoxLayout *layout) {
+            auto *row = new QHBoxLayout;
+            slider = new QSlider(Qt::Horizontal);
+            slider->setRange(0, 300);   // 0.00 – 3.00
+            slider->setValue(qRound(params["amount"].toDouble(1.0) * 100));
+            auto *val = new QLabel(QString::number(slider->value() / 100.0, 'f', 2));
+            QObject::connect(slider, &QSlider::valueChanged, val,
+                             [val](int v) { val->setText(QString::number(v / 100.0, 'f', 2)); });
+            row->addWidget(new QLabel("Amount"));
+            row->addWidget(slider);
+            row->addWidget(val);
+            layout->addLayout(row);
+        });
+        if (!ok) return false;
+        params["amount"] = slider->value() / 100.0;
+        return true;
+    };
+    return d;
+}
+
+// ── Keystone / Perspective (decorator) ───────────────────────────────────────
+ProcessEffectDescriptor makeKeystone() {
+    ProcessEffectDescriptor d;
+    d.id = 10;
+    d.name = "Keystone";
+    d.menuLabel = "Keystone / Perspective";
+    d.isDecorator = true;
+    d.defaultParams = QJsonObject{
+        {"corners", QJsonArray{QJsonArray{0.0, 0.0}, QJsonArray{1.0, 0.0},
+                               QJsonArray{1.0, 1.0}, QJsonArray{0.0, 1.0}}}};
+    d.wrapSource = [](std::unique_ptr<MediaSource> inner, const QJsonObject &p)
+        -> std::unique_ptr<MediaSource> {
+        return std::make_unique<KeystoneSource>(std::move(inner), cornersFromParams(p));
+    };
+    d.editLabel = "Edit Corners";
+    d.editDialog = [](QWidget *parent, QJsonObject &params, const QImage &referenceFrame) {
+        PerspectiveSelectorWidget *sel = nullptr;
+        const bool ok = runEffectDialog(parent, "Keystone / Perspective",
+                                        [&](QDialog *dlg, QVBoxLayout *layout) {
+            sel = new PerspectiveSelectorWidget(dlg);
+            if (!referenceFrame.isNull()) sel->setFrame(referenceFrame);
+            sel->setCorners(cornersFromParams(params));
+            layout->addWidget(sel);
+            auto *reset = new QPushButton("Reset Corners");
+            QObject::connect(reset, &QPushButton::clicked, sel,
+                             [sel] { sel->resetCorners(); });
+            layout->addWidget(reset);
+        });
+        if (!ok) return false;
+        params["corners"] = pointsToArray(sel->corners());
+        return true;
+    };
+    return d;
+}
+
+// ── Polygonal masking (decorator) ────────────────────────────────────────────
+ProcessEffectDescriptor makePolygonMask() {
+    ProcessEffectDescriptor d;
+    d.id = 11;
+    d.name = "Poly Mask";
+    d.menuLabel = "Polygonal Masking";
+    d.isDecorator = true;
+    d.defaultParams = QJsonObject{{"points", QJsonArray{}}, {"invert", false}};
+    d.wrapSource = [](std::unique_ptr<MediaSource> inner, const QJsonObject &p)
+        -> std::unique_ptr<MediaSource> {
+        return std::make_unique<PolygonMaskSource>(std::move(inner),
+                                                   pointsFromArray(p["points"].toArray()),
+                                                   p["invert"].toBool(false));
+    };
+    d.editLabel = "Edit Mask";
+    d.editDialog = [](QWidget *parent, QJsonObject &params, const QImage &referenceFrame) {
+        PolygonSelectorWidget *sel = nullptr;
+        QCheckBox *invert = nullptr;
+        const bool ok = runEffectDialog(parent, "Polygonal Masking",
+                                        [&](QDialog *dlg, QVBoxLayout *layout) {
+            sel = new PolygonSelectorWidget(dlg);
+            if (!referenceFrame.isNull()) sel->setFrame(referenceFrame);
+            sel->setPoints(pointsFromArray(params["points"].toArray()));
+            layout->addWidget(sel);
+            auto *row = new QHBoxLayout;
+            invert = new QCheckBox("Mask outside (invert)");
+            invert->setChecked(params["invert"].toBool(false));
+            auto *clear = new QPushButton("Clear Points");
+            QObject::connect(clear, &QPushButton::clicked, sel,
+                             [sel] { sel->clearPoints(); });
+            row->addWidget(invert);
+            row->addStretch();
+            row->addWidget(clear);
+            layout->addLayout(row);
+        });
+        if (!ok) return false;
+        params["points"] = pointsToArray(sel->points());
+        params["invert"] = invert->isChecked();
+        return true;
+    };
+    return d;
+}
+
 } // namespace
 
 namespace ProcessEffects {
 
 const QVector<ProcessEffectDescriptor> &all() {
     static const QVector<ProcessEffectDescriptor> registry{
-        makeCrop(), makeFlipH(), makeFlipV(), makeSegment()};
+        makeCrop(), makeFlipH(), makeFlipV(), makeSegment(),
+        makeFlip(), makeRotate(), makeOpacity(), makeChromaKey(),
+        makeBlur(), makeSharpen(), makeKeystone(), makePolygonMask()};
     return registry;
 }
 

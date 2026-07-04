@@ -163,6 +163,7 @@ set(SOURCES
     src/core/project/AssetPathResolver.cpp
     src/core/project/ProjectPackager.cpp
     src/core/sources/ShaderSource.cpp
+    src/core/sources/EffectSources.cpp
     src/core/sources/HtmlSource.cpp
     src/core/sources/HtmlWorkspace.cpp
     src/core/sources/TextSource.cpp
@@ -187,6 +188,8 @@ set(SOURCES
     src/ui/common/AssetLibrary.cpp
     src/ui/nodes/ClipEditDialog.cpp
     src/ui/canvas/CropSelectorWidget.cpp
+    src/ui/canvas/PerspectiveSelectorWidget.cpp
+    src/ui/canvas/PolygonSelectorWidget.cpp
     src/ui/canvas/TransformCanvasWidget.cpp
     src/ui/canvas/TransformEditorDialog.cpp
     src/ui/output/OutputWindow.cpp
@@ -270,6 +273,7 @@ set(HEADERS
     include/core/project/AssetPathResolver.h
     include/core/project/ProjectPackager.h
     include/core/sources/ShaderSource.h
+    include/core/sources/EffectSources.h
     include/core/sources/HtmlSource.h
     include/core/sources/HtmlWorkspace.h
     include/core/sources/TextSource.h
@@ -296,6 +300,8 @@ set(HEADERS
     include/ui/nodes/ClipEditDialog.h
     include/ui/canvas/CanvasGeometry.h
     include/ui/canvas/CropSelectorWidget.h
+    include/ui/canvas/PerspectiveSelectorWidget.h
+    include/ui/canvas/PolygonSelectorWidget.h
     include/ui/canvas/TransformCanvasWidget.h
     include/ui/canvas/TransformEditorDialog.h
     include/ui/output/OutputWindow.h
