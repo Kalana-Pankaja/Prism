@@ -106,6 +106,28 @@ modules:
         url: https://www.lua.org/ftp/lua-5.4.8.tar.gz
         sha256: 4f18ddae154e793e46eeab727c59ef1c0c0c2b744e7b94219710d76f530629ae
 
+  # Pre-built CPU inference build; Prism links against it for the Remove Background
+  # process node (MediaPipe selfie-segmentation via ONNX Runtime).
+  - name: onnxruntime
+    buildsystem: simple
+    build-commands:
+      - install -d ${FLATPAK_DEST}/include ${FLATPAK_DEST}/lib
+      - cp -a include/. ${FLATPAK_DEST}/include/
+      - cp -a lib/. ${FLATPAK_DEST}/lib/
+    sources:
+      - type: archive
+        url: https://github.com/microsoft/onnxruntime/releases/download/v1.27.0/onnxruntime-linux-x64-1.27.0.tgz
+        sha256: 547e40a48f1fe73e3f812d7c88a948612c23f896b91e4e2ee1e232d7b468246f
+        strip-components: 1
+        only-arches:
+          - x86_64
+      - type: archive
+        url: https://github.com/microsoft/onnxruntime/releases/download/v1.27.0/onnxruntime-linux-aarch64-1.27.0.tgz
+        sha256: 3e4d83ac06924a32a07b6d7f91ce6f852876153fc0bbdf931bf517a140bfbe48
+        strip-components: 1
+        only-arches:
+          - aarch64
+
   - name: Prism
     buildsystem: cmake-ninja
     builddir: true
@@ -114,6 +136,8 @@ modules:
       - -DPRISM_WITH_NDI=OFF
       - -DPRISM_WITH_LUA=ON
       - -DPRISM_WITH_WEBRTC=ON
+      - -DPRISM_WITH_SEGMENTATION=ON
+      - -DONNXRUNTIME_ROOT=/app
       - -DCMAKE_POLICY_VERSION_MINIMUM=3.5
       # sol2 and libdatachannel are still consumed via CMake FetchContent, but
       # their sources are vendored below and pointed at with FETCHCONTENT_SOURCE_DIR

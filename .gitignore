@@ -62,3 +62,4 @@ flatpak/build-dir/
 flatpak/repo/
 flatpak/dist/
 flatpak/.flatpak-builder/
+repo/
