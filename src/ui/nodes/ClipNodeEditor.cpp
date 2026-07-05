@@ -949,7 +949,8 @@ private:
 class OutputNodeItem : public NodeItemBase {
 public:
     static constexpr qreal OUT_W = 116.0;
-    static constexpr qreal OUT_H = 60.0;
+    static constexpr qreal OUT_H = 78.0;
+    static constexpr qreal OUT_BODY_H = 52.0;
 
     explicit OutputNodeItem(NodeId id)
         : m_nodeId(id)
@@ -957,16 +958,22 @@ public:
         setFlags(ItemIsMovable | ItemSendsGeometryChanges | ItemIsSelectable);
         setZValue(0);
         m_chainInPort = new PortItem(PortKind::ChainIn, this);
-        m_chainInPort->setPos(0, OUT_H * 0.33);
+        m_chainInPort->setPos(0, OUT_BODY_H * 0.33);
         m_abInPort = new PortItem(PortKind::AbIn, this);
-        m_abInPort->setPos(0, OUT_H * 0.67);
+        m_abInPort->setPos(0, OUT_BODY_H * 0.67);
     }
+
+    std::function<void()> onOpenOutputWindow;
 
     NodeId nodeId() const override { return m_nodeId; }
     PortItem *chainInPort() const { return m_chainInPort; }
     PortItem *abInPort()    const { return m_abInPort; }
 
     QRectF boundingRect() const override { return QRectF(0, 0, OUT_W, OUT_H); }
+
+    QRectF openWindowButtonRect() const {
+        return QRectF(4, OUT_H - 24, OUT_W - 8, 20);
+    }
 
     void paint(QPainter *p, const QStyleOptionGraphicsItem *, QWidget *) override {
         p->setRenderHint(QPainter::Antialiasing);
@@ -975,20 +982,37 @@ public:
         p->drawRoundedRect(QRectF(0, 0, OUT_W, OUT_H), 5, 5);
 
         p->setPen(QColor(150, 200, 240));
-        p->setFont(QFont("Monospace", 10, QFont::Bold));
-        p->drawText(QRectF(0, 0, OUT_W, OUT_H), Qt::AlignCenter, "OUTPUT");
+        p->setFont(QFont("Monospace", 9, QFont::Bold));
+        p->drawText(QRectF(0, 2, OUT_W, 16), Qt::AlignCenter, "OUTPUT");
 
         p->setPen(QColor(90, 150, 200));
         p->setFont(QFont("Monospace", 6));
-        p->drawText(QRectF(14, OUT_H * 0.33 - 6, 60, 12), Qt::AlignVCenter | Qt::AlignLeft, "video");
+        p->drawText(QRectF(14, OUT_BODY_H * 0.33 - 6, 60, 12), Qt::AlignVCenter | Qt::AlignLeft, "video");
         p->setPen(QColor(220, 110, 110));
-        p->drawText(QRectF(14, OUT_H * 0.67 - 6, 60, 12), Qt::AlignVCenter | Qt::AlignLeft, "A/B");
+        p->drawText(QRectF(14, OUT_BODY_H * 0.67 - 6, 60, 12), Qt::AlignVCenter | Qt::AlignLeft, "A/B");
+
+        const QRectF btnRect = openWindowButtonRect();
+        p->setPen(QPen(QColor(90, 150, 200), 1));
+        p->setBrush(QColor(35, 50, 65));
+        p->drawRoundedRect(btnRect, 3, 3);
+        p->setPen(QColor(150, 200, 240));
+        p->setFont(QFont("Monospace", 7));
+        p->drawText(btnRect, Qt::AlignCenter, "Open");
 
         if (isSelected()) {
             p->setPen(QPen(kSelectionAccent, 2));
             p->setBrush(Qt::NoBrush);
             p->drawRoundedRect(QRectF(0, 0, OUT_W, OUT_H).adjusted(1, 1, -1, -1), 5, 5);
         }
+    }
+
+    void mousePressEvent(QGraphicsSceneMouseEvent *e) override {
+        if (openWindowButtonRect().contains(e->pos())) {
+            if (onOpenOutputWindow) onOpenOutputWindow();
+            e->accept();
+            return;
+        }
+        QGraphicsItem::mousePressEvent(e);
     }
 
 protected:
@@ -2528,10 +2552,15 @@ ClipNodeScene *ClipNodeEditor::sceneForNode(NodeId id) const {
     return m_scene;
 }
 
+static void wireOutputWindowCallback(OutputNodeItem *item, const std::function<void()> &cb) {
+    if (item) item->onOpenOutputWindow = cb;
+}
+
 void ClipNodeEditor::ensureOutputNode() {
     if (m_outputNode != 0) return;
     const NodeId id = m_nextId++;
     auto *out = new OutputNodeItem(id);
+    wireOutputWindowCallback(out, [this]() { emit outputWindowRequested(); });
     out->setPos(360, 40);
     m_scene->addItem(out);
     m_outputNode = id;
@@ -3682,6 +3711,7 @@ void ClipNodeEditor::restoreState(const QJsonObject &state) {
         const NodeId oid = (NodeId)obj["id"].toInteger();
         m_nextId = oid;
         auto *out = new OutputNodeItem(m_nextId++);
+        wireOutputWindowCallback(out, [this]() { emit outputWindowRequested(); });
         out->setPos(obj["posX"].toDouble(), obj["posY"].toDouble());
         m_scene->addItem(out);
         m_outputNode = oid;

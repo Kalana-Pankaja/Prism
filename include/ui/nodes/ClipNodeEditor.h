@@ -168,6 +168,7 @@ signals:
     void audioGraphChanged();
     void audioControllerChanged(NodeId clipId);
     void addInputNodeRequested();
+    void outputWindowRequested();
 
 private slots:
     void onNodeRemoveRequested(NodeId nodeId);

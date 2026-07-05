@@ -29,11 +29,13 @@ void OutputWindow::setRecordingActive(bool active) {
 }
 
 void OutputWindow::setStayOnTop(bool on) {
+    const bool wasVisible = isVisible();
     Qt::WindowFlags flags = Qt::Window | Qt::FramelessWindowHint;
     if (on)
         flags |= Qt::WindowStaysOnTopHint;
     setWindowFlags(flags);
-    show();
+    if (wasVisible)
+        show();
 }
 
 VideoWidget *OutputWindow::videoWidget() const {

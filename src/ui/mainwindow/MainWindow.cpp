@@ -102,7 +102,6 @@ MainWindow::MainWindow(QWidget *parent)
     const RecordingOptions recOpts = RecordingSettingsDialog::loadSavedOptions();
 
     m_outputWindow = new OutputWindow();
-    m_outputWindow->show();
 
     setupPreviewSplitters();
     setupRecordingStatusBar();
@@ -402,11 +401,7 @@ void MainWindow::setupConnections() {
 
     // Output menu
     connect(ui->actionSetOutputResolution, &QAction::triggered, this, &MainWindow::onSetOutputResolution);
-    connect(ui->actionShowOutput, &QAction::triggered, this, [this]() {
-        m_outputWindow->show();
-        m_outputWindow->raise();
-        m_outputWindow->activateWindow();
-    });
+    connect(ui->actionShowOutput, &QAction::triggered, this, &MainWindow::showOutputWindow);
     connect(ui->actionShowPreview, &QAction::triggered, this, [this]() {
         for (const auto &mirror : m_outputHub->mirrorOutputs()) {
             if (mirror) {
@@ -524,6 +519,8 @@ void MainWindow::setupConnections() {
     });
 
     // ClipNodeEditor signals
+    connect(m_clipNodeEditor, &ClipNodeEditor::outputWindowRequested,
+            this, &MainWindow::showOutputWindow);
     connect(m_clipNodeEditor, &ClipNodeEditor::clipChainChanged,
             this, &MainWindow::pushDecks);
     connect(m_clipNodeEditor, &ClipNodeEditor::addInputNodeRequested,
@@ -1863,4 +1860,12 @@ void MainWindow::showRecordingPanel() {
     m_recordingPanel->raise();
     m_recordingPanel->activateWindow();
     m_recordingPanel->syncFromHub();
+}
+
+void MainWindow::showOutputWindow() {
+    if (!m_outputWindow)
+        return;
+    m_outputWindow->show();
+    m_outputWindow->raise();
+    m_outputWindow->activateWindow();
 }

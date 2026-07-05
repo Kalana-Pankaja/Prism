@@ -157,6 +157,7 @@ private:
     void shutdownLivePipeline();
     void onRecordingPanel();
     void showRecordingPanel();
+    void showOutputWindow();
 
     void syncPanicButtons(QPushButton *activeBtn);
     void applyPanicFromButtons();
