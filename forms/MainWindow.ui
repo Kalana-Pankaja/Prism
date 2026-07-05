@@ -910,7 +910,7 @@ Split 4-Corner: split into 4 quadrants sliding outwards
    </widget>
    <widget class="QMenu" name="menuAddElement">
     <property name="title">
-     <string>Add Element</string>
+     <string>Add</string>
     </property>
    </widget>
    <widget class="QMenu" name="menuOutput">

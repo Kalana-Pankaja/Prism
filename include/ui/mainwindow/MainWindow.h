@@ -134,6 +134,7 @@ private:
     QLabel          *m_recPathLabel    = nullptr;
     QString          m_baseWindowTitle;
     bool             m_shuttingDown = false;
+    bool             m_outputWindowUserPlaced = false;
 
     // ── Helpers ───────────────────────────────────────────────────────────────
     void setupConnections();
@@ -151,7 +152,8 @@ private:
     QJsonObject currentSessionJson(const QString &sessionFilePath) const;
     void addElementNode(const SourceDescriptor &desc, const QPixmap &thumb);
     void addSourceOfKind(SourceDescriptor::Kind kind);
-    void setupAddElementMenu(QMenu *menu);
+    void setupAddMenu(QMenu *menu);
+    void setupSourceMenu(QMenu *menu);
     void setupRecordingStatusBar();
     void updateRecordingUi(qint64 elapsedMs = -1);
     void shutdownLivePipeline();

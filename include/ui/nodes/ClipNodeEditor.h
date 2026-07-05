@@ -8,6 +8,7 @@
 #include <QJsonObject>
 #include <QJsonArray>
 #include <QPixmap>
+#include <QPoint>
 #include <QRectF>
 #include "core/sources/SourceDescriptor.h"
 #include "core/scripting/ScriptOutput.h"
@@ -138,6 +139,8 @@ public:
     void setLayerSlotVisible(NodeId layerId, int index, bool visible);
     bool layerCanvasSize(NodeId layerId, int &w, int &h) const;
     void setLayerCanvasSize(NodeId layerId, int w, int h);
+
+    void populateAddNodeMenu(QMenu *menu);
 
     // ── Output-node querying ─────────────────────────────────────────────────
     NodeId outputNodeId() const { return m_outputNode; }

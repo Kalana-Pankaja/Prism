@@ -102,6 +102,11 @@ MainWindow::MainWindow(QWidget *parent)
     const RecordingOptions recOpts = RecordingSettingsDialog::loadSavedOptions();
 
     m_outputWindow = new OutputWindow();
+    // QOpenGLWidget needs a shown native window before textures can be uploaded.
+    // Keep the monitor off-screen until the user opens it from the Output node.
+    m_outputWindow->move(-30000, -30000);
+    m_outputWindow->show();
+    QCoreApplication::processEvents();
 
     setupPreviewSplitters();
     setupRecordingStatusBar();
@@ -149,8 +154,6 @@ MainWindow::MainWindow(QWidget *parent)
 #endif
     }
 
-    setupAddElementMenu(ui->menuAddElement);
-
     // ── Asset library + node editor (left sidebar + canvas) ───────────────────
     m_assetLibrary = new AssetLibrary(&clipManager);
     m_assetLibrary->setMinimumWidth(160);
@@ -194,6 +197,7 @@ MainWindow::MainWindow(QWidget *parent)
     m_remoteServer = new RemoteControlServer(this, m_transitionCtrl, ui->crossfaderSlider, this);
 
     setupConnections();
+    setupAddMenu(ui->menuAddElement);
     applyTheme();
 
     // Prime Qt Multimedia backend.
@@ -526,7 +530,7 @@ void MainWindow::setupConnections() {
     connect(m_clipNodeEditor, &ClipNodeEditor::addInputNodeRequested,
             this, [this]() {
         QMenu menu(this);
-        setupAddElementMenu(&menu);
+        setupSourceMenu(&menu);
         menu.exec(QCursor::pos());
     });
     // Hotkeys follow the A/B switcher inputs, which change with the wiring.
@@ -754,7 +758,7 @@ void MainWindow::addSourceOfKind(SourceDescriptor::Kind kind) {
         addElementNode(desc, thumb);
 }
 
-void MainWindow::setupAddElementMenu(QMenu *menu) {
+void MainWindow::setupSourceMenu(QMenu *menu) {
     if (!menu) return;
     SourcePrompt::buildMenu(menu,
                             [this]() { onAddFilesClicked(); },
@@ -766,6 +770,14 @@ void MainWindow::setupAddElementMenu(QMenu *menu) {
 #else
                             false);
 #endif
+}
+
+void MainWindow::setupAddMenu(QMenu *menu) {
+    if (!menu) return;
+    setupSourceMenu(menu);
+    if (!m_clipNodeEditor) return;
+    menu->addSeparator();
+    m_clipNodeEditor->populateAddNodeMenu(menu);
 }
 
 // ── Node deck assignment ──────────────────────────────────────────────────────
@@ -1865,7 +1877,13 @@ void MainWindow::showRecordingPanel() {
 void MainWindow::showOutputWindow() {
     if (!m_outputWindow)
         return;
+    if (!m_outputWindowUserPlaced) {
+        m_outputWindow->move(100, 100);
+        m_outputWindow->resize(800, 600);
+        m_outputWindowUserPlaced = true;
+    }
     m_outputWindow->show();
     m_outputWindow->raise();
     m_outputWindow->activateWindow();
+    pushDecks();
 }

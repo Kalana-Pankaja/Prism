@@ -680,6 +680,10 @@ void VideoWidget::loadSourceInternal(const QString &filePath,
 
     target = std::move(source);
 
+    if (!isValid()) {
+        update();
+        return;
+    }
     makeCurrent();
     setupTextureGL(tex, target->frameSize());
     target->nextFrame();                     // prime first frame (no-op for images)
@@ -701,17 +705,19 @@ void VideoWidget::setSourceA(std::unique_ptr<MediaSource> source) {
     m_clockDirtyA = true;
     m_sourceA  = std::move(source);
     if (!m_sourceA) return;
-    makeCurrent();
-    // frameSize() may be (0,0) for async sources like Camera; uploadSourceFrameGL
-    // handles resizing the texture when the first real frame arrives.
-    setupTextureGL(m_textureA, m_sourceA->frameSize());
-    if (m_sourceA->nextFrame()) {
-        // nextFrame() may switch GL contexts internally (e.g. DynamicInterfaceSource
-        // creates its own context for offscreen QML rendering). Re-assert ours.
+    if (isValid()) {
         makeCurrent();
-        uploadSourceFrameGL(m_textureA, m_sourceA.get());
+        // frameSize() may be (0,0) for async sources like Camera; uploadSourceFrameGL
+        // handles resizing the texture when the first real frame arrives.
+        setupTextureGL(m_textureA, m_sourceA->frameSize());
+        if (m_sourceA->nextFrame()) {
+            // nextFrame() may switch GL contexts internally (e.g. DynamicInterfaceSource
+            // creates its own context for offscreen QML rendering). Re-assert ours.
+            makeCurrent();
+            uploadSourceFrameGL(m_textureA, m_sourceA.get());
+        }
+        doneCurrent();
     }
-    doneCurrent();
     // Live sources deliver frames continuously via the frame timer.
     const auto t = m_sourceA->type();
     m_playingA = (t == MediaSource::Type::Camera    ||
@@ -729,13 +735,15 @@ void VideoWidget::setSourceB(std::unique_ptr<MediaSource> source) {
     m_clockDirtyB = true;
     m_sourceB  = std::move(source);
     if (!m_sourceB) return;
-    makeCurrent();
-    setupTextureGL(m_textureB, m_sourceB->frameSize());
-    if (m_sourceB->nextFrame()) {
+    if (isValid()) {
         makeCurrent();
-        uploadSourceFrameGL(m_textureB, m_sourceB.get());
+        setupTextureGL(m_textureB, m_sourceB->frameSize());
+        if (m_sourceB->nextFrame()) {
+            makeCurrent();
+            uploadSourceFrameGL(m_textureB, m_sourceB.get());
+        }
+        doneCurrent();
     }
-    doneCurrent();
     const auto t = m_sourceB->type();
     m_playingB = (t == MediaSource::Type::Camera    ||
                   t == MediaSource::Type::Screen     ||
