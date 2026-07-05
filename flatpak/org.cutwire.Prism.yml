@@ -13,27 +13,19 @@ finish-args:
   - --socket=wayland
   - --socket=pulseaudio
   - --share=network
-  - --filesystem=xdg-run/pipewire-0
   # Webcam capture and v4l2 virtual-camera output need raw /dev/video* access,
   # which the camera portal cannot provide; --device=dri covers GPU rendering.
   - --device=all
-  # No blanket --filesystem=home: files the user opens/saves come through the
+  # No blanket --filesystem=home: files the user opens come through the
   # xdg-desktop-portal FileChooser (QFileDialog uses it automatically in the
-  # sandbox), so only explicitly picked files/folders are exposed. The standard
-  # media dirs are granted directly because default recording/snapshot output
-  # (~/Videos, ~/Pictures) and the asset library live there; the rest of $HOME
-  # (Documents, .ssh, .config, ...) stays private.
+  # sandbox), so only explicitly picked files/folders are exposed. Only the two
+  # default output dirs are granted directly, because recordings go to ~/Videos
+  # (MoviesLocation) and snapshots to ~/Pictures (PicturesLocation) without a
+  # picker; the rest of $HOME (Music, Downloads, Documents, .config, ...) stays
+  # private and is reached only through the portal.
   - --filesystem=xdg-videos
   - --filesystem=xdg-pictures
-  - --filesystem=xdg-music:ro
-  - --filesystem=xdg-download:ro
   - --env=QTWEBENGINEPROCESS_PATH=/app/bin/QtWebEngineProcess
-
-add-extensions:
-  org.freedesktop.Platform.GStreamer:
-    version: '25.08'
-    directory: lib/extensions/gstreamer-1.0
-    subdirectories: true
 
 cleanup:
   - /include
@@ -147,18 +139,6 @@ modules:
       - -DFETCHCONTENT_SOURCE_DIR_LIBDATACHANNEL=/run/build/Prism/vendor/libdatachannel
     build-options:
       prepend-pkg-config-path: /app/lib/pkgconfig
-    post-install:
-      # builddir:true runs these from _flatpak_build/, so reach back to the source root.
-      - install -Dm644 ../flatpak/org.cutwire.Prism.desktop /app/share/applications/org.cutwire.Prism.desktop
-      - install -Dm644 ../flatpak/org.cutwire.Prism.metainfo.xml /app/share/metainfo/org.cutwire.Prism.metainfo.xml
-      # Install hicolor sizes up to 512px. appstreamcli compose needs a standard
-      # raster size (<=256px) to embed, and flatpak build-export rejects icons
-      # larger than 512x512 — so the 1024px source is intentionally not shipped.
-      - |
-        for s in 64 128 256 512; do
-          install -Dm644 "../flatpak/share/icons/hicolor/${s}x${s}/apps/org.cutwire.Prism.png" \
-            "/app/share/icons/hicolor/${s}x${s}/apps/org.cutwire.Prism.png"
-        done
     sources:
       - type: dir
         path: ..
