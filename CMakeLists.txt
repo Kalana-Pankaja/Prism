@@ -519,7 +519,12 @@ if(APPLE)
         MACOSX_BUNDLE_INFO_PLIST
             "${CMAKE_CURRENT_SOURCE_DIR}/resources/macos/Info.plist.in")
 else()
-    qt_add_executable(Prism src/main.cpp)
+    if(WIN32)
+        set(_prism_win_rc "${CMAKE_CURRENT_SOURCE_DIR}/resources/windows/Prism.rc")
+        qt_add_executable(Prism src/main.cpp ${_prism_win_rc})
+    else()
+        qt_add_executable(Prism src/main.cpp)
+    endif()
 endif()
 
 target_link_libraries(Prism PRIVATE prism_core)

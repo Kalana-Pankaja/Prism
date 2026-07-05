@@ -44,12 +44,19 @@ int main(int argc, char *argv[]) {
     QApplication app(argc, argv);
     app.setOrganizationName("Prism");
     app.setApplicationName("Prism");
+    // Resources must be registered before using :/ icons (Windows has no theme icon).
+    Q_INIT_RESOURCE(resources);
     // Wayland compositors resolve the window icon by matching the surface's
     // app_id to an installed .desktop file. Qt derives app_id from the desktop
     // file name, so this must equal the installed org.cutwire.Prism.desktop or
     // the window falls back to the generic icon. setWindowIcon covers X11.
     app.setDesktopFileName(QStringLiteral("org.cutwire.Prism"));
-    app.setWindowIcon(QIcon::fromTheme(QStringLiteral("org.cutwire.Prism")));
+    {
+        QIcon appIcon = QIcon::fromTheme(QStringLiteral("org.cutwire.Prism"));
+        if (appIcon.isNull())
+            appIcon = QIcon(QStringLiteral(":/Prism_icon.png"));
+        app.setWindowIcon(appIcon);
+    }
     app.setStyle("fusion");
 
     // Initialize and show custom splash screen
@@ -63,7 +70,6 @@ int main(int argc, char *argv[]) {
     // :/… paths (shaders, HTML presets, Lua examples, etc.) resolve at runtime.
     splash.setProgress(45, "Loading Material Symbols & resources...");
     app.processEvents();
-    Q_INIT_RESOURCE(resources);
     MaterialSymbols::init();
     QThread::msleep(150);
 
