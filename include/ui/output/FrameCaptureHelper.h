@@ -24,8 +24,10 @@ public:
     };
 
     static QImage frameFromSource(const MediaSource *source);
-    static QString capturesDirectory();
-    static QString savePng(const QImage &image, const QString &baseName);
+    /// PNG captures are written to a "Captures" subfolder of \a baseDir (the
+    /// user-chosen recording output folder).
+    static QString capturesDirectory(const QString &baseDir);
+    static QString savePng(const QImage &image, const QString &baseName, const QString &baseDir);
 
     static QList<LayerRef> enumerateLayers(VideoWidget     *output,
                                            ClipNodeEditor  *editor,

@@ -347,6 +347,14 @@ RecordingOptions RecordingSettingsDialog::loadSavedOptions() {
     return opts;
 }
 
+bool RecordingSettingsDialog::hasChosenOutputDir() {
+    QSettings settings;
+    settings.beginGroup(QLatin1String(kSettingsGroup));
+    const bool has = settings.contains(QLatin1String(kOutputDirKey));
+    settings.endGroup();
+    return has;
+}
+
 void RecordingSettingsDialog::saveOutputDir(const QString &dir) {
     QSettings settings;
     settings.beginGroup(QLatin1String(kSettingsGroup));

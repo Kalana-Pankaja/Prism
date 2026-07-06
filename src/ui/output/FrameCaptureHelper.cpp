@@ -8,7 +8,6 @@
 #include <QDir>
 #include <QFileInfo>
 #include <QRegularExpression>
-#include <QStandardPaths>
 
 QImage FrameCaptureHelper::frameFromSource(const MediaSource *source) {
     if (!source || !source->isReady())
@@ -27,16 +26,13 @@ QImage FrameCaptureHelper::frameFromSource(const MediaSource *source) {
                   source->frameBytesPerLine(), QImage::Format_RGB888).copy();
 }
 
-QString FrameCaptureHelper::capturesDirectory() {
-    QString dir = QStandardPaths::writableLocation(QStandardPaths::PicturesLocation);
-    if (dir.isEmpty())
-        dir = QStandardPaths::writableLocation(QStandardPaths::HomeLocation);
-    dir = QDir(dir).filePath(QStringLiteral("Prism/Captures"));
+QString FrameCaptureHelper::capturesDirectory(const QString &baseDir) {
+    const QString dir = QDir(baseDir).filePath(QStringLiteral("Captures"));
     QDir().mkpath(dir);
     return dir;
 }
 
-QString FrameCaptureHelper::savePng(const QImage &image, const QString &baseName) {
+QString FrameCaptureHelper::savePng(const QImage &image, const QString &baseName, const QString &baseDir) {
     if (image.isNull())
         return {};
 
@@ -46,7 +42,7 @@ QString FrameCaptureHelper::savePng(const QImage &image, const QString &baseName
         safe = QStringLiteral("capture");
 
     const QString stamp = QDateTime::currentDateTime().toString(QStringLiteral("yyyy-MM-dd_HH-mm-ss"));
-    const QString path  = QDir(capturesDirectory()).filePath(stamp + QStringLiteral("_") + safe + QStringLiteral(".png"));
+    const QString path  = QDir(capturesDirectory(baseDir)).filePath(stamp + QStringLiteral("_") + safe + QStringLiteral(".png"));
 
     QImage rgba = image;
     if (rgba.format() != QImage::Format_RGBA8888)

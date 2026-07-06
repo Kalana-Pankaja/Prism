@@ -159,6 +159,9 @@ private:
     void shutdownLivePipeline();
     void onRecordingPanel();
     void showRecordingPanel();
+    // Ensures the user has picked a folder for recordings/captures, prompting
+    // once if not. Returns the chosen folder, or empty if the user cancelled.
+    QString ensureOutputDir();
     void showOutputWindow();
 
     void syncPanicButtons(QPushButton *activeBtn);

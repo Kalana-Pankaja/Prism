@@ -24,6 +24,8 @@ public:
 
     static RecordingOptions loadSavedOptions();
     static void saveOutputDir(const QString &dir);
+    /// True once the user has explicitly picked an output folder.
+    static bool hasChosenOutputDir();
 
 private slots:
     void refreshTrackUi();

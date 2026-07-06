@@ -39,6 +39,7 @@
 #include <QShortcut>
 #include <QKeySequence>
 #include <QFileDialog>
+#include <QStandardPaths>
 #include <QTimer>
 #include <QDebug>
 #include <QDragEnterEvent>
@@ -1561,7 +1562,7 @@ void MainWindow::onFreezeFrameCapture() {
     for (const auto &layer : layers)
         layerCombo->addItem(layer.label);
 
-    auto *saveCheck = new QCheckBox(tr("Save PNG to Pictures/Prism/Captures"), &dlg);
+    auto *saveCheck = new QCheckBox(tr("Save PNG to the Captures folder"), &dlg);
     saveCheck->setChecked(true);
     auto *addCheck = new QCheckBox(tr("Add captured frame as a new image element"), &dlg);
     addCheck->setChecked(false);
@@ -1599,12 +1600,18 @@ void MainWindow::onFreezeFrameCapture() {
 
     QString savedPath;
     if (saveCheck->isChecked() || addCheck->isChecked()) {
-        savedPath = FrameCaptureHelper::savePng(frame, layer.label);
-        if (savedPath.isEmpty()) {
-            QMessageBox::warning(this, tr("Freeze Frame Capture"),
-                                 tr("Captured the frame but could not save it to disk."));
+        const QString baseDir = ensureOutputDir();
+        if (baseDir.isEmpty()) {
             if (!holdCheck->isChecked())
                 return;
+        } else {
+            savedPath = FrameCaptureHelper::savePng(frame, layer.label, baseDir);
+            if (savedPath.isEmpty()) {
+                QMessageBox::warning(this, tr("Freeze Frame Capture"),
+                                     tr("Captured the frame but could not save it to disk."));
+                if (!holdCheck->isChecked())
+                    return;
+            }
         }
     }
 
@@ -1865,7 +1872,33 @@ void MainWindow::onRecordingPanel() {
     showRecordingPanel();
 }
 
+QString MainWindow::ensureOutputDir() {
+    if (!RecordingSettingsDialog::hasChosenOutputDir()) {
+        QMessageBox box(this);
+        box.setIcon(QMessageBox::Warning);
+        box.setWindowTitle(tr("Save Location Not Set"));
+        box.setText(tr("No save location is set for recordings and captures."));
+        box.setInformativeText(tr("Choose a folder before you can record or capture."));
+        QPushButton *setBtn = box.addButton(tr("Set Location…"), QMessageBox::AcceptRole);
+        box.addButton(QMessageBox::Cancel);
+        box.exec();
+        if (box.clickedButton() != setBtn)
+            return {};
+
+        const QString dir = QFileDialog::getExistingDirectory(
+            this, tr("Choose a folder to save recordings and captures"),
+            QStandardPaths::writableLocation(QStandardPaths::MoviesLocation));
+        if (dir.isEmpty())
+            return {};
+        RecordingSettingsDialog::saveOutputDir(dir);
+    }
+    return RecordingSettingsDialog::loadSavedOptions().effectiveOutputDir();
+}
+
 void MainWindow::showRecordingPanel() {
+    if (ensureOutputDir().isEmpty())
+        return;
+
     if (!m_recordingPanel) {
         m_recordingPanel = new RecordingSettingsDialog(m_outputHub, m_clipNodeEditor, this);
         m_recordingPanel->setAttribute(Qt::WA_DeleteOnClose);
