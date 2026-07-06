@@ -157,7 +157,7 @@ public:
     bool layerCanvasSize(NodeId layerId, int &w, int &h) const;
     void setLayerCanvasSize(NodeId layerId, int w, int h);
 
-    void populateAddNodeMenu(QMenu *menu);
+    void populateAddNodeMenu(QMenu *menu, bool includeInputNode = false);
     void addMicInputAtCursor();
 
     // ── Output-node querying ─────────────────────────────────────────────────

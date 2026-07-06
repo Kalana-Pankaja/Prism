@@ -3857,36 +3857,44 @@ void ClipNodeEditor::wireTextScriptBinding(ClipNodeModel *model, NodeId id) {
 
 void ClipNodeEditor::onCanvasContextMenu() {
     QMenu menu;
-    const QPoint pos = QCursor::pos();
-    menu.addAction("Add Input Node…", this, [this]() { emit addInputNodeRequested(); });
-    populateAddNodeMenu(&menu);
-    menu.exec(pos);
+    populateAddNodeMenu(&menu, true);
+    menu.exec(QCursor::pos());
 }
 
-void ClipNodeEditor::populateAddNodeMenu(QMenu *menu) {
+void ClipNodeEditor::populateAddNodeMenu(QMenu *menu, bool includeInputNode) {
     if (!menu) return;
 
-    QMenu *proc = menu->addMenu("Add Process Node");
+    menu->addSection(QStringLiteral("Video"));
+    if (includeInputNode) {
+        menu->addAction(QStringLiteral("Add Input Node…"), this, [this]() {
+            emit addInputNodeRequested();
+        });
+    }
+
+    QMenu *proc = menu->addMenu(QStringLiteral("Add Process Node"));
     for (const ProcessEffectDescriptor &d : ProcessEffects::all()) {
         if (!d.available) continue;
         proc->addAction(d.menuLabel, this, [this, id = d.id]() { addProcessNodeAt(id, QCursor::pos()); });
     }
 
-    QMenu *sw = menu->addMenu("Add Switching Node");
-    sw->addAction("Layer", this, [this]() { addLayerNodeAt(QCursor::pos()); });
-    sw->addAction("A/B Deck Select", this, [this]() { addAbSelectNodeAt(QCursor::pos()); });
+    QMenu *sw = menu->addMenu(QStringLiteral("Add Switching Node"));
+    sw->addAction(QStringLiteral("Layer"), this, [this]() { addLayerNodeAt(QCursor::pos()); });
+    sw->addAction(QStringLiteral("A/B Deck Select"), this, [this]() { addAbSelectNodeAt(QCursor::pos()); });
 
-    QMenu *afx = menu->addMenu("Add Audio Effect Node");
+    menu->addSection(QStringLiteral("Audio"));
+
+    QMenu *afx = menu->addMenu(QStringLiteral("Add Audio Effect Node"));
     for (const AudioEffectDescriptor &d : AudioEffects::all()) {
         if (!d.available) continue;
         afx->addAction(d.menuLabel, this, [this, id = d.id]() { addAudioEffectNodeAt(id, QCursor::pos()); });
     }
 
-    menu->addSeparator();
-    menu->addAction("Add Audio Output", this, &ClipNodeEditor::onAddMasterAudioOutput);
-    menu->addAction("Add Audio Mixer", this, &ClipNodeEditor::onAddAudioMixer);
+    menu->addAction(QStringLiteral("Add Audio Output"), this, &ClipNodeEditor::onAddMasterAudioOutput);
+    menu->addAction(QStringLiteral("Add Audio Mixer"), this, &ClipNodeEditor::onAddAudioMixer);
+
 #ifdef PRISM_HAVE_LUA
-    menu->addAction("Add Script Node", this, &ClipNodeEditor::onAddScriptNode);
+    menu->addSection(QStringLiteral("Script"));
+    menu->addAction(QStringLiteral("Add Script Node"), this, &ClipNodeEditor::onAddScriptNode);
 #endif
 }
 
