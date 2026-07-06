@@ -46,6 +46,7 @@
 #include <QGraphicsSceneContextMenuEvent>
 #include <QSet>
 #include <QCheckBox>
+#include <QFrame>
 #include <functional>
 #include <cmath>
 #include <QObject>
@@ -3793,59 +3794,202 @@ void ClipNodeEditor::onEditMicInput(NodeId micId) {
     }
 }
 
+// OBS-style horizontal channel fader: a colored (green→yellow→red) level track
+// whose fill follows the volume, a dB-labelled ruler, and a draggable handle.
+// The underlying model stays linear percent (0-100).
+class MixerFader : public QWidget {
+public:
+    explicit MixerFader(int value, bool muted, QWidget *parent = nullptr)
+        : QWidget(parent), m_value(qBound(0, value, 100)), m_muted(muted) {
+        setFixedHeight(38);
+        setMinimumWidth(300);
+        setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+        setCursor(Qt::PointingHandCursor);
+    }
+
+    std::function<void(int)> onChanged;
+
+    int value() const { return m_value; }
+    void setMuted(bool m) { if (m_muted == m) return; m_muted = m; update(); }
+
+protected:
+    void paintEvent(QPaintEvent *) override {
+        QPainter p(this);
+        p.setRenderHint(QPainter::Antialiasing);
+
+        const QRectF track = trackRect();
+        const qreal fillW = track.width() * (m_value / 100.0);
+
+        // Ruler: dB ticks along the top edge of the track.
+        p.setFont(QFont("Monospace", 6));
+        static const int dbTicks[] = {-60, -48, -36, -24, -12, -6, 0};
+        for (int db : dbTicks) {
+            const qreal frac = dbToFrac(db);
+            const qreal x = track.left() + track.width() * frac;
+            p.setPen(QColor(120, 124, 132));
+            p.drawLine(QPointF(x, track.top() - 5), QPointF(x, track.top() - 2));
+            const QString lbl = db == 0 ? QStringLiteral("0") : QString::number(db);
+            const QRectF tr(x - 14, track.top() - 15, 28, 10);
+            p.drawText(tr, Qt::AlignHCenter | Qt::AlignBottom, lbl);
+        }
+
+        // Track background.
+        QPainterPath clip;
+        clip.addRoundedRect(track, 3, 3);
+        p.save();
+        p.setClipPath(clip);
+        p.fillRect(track, QColor(20, 22, 26));
+
+        // Colored meter gradient, revealed up to the current fill.
+        QLinearGradient grad(track.left(), 0, track.right(), 0);
+        grad.setColorAt(0.00, QColor(0x27, 0x9a, 0x3a));
+        grad.setColorAt(0.70, QColor(0x37, 0xc0, 0x46));
+        grad.setColorAt(0.72, QColor(0xd8, 0xa8, 0x1f));
+        grad.setColorAt(0.88, QColor(0xe0, 0x84, 0x1f));
+        grad.setColorAt(0.90, QColor(0xd8, 0x38, 0x30));
+        grad.setColorAt(1.00, QColor(0xb0, 0x22, 0x1c));
+        p.fillRect(QRectF(track.left(), track.top(), fillW, track.height()),
+                   m_muted ? QBrush(QColor(70, 72, 78)) : QBrush(grad));
+        p.restore();
+
+        p.setPen(QPen(QColor(52, 55, 62), 1));
+        p.setBrush(Qt::NoBrush);
+        p.drawRoundedRect(track, 3, 3);
+
+        // Handle.
+        const qreal hx = track.left() + fillW;
+        const QRectF handle(hx - 3, track.top() - 3, 6, track.height() + 6);
+        p.setPen(Qt::NoPen);
+        p.setBrush(m_muted ? QColor(150, 152, 158) : QColor(235, 238, 244));
+        p.drawRoundedRect(handle, 2, 2);
+    }
+
+    void mousePressEvent(QMouseEvent *e) override { setFromX(e->position().x()); }
+    void mouseMoveEvent(QMouseEvent *e) override {
+        if (e->buttons() & Qt::LeftButton) setFromX(e->position().x());
+    }
+
+private:
+    QRectF trackRect() const { return QRectF(6, 18, width() - 12, 12); }
+
+    // Map a dB value (-60..0) to a 0..1 track fraction matching the percent model,
+    // where 0 dB = 100% (unity). frac = 10^(dB/20).
+    static qreal dbToFrac(int db) { return std::pow(10.0, db / 20.0); }
+
+    void setFromX(qreal x) {
+        const QRectF track = trackRect();
+        int v = qRound((x - track.left()) / track.width() * 100.0);
+        v = qBound(0, v, 100);
+        if (v == m_value) return;
+        m_value = v;
+        if (onChanged) onChanged(v);
+        update();
+    }
+
+    int m_value;
+    bool m_muted;
+};
+
 void ClipNodeEditor::onEditAudioMixer(NodeId mixerId) {
     auto *mx = m_audioMixerNodes.value(mixerId);
     if (!mx) return;
 
     QDialog dialog(this);
     dialog.setWindowTitle(QStringLiteral("Audio Mixer"));
+    dialog.setMinimumWidth(420);
     auto *layout = new QVBoxLayout(&dialog);
+    layout->setSpacing(0);
 
-    QVector<QSlider *> sliders;
-    QVector<QCheckBox *> mutes;
+    QVector<MixerFader *> faders;
+    QVector<QToolButton *> mutes;
     QVector<QLineEdit *> names;
+
+    // dB readout matching the fader mapping: 100% -> 0 dB, 0% -> -inf.
+    auto dbText = [](int vol) -> QString {
+        if (vol <= 0) return QStringLiteral("-∞ dB");
+        return QStringLiteral("%1 dB")
+            .arg(20.0 * std::log10(vol / 100.0), 0, 'f', 1);
+    };
+
     for (int i = 0; i < mx->connectedCount(); ++i) {
         const MixerSlot &s = mx->slot(i);
-        auto *row = new QHBoxLayout;
-        auto *nameEdit = new QLineEdit(s.name, &dialog);
+
+        auto *strip = new QWidget(&dialog);
+        auto *sv = new QVBoxLayout(strip);
+        sv->setContentsMargins(4, 8, 4, 8);
+        sv->setSpacing(4);
+
+        // Top row: mute toggle, name, dB readout.
+        auto *top = new QHBoxLayout;
+        top->setSpacing(6);
+
+        auto *muteBtn = new QToolButton(strip);
+        muteBtn->setCheckable(true);
+        muteBtn->setChecked(s.muted);
+        muteBtn->setCursor(Qt::PointingHandCursor);
+        muteBtn->setAutoRaise(true);
+        muteBtn->setToolTip(QStringLiteral("Mute"));
+
+        auto *nameEdit = new QLineEdit(s.name, strip);
         nameEdit->setPlaceholderText(QStringLiteral("in %1").arg(i + 1));
-        auto *muteCheck = new QCheckBox(QStringLiteral("Mute"), &dialog);
-        muteCheck->setChecked(s.muted);
-        auto *slider = new QSlider(Qt::Horizontal, &dialog);
-        slider->setRange(0, 100);
-        slider->setValue(s.volume);
-        slider->setEnabled(!s.muted);
-        auto *volLabel = new QLabel(QStringLiteral("%1%").arg(s.volume), &dialog);
-        connect(slider, &QSlider::valueChanged, &dialog, [volLabel](int v) {
-            volLabel->setText(QStringLiteral("%1%").arg(v));
+        nameEdit->setFrame(false);
+
+        auto *dbLabel = new QLabel(dbText(s.muted ? 0 : s.volume), strip);
+        dbLabel->setMinimumWidth(64);
+        dbLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+        dbLabel->setStyleSheet(QStringLiteral("color:#9aa0a8; font-family:Monospace;"));
+
+        top->addWidget(muteBtn);
+        top->addWidget(nameEdit, 1);
+        top->addWidget(dbLabel);
+        sv->addLayout(top);
+
+        auto *fader = new MixerFader(s.volume, s.muted, strip);
+        sv->addWidget(fader);
+
+        auto refreshMuteIcon = [muteBtn](bool muted) {
+            muteBtn->setIcon(MaterialSymbols::icon(muted ? "volume_off" : "volume_up",
+                                                   20, muted ? QColor(0xe0, 0x6a, 0x5a)
+                                                             : QColor(0xcc, 0xcc, 0xcc)));
+        };
+        refreshMuteIcon(s.muted);
+
+        fader->onChanged = [dbLabel, dbText, muteBtn](int v) {
+            if (!muteBtn->isChecked()) dbLabel->setText(dbText(v));
+        };
+        connect(muteBtn, &QToolButton::toggled, &dialog,
+                [fader, dbLabel, dbText, refreshMuteIcon](bool muted) {
+            fader->setMuted(muted);
+            refreshMuteIcon(muted);
+            dbLabel->setText(muted ? QStringLiteral("Muted") : dbText(fader->value()));
         });
-        connect(muteCheck, &QCheckBox::toggled, &dialog, [slider, volLabel](bool muted) {
-            slider->setEnabled(!muted);
-            if (muted) volLabel->setText(QStringLiteral("Muted"));
-            else volLabel->setText(QStringLiteral("%1%").arg(slider->value()));
-        });
-        row->addWidget(nameEdit, 1);
-        row->addWidget(muteCheck);
-        row->addWidget(slider, 2);
-        row->addWidget(volLabel);
-        layout->addLayout(row);
-        sliders.push_back(slider);
-        mutes.push_back(muteCheck);
+
+        if (i > 0) {
+            auto *sep = new QFrame(&dialog);
+            sep->setFrameShape(QFrame::HLine);
+            sep->setStyleSheet(QStringLiteral("color:#2a2d34;"));
+            layout->addWidget(sep);
+        }
+        layout->addWidget(strip);
+
+        faders.push_back(fader);
+        mutes.push_back(muteBtn);
         names.push_back(nameEdit);
     }
 
-    if (sliders.isEmpty()) {
+    if (faders.isEmpty()) {
         layout->addWidget(new QLabel(QStringLiteral("Connect audio streams to the mixer first."), &dialog));
     }
 
     auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dialog);
+    layout->addSpacing(8);
     layout->addWidget(buttons);
     connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
     connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
 
     if (dialog.exec() == QDialog::Accepted) {
-        for (int i = 0; i < sliders.size(); ++i) {
-            mx->slotsRef()[i].volume = sliders[i]->value();
+        for (int i = 0; i < faders.size(); ++i) {
+            mx->slotsRef()[i].volume = faders[i]->value();
             mx->slotsRef()[i].muted = mutes[i]->isChecked();
             mx->slotsRef()[i].name = names[i]->text().trimmed();
         }
