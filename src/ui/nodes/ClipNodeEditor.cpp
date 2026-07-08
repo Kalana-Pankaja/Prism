@@ -11,6 +11,9 @@
 #include "ui_AudioNodeDialog.h"
 #include <QJsonArray>
 #include <QJsonObject>
+#include <QJsonDocument>
+#include <QMutexLocker>
+#include <QTimer>
 #include <QGraphicsScene>
 #include <QGraphicsView>
 #include <QGraphicsItem>
@@ -928,7 +931,9 @@ public:
         setFlags(ItemIsMovable | ItemSendsGeometryChanges | ItemIsSelectable);
         setZValue(0);
         setToolTip("Double-click an input name to rename · A/B assigns the deck\n"
-                   "Hotkey sends the input to Deck A · Shift+hotkey to Deck B");
+                   "Hotkey sends the input to Deck A · Shift+hotkey to Deck B\n"
+                   "Wire a Script node's output here to automate deck assignment:\n"
+                   "return { a = \"<slot name or 1-based index>\", b = \"...\" }");
         for (int i = 0; i < initialSlots; ++i)
             m_slots.push_back(AbSlot{});
         rebuildPorts();
@@ -940,6 +945,9 @@ public:
 
     NodeId nodeId() const override { return m_nodeId; }
     PortItem *abOutPort() const { return m_abOutPort; }
+    PortItem *dataInPort() const { return m_dataInPort; }
+    uint lastScriptVersion() const { return m_lastScriptVersion; }
+    void setLastScriptVersion(uint v) { m_lastScriptVersion = v; }
     int slotCount() const { return m_slots.size(); }
     PortItem *inPort(int i) const { return (i >= 0 && i < m_inPorts.size()) ? m_inPorts[i] : nullptr; }
     const QVector<PortItem *> &inPorts() const { return m_inPorts; }
@@ -1087,6 +1095,8 @@ private:
     QVector<AbSlot> m_slots;
     QVector<PortItem *> m_inPorts;
     PortItem *m_abOutPort = nullptr;
+    PortItem *m_dataInPort = nullptr;
+    uint m_lastScriptVersion = 0;
     int m_aSlot = -1, m_bSlot = -1;
     bool m_outputConnected = false;
 };
@@ -2447,6 +2457,7 @@ void AbSelectNodeItem::rebuildPorts() {
     for (int i = 0; i < m_slots.size(); ++i)
         m_inPorts.push_back(new PortItem(PortKind::ChainIn, this));
     if (!m_abOutPort) m_abOutPort = new PortItem(PortKind::AbOut, this);
+    if (!m_dataInPort) m_dataInPort = new PortItem(PortKind::DataIn, this);
     positionPorts();
 }
 
@@ -2455,6 +2466,7 @@ void AbSelectNodeItem::positionPorts() {
     for (int i = 0; i < m_inPorts.size(); ++i)
         m_inPorts[i]->setPos(0, SW_HDR + i * SW_ROW + SW_ROW / 2);
     if (m_abOutPort) m_abOutPort->setPos(SW_W, nodeHeight() / 2.0);
+    if (m_dataInPort) m_dataInPort->setPos(0, nodeHeight());
     if (scene())
         static_cast<ClipNodeScene *>(scene())->updateConnectionsForNode(this);
     update();
@@ -2959,6 +2971,10 @@ ClipNodeEditor::ClipNodeEditor(QWidget *parent)
 
     connect(m_view, &QGraphicsView::customContextMenuRequested, this, &ClipNodeEditor::onCanvasContextMenu);
     m_view->setContextMenuPolicy(Qt::CustomContextMenu);
+
+    m_abScriptPollTimer = new QTimer(this);
+    connect(m_abScriptPollTimer, &QTimer::timeout, this, &ClipNodeEditor::pollAbSelectScripts);
+    m_abScriptPollTimer->start(100);
 }
 
 ClipNodeEditor::~ClipNodeEditor() {
@@ -3491,6 +3507,55 @@ QString ClipNodeEditor::abSlotHotkeyLabel(const AbSlotRef &ref) const {
     auto *ab = m_abSelectNodes.value(ref.abNodeId);
     if (!ab || ref.slot < 0 || ref.slot >= ab->slotCount()) return {};
     return ab->slot(ref.slot).hotkey;
+}
+
+// Applies a wired Script node's latest output to an A/B Select node: the script's
+// returned table may set "a" and/or "b" to a slot name (case-insensitive) or a
+// 1-based slot index, and that slot is sent to the matching deck.
+void ClipNodeEditor::pollAbSelectScripts() {
+    for (auto it = m_abSelectNodes.cbegin(); it != m_abSelectNodes.cend(); ++it) {
+        AbSelectNodeItem *ab = it.value();
+        if (!ab->dataInPort() || !ab->dataInPort()->isConnected())
+            continue;
+
+        const auto output = scriptOutputForDataNode(it.key());
+        if (!output) continue;
+
+        const uint ver = output->version.load(std::memory_order_acquire);
+        if (ver == ab->lastScriptVersion()) continue;
+        ab->setLastScriptVersion(ver);
+
+        QString json;
+        {
+            QMutexLocker lock(&output->mutex);
+            json = output->json;
+        }
+        const QJsonDocument doc = QJsonDocument::fromJson(json.toUtf8());
+        if (!doc.isObject()) continue;
+        const QJsonObject obj = doc.object();
+
+        auto resolveSlot = [&](const QJsonValue &target) -> int {
+            if (target.isString()) {
+                const QString name = target.toString();
+                for (int i = 0; i < ab->slotCount(); ++i)
+                    if (ab->slot(i).name.compare(name, Qt::CaseInsensitive) == 0)
+                        return i;
+                return -1;
+            }
+            if (target.isDouble())
+                return target.toInt() - 1;
+            return -1;
+        };
+
+        if (obj.contains("a")) {
+            const int slot = resolveSlot(obj.value("a"));
+            if (slot >= 0) triggerAbSlot({it.key(), slot}, true);
+        }
+        if (obj.contains("b")) {
+            const int slot = resolveSlot(obj.value("b"));
+            if (slot >= 0) triggerAbSlot({it.key(), slot}, false);
+        }
+    }
 }
 
 // ── Evaluator ───────────────────────────────────────────────────────────────
@@ -4533,6 +4598,7 @@ PortItem *ClipNodeEditor::findPort(NodeId nodeId, int portKindInt, int slotIndex
     if (auto *ab = dynamic_cast<AbSelectNodeItem *>(base)) {
         if (kind == PortKind::AbOut)   return ab->abOutPort();
         if (kind == PortKind::ChainIn) return ab->inPort(slotIndex);
+        if (kind == PortKind::DataIn)  return ab->dataInPort();
     }
     if (auto *out = dynamic_cast<OutputNodeItem *>(base)) {
         if (kind == PortKind::ChainIn) return out->chainInPort();

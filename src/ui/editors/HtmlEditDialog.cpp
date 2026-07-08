@@ -1,6 +1,7 @@
 #include "ui/editors/HtmlEditDialog.h"
 #include "ui_HtmlEditDialog.h"
 #include "core/sources/HtmlWorkspace.h"
+#include "ui/common/CodeHighlighter.h"
 #include <algorithm>
 #include <QWebEngineView>
 #include <QColorDialog>
@@ -58,6 +59,8 @@ HtmlEditDialog::HtmlEditDialog(const QString &initialHtml,
     mono.setFixedPitch(true);
     ui->codeEdit->setFont(mono);
     ui->codeEdit->setTabStopDistance(28);
+    new CodeHighlighter(CodeHighlighter::Language::Html,
+                        ui->codeEdit->document());
 
     m_simplePreview = ui->simplePreview->webView();
 

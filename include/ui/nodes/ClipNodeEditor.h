@@ -18,6 +18,7 @@
 
 class ClipNodeScene;
 class QGraphicsView;
+class QTimer;
 class NodeItemBase;
 class ProcessNodeItem;
 class LayerNodeItem;
@@ -224,6 +225,7 @@ private:
     void deleteSelection(QGraphicsView *fromView = nullptr);
     void ensureOutputNode();
     void updateAbHighlights();
+    void pollAbSelectScripts();
     void normalizeSwitchingInputs();
     ResolvedStream evaluateVideoInputGuarded(NodeId producerNode, QSet<NodeId> visited) const;
 
@@ -254,6 +256,7 @@ private:
     QMap<NodeId, MasterAudioInputNodeItem *> m_masterAudioInputNodes;
     QMap<NodeId, AudioMixerNodeItem *> m_audioMixerNodes;
     QMap<NodeId, AudioEffectNodeItem *> m_audioEffectNodes;
+    QTimer *m_abScriptPollTimer = nullptr;
     NodeId m_outputNode  = 0;
     NodeId m_deckAInput  = 0;
     NodeId m_deckBInput  = 0;

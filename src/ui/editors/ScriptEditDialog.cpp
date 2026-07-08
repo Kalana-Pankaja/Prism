@@ -1,5 +1,6 @@
 #include "ui/editors/ScriptEditDialog.h"
 #include "ui_ScriptEditDialog.h"
+#include "ui/common/CodeHighlighter.h"
 
 #include <QFile>
 #include <QFont>
@@ -40,6 +41,16 @@ if not price then
   return { price = "…", error = "parse failed" }
 end
 return { price = "$" .. price })" },
+    { "A/B Auto Switch", ":/scripts/ab_auto_switch.lua", R"(-- Auto A/B switcher — wire ScriptOut -> the A/B Select node's data-in port.
+-- Rename that node's connected slots to "Camera A" / "Camera B" (double-click
+-- the slot name), set this script's trigger to Periodic, then it alternates
+-- both decks every 5 seconds. Targets can be a slot name or a 1-based index,
+-- e.g. return { a = 2, b = 1 }.
+if os.time() % 10 < 5 then
+  return { a = "Camera A", b = "Camera B" }
+else
+  return { a = "Camera B", b = "Camera A" }
+end)" },
 };
 static const int kPresetCount = static_cast<int>(sizeof(kPresets) / sizeof(kPresets[0]));
 
@@ -69,6 +80,8 @@ ScriptEditDialog::ScriptEditDialog(const QString &initialCode,
     mono.setFixedPitch(true);
     ui->codeEdit->setFont(mono);
     ui->codeEdit->setTabStopDistance(28);
+    new CodeHighlighter(CodeHighlighter::Language::Lua,
+                        ui->codeEdit->document());
 
     for (int i = 0; i < kPresetCount; ++i)
         ui->presetList->addItem(kPresets[i].name);

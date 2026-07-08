@@ -1,6 +1,7 @@
 #include "ui/editors/ShaderEditDialog.h"
 #include "ui_ShaderEditDialog.h"
 #include "core/sources/ShaderSource.h"
+#include "ui/common/CodeHighlighter.h"
 #include <QFile>
 #include <QFont>
 #include <QImage>
@@ -41,6 +42,8 @@ ShaderEditDialog::ShaderEditDialog(const QString &initialCode, QWidget *parent)
     mono.setFixedPitch(true);
     ui->codeEdit->setFont(mono);
     ui->codeEdit->setTabStopDistance(28);
+    new CodeHighlighter(CodeHighlighter::Language::Glsl,
+                        ui->codeEdit->document());
 
     for (int i = 0; i < kPresetCount; ++i)
         ui->presetList->addItem(kPresets[i].name);

@@ -235,6 +235,7 @@ set(SOURCES
     src/ui/editors/TextEditDialog.cpp
     # Extracted helper / controller classes
     src/ui/common/ThumbHelper.cpp
+    src/ui/common/CodeHighlighter.cpp
     src/ui/common/CameraEnumerator.cpp
     src/ui/common/CapturePicker.cpp
     src/ui/common/MaterialSymbols.cpp
