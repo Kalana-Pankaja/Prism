@@ -7,15 +7,33 @@ class AudioDecoder;
 
 /// Streams a file's audio in lock-step with playback and produces a smoothed
 /// FFT magnitude spectrum + overall level, consumed by audio-reactive shaders.
+/// Tunable FFT / band parameters for an AudioAnalyzer. Defaults reproduce the
+/// original fixed behaviour, so untouched nodes analyse exactly as before.
+struct AudioAnalyzerConfig {
+    int   fftSize        = 1024;   // power-of-two window size
+    int   binCount       = 64;     // log-spaced display spectrum bins
+    float smoothing      = 0.5f;   // 0 = raw, →1 = heavily smoothed
+    float beatSensitivity = 1.0f;  // scales beat detection (higher = more beats)
+    float lowMidHz       = 250.0f; // low/mid crossover
+    float midHighHz      = 4000.0f;// mid/high crossover
+};
+
 class AudioAnalyzer {
 public:
-    static constexpr int kFftSize = 1024;
-    static constexpr int kBins    = 64;
+    static constexpr int kFftSize    = 1024;  // default window
+    static constexpr int kBins       = 64;    // default bin count
+    static constexpr int kMaxFftSize = 8192;
+    static constexpr int kMaxBins    = 256;   // texture/upload capacity
 
     AudioAnalyzer();
     ~AudioAnalyzer();
     AudioAnalyzer(const AudioAnalyzer &) = delete;
     AudioAnalyzer &operator=(const AudioAnalyzer &) = delete;
+
+    /// Apply tunable parameters. Reallocates FFT buffers; safe to call while open.
+    void setConfig(const AudioAnalyzerConfig &cfg);
+    const AudioAnalyzerConfig &config() const { return m_config; }
+    int binCount() const { return m_config.binCount; }
 
     bool open(const QString &filePath, double startTime = 0.0);
     void close();
@@ -35,6 +53,9 @@ public:
 private:
     void appendMonoSample(float sample);
     void computeSpectrum();
+    void allocateBuffers();   // (re)size buffers + FFT cfg from m_config
+
+    AudioAnalyzerConfig m_config;
 
     AudioDecoder *m_decoder = nullptr;
     void         *m_fftCfg  = nullptr;  // kiss_fftr_cfg

@@ -123,12 +123,7 @@
        <widget class="QComboBox" name="triggerCombo">
         <item>
          <property name="text">
-          <string>Periodic</string>
-         </property>
-        </item>
-        <item>
-         <property name="text">
-          <string>On start</string>
+          <string>On input change</string>
          </property>
         </item>
         <item>

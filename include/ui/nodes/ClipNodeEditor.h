@@ -176,12 +176,14 @@ public:
     QVector<NodeId> allMasterAudioInputNodeIds() const;
     QVector<NodeId> allAudioMixerNodeIds() const;
     bool mixerSlotSettings(NodeId mixerId, int slotIndex, int &volume, bool &muted, QString &name) const;
-    bool audioSourceForShader(NodeId shaderNodeId, QString &filePath) const;
-    NodeId shaderAudioSourceNodeId(NodeId shaderNodeId) const;
     bool audioSourceForAudioScript(NodeId scriptNodeId, QString &filePath) const;
     NodeId audioSourceNodeIdForAudioScript(NodeId scriptNodeId) const;
     NodeId dataScriptNodeId(NodeId dataNodeId) const;
     void syncAudioScriptNode(NodeId scriptNodeId, double playbackTime, bool playing, double speed);
+    /// Drive every audio-script node from whichever deck owns its source clip, so
+    /// audio-reactive data is produced regardless of what consumes it downstream.
+    void syncAllAudioScripts(NodeId deckAClip, double timeA, bool playingA, double speedA,
+                             NodeId deckBClip, double timeB, bool playingB, double speedB);
     std::shared_ptr<ScriptOutput> scriptOutputForDataNode(NodeId dataNodeId) const;
 
     // ── Session persistence ──────────────────────────────────────────────────
@@ -210,10 +212,13 @@ private slots:
     void onAddAudioMixer();
     void onAddScriptNode();
     void onAddAudioScriptNode();
+    void onAddTriggerNode();
     void onEditClipAudio(NodeId clipId);
     void onEditMicInput(NodeId micId);
     void onEditAudioMixer(NodeId mixerId);
     void onEditScriptNode(NodeId nodeId);
+    void onEditAudioScriptNode(NodeId nodeId);
+    void onEditTriggerNode(NodeId nodeId);
     void onEditLayerCanvas(NodeId layerId);
     void onEditLayerTransform(NodeId layerId);
     void onEditProcessNode(NodeId processId);
@@ -231,7 +236,10 @@ private:
     void deleteSelection(QGraphicsView *fromView = nullptr);
     void ensureOutputNode();
     void updateAbHighlights();
-    void pollAbSelectScripts();
+    void pollDataConsumers();
+    /// Shallow-merge the JSON produced by @p producers (later keys win). @p verSum
+    /// receives the summed producer versions, for cheap change detection.
+    QString mergeScriptInputs(const QVector<NodeId> &producers, uint &verSum) const;
     void normalizeSwitchingInputs();
     ResolvedStream evaluateVideoInputGuarded(NodeId producerNode, QSet<NodeId> visited) const;
 
@@ -263,6 +271,10 @@ private:
     QMap<NodeId, AudioMixerNodeItem *> m_audioMixerNodes;
     QMap<NodeId, AudioEffectNodeItem *> m_audioEffectNodes;
     QTimer *m_abScriptPollTimer = nullptr;
+    // Merged DataIn feeds for consumers with 2+ producers (shader/text/AB). A
+    // single producer is passed through directly for render-rate smoothness.
+    mutable QMap<NodeId, std::shared_ptr<ScriptOutput>> m_dataInputs;
+    mutable QMap<NodeId, uint> m_lastMergedVersion;
     NodeId m_outputNode  = 0;
     NodeId m_deckAInput  = 0;
     NodeId m_deckBInput  = 0;

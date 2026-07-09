@@ -46,6 +46,9 @@ private:
     void destroyGL();
     bool compileProgram();
     void renderToBuffer();
+    /// Map an arbitrary JSON object to shader uniforms (generic key→u_key plus the
+    /// stable named audio block). Sets @p hasAudioBlock when audio fields present.
+    void applyDataUniforms(const class QJsonObject &obj, bool &hasAudioBlock);
 
     QString    m_shaderCode;
     QSize      m_size;
@@ -64,6 +67,7 @@ private:
     uint          m_dataVersion = 0;
     QString       m_audioSourcePath;
     unsigned int  m_spectrumTex = 0;
+    int           m_spectrumTexWidth = 0;   // current uploaded spectrum length
     bool          m_audioSyncEnabled = false;
     bool          m_audioPlaying = true;
     double        m_audioSyncTime = 0.0;

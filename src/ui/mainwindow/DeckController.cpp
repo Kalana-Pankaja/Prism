@@ -226,53 +226,25 @@ void DeckController::applyAudioControllerToDeck(bool deckA, NodeId clipId, bool 
 }
 
 void DeckController::refreshShaderAudioForActiveDecks() {
+    auto *out = m_outputWindow->videoWidget();
+
+    // Drive every audio-script node from whichever deck owns its source clip, so
+    // audio data is produced whether it feeds a shader, a script chain, or an A/B
+    // switcher.
+    m_editor->syncAllAudioScripts(
+        m_aClipNodeId, out->getCurrentTimeA(), out->isPlayingA(), m_speedA,
+        m_bClipNodeId, out->getCurrentTimeB(), out->isPlayingB(), m_speedB);
+
+    // Point each active shader at its (possibly merged) JSON data feed. Shaders
+    // are now purely JSON-driven: their uniforms come from the script graph.
     auto refresh = [&](bool deckA, NodeId nodeId) {
         if (!nodeId) return;
         auto *node = m_editor->nodeAt(nodeId);
         if (!node || node->sourceDescriptor().kind != SourceDescriptor::Kind::Shader)
             return;
-
-        auto *out = m_outputWindow->videoWidget();
         MediaSource *src = deckA ? out->sourceA() : out->sourceB();
         if (!src || src->type() != MediaSource::Type::Shader) return;
-
-        auto *shader = static_cast<ShaderSource *>(src);
-        const NodeId scriptId = m_editor->dataScriptNodeId(nodeId);
-        shader->setDataSource(m_editor->scriptOutputForDataNode(nodeId));
-        if (scriptId != 0) {
-            // Data-driven shader path: avoid legacy direct-audio fallback.
-            shader->setAudioSource(QString());
-            shader->clearAudioSyncState();
-
-            const NodeId scriptAudioNodeId = m_editor->audioSourceNodeIdForAudioScript(scriptId);
-            if (scriptAudioNodeId == m_aClipNodeId) {
-                m_editor->syncAudioScriptNode(scriptId, out->getCurrentTimeA(), out->isPlayingA(), m_speedA);
-            } else if (scriptAudioNodeId == m_bClipNodeId) {
-                m_editor->syncAudioScriptNode(scriptId, out->getCurrentTimeB(), out->isPlayingB(), m_speedB);
-            } else {
-                m_editor->syncAudioScriptNode(scriptId, 0.0, false, 1.0);
-            }
-            return;
-        }
-
-        QString audioPath;
-        if (m_editor->audioSourceForShader(nodeId, audioPath))
-            shader->setAudioSource(audioPath);
-        else {
-            shader->setAudioSource(QString());
-            shader->clearAudioSyncState();
-            return;
-        }
-
-        const NodeId audioNodeId = m_editor->shaderAudioSourceNodeId(nodeId);
-        if (audioNodeId == m_aClipNodeId) {
-            shader->setAudioSyncState(out->getCurrentTimeA(), out->isPlayingA(), m_speedA);
-        } else if (audioNodeId == m_bClipNodeId) {
-            shader->setAudioSyncState(out->getCurrentTimeB(), out->isPlayingB(), m_speedB);
-        } else {
-            shader->clearAudioSyncState();
-        }
-
+        static_cast<ShaderSource *>(src)->setDataSource(m_editor->scriptOutputForDataNode(nodeId));
     };
 
     refresh(true,  m_aClipNodeId);
@@ -346,9 +318,6 @@ void DeckController::assignNodeToDeck(ClipNodeModel *node, NodeId nodeId, bool d
         auto src = SourceFactory::create(desc);
         if (src) {
             if (desc.kind == Kind::Shader) {
-                QString audioPath;
-                if (m_editor->audioSourceForShader(nodeId, audioPath))
-                    static_cast<ShaderSource *>(src.get())->setAudioSource(audioPath);
                 static_cast<ShaderSource *>(src.get())->setDataSource(
                     m_editor->scriptOutputForDataNode(nodeId));
             } else if (desc.kind == Kind::Text) {
@@ -406,9 +375,6 @@ void DeckController::assignNodeToDeck(ClipNodeModel *node, NodeId nodeId, bool d
         // All other source kinds: use SourceFactory.
         auto src = SourceFactory::create(desc);
         if (desc.kind == Kind::Shader) {
-            QString audioPath;
-            if (m_editor->audioSourceForShader(nodeId, audioPath))
-                static_cast<ShaderSource *>(src.get())->setAudioSource(audioPath);
             static_cast<ShaderSource *>(src.get())->setDataSource(
                 m_editor->scriptOutputForDataNode(nodeId));
         }

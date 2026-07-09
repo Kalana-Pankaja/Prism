@@ -43,8 +43,9 @@ end
 return { price = "$" .. price })" },
     { "A/B Auto Switch", ":/scripts/ab_auto_switch.lua", R"(-- Auto A/B switcher — wire ScriptOut -> the A/B Select node's data-in port.
 -- Rename that node's connected slots to "Camera A" / "Camera B" (double-click
--- the slot name), set this script's trigger to Periodic, then it alternates
--- both decks every 5 seconds. Targets can be a slot name or a 1-based index,
+-- the slot name). Add a Trigger node (Interval) into this script's DataIn and
+-- set this script's trigger to "On input change", then it alternates both decks
+-- every 5 seconds. Targets can be a slot name or a 1-based index,
 -- e.g. return { a = 2, b = 1 }.
 if os.time() % 10 < 5 then
   return { a = "Camera A", b = "Camera B" }
@@ -100,8 +101,12 @@ ScriptEditDialog::ScriptEditDialog(const QString &initialCode,
                 }
             });
 
-    ui->triggerCombo->setCurrentIndex(static_cast<int>(trigger));
+    // Combo maps: index 0 → OnInputChange, index 1 → Manual. Periodic timing now
+    // lives in a dedicated Trigger node, so legacy Periodic/OnStart map to Manual.
+    ui->triggerCombo->setCurrentIndex(trigger == ScriptTriggerMode::OnInputChange ? 0 : 1);
     ui->intervalSpin->setValue(intervalMs);
+    ui->intervalLabel->setVisible(false);
+    ui->intervalSpin->setVisible(false);
     updateTriggerControls();
 
     connect(ui->presetList, &QListWidget::currentRowChanged,
@@ -145,7 +150,8 @@ QString ScriptEditDialog::resultCode() const {
 }
 
 ScriptTriggerMode ScriptEditDialog::resultTriggerMode() const {
-    return static_cast<ScriptTriggerMode>(ui->triggerCombo->currentIndex());
+    return ui->triggerCombo->currentIndex() == 0
+        ? ScriptTriggerMode::OnInputChange : ScriptTriggerMode::Manual;
 }
 
 int ScriptEditDialog::resultIntervalMs() const {

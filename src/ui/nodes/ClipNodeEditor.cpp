@@ -16,6 +16,9 @@
 #include <QMutexLocker>
 #include <QElapsedTimer>
 #include <QTimer>
+#include <QDateTime>
+#include <QTime>
+#include <QTimeEdit>
 #include <QGraphicsScene>
 #include <QGraphicsView>
 #include <QGraphicsItem>
@@ -205,6 +208,10 @@ bool isSingleConnection(PortKind kind) {
     if (isMixedAudioOutKind(kind)) return true;
     if (isMixedAudioInKind(kind)) return true;
     if (kind == PortKind::AbIn) return false;
+    // Script data ports fan out / fan in freely: one ScriptOut can feed many
+    // consumers, and one DataIn can merge many upstream producers.
+    if (kind == PortKind::ScriptOut) return false;
+    if (kind == PortKind::DataIn) return false;
     return true;
 }
 
@@ -1627,14 +1634,19 @@ class ScriptNodeItem : public NodeItemBase {
 public:
     ScriptNodeItem(NodeId id, const QString &code = QString(),
                    ScriptTriggerMode trigger = ScriptTriggerMode::Periodic,
-                   int intervalMs = 1000)
+                   int intervalMs = 1000, bool withDataIn = true)
         : m_nodeId(id), m_code(code), m_triggerMode(trigger), m_intervalMs(intervalMs)
     {
         setFlags(ItemIsMovable | ItemSendsGeometryChanges | ItemIsSelectable);
         setZValue(0);
 
+        // Inputs on the left, output on the right.
+        if (withDataIn) {
+            m_dataInPort = new PortItem(PortKind::DataIn, this);
+            m_dataInPort->setPos(0, SMALL_NODE_H / 2);
+        }
         m_scriptOutPort = new PortItem(PortKind::ScriptOut, this);
-        m_scriptOutPort->setPos(0, SMALL_NODE_H / 2);
+        m_scriptOutPort->setPos(SMALL_NODE_W, SMALL_NODE_H / 2);
 
         m_output = std::make_shared<ScriptOutput>();
         m_thread = new QThread();
@@ -1671,9 +1683,18 @@ public:
 
     NodeId nodeId() const override { return m_nodeId; }
     PortItem *scriptOutPort() const { return m_scriptOutPort; }
+    PortItem *dataInPort() const { return m_dataInPort; }
     std::shared_ptr<ScriptOutput> output() const { return m_output; }
     virtual PortItem *audioInPort() const { return nullptr; }
     virtual bool isAudioScript() const { return false; }
+
+    /// Push freshly merged upstream JSON to the script runtime; when the trigger
+    /// is OnInputChange this also re-runs the script.
+    void setInputJson(const QString &json) {
+        if (m_runtime)
+            QMetaObject::invokeMethod(m_runtime, "setInput", Qt::QueuedConnection,
+                                      Q_ARG(QString, json));
+    }
     virtual void setAudioSourcePath(const QString &) {}
     virtual void setAudioSyncState(double, bool, double) {}
 
@@ -1714,6 +1735,7 @@ public:
         case ScriptTriggerMode::Periodic: triggerStr = QString("Every %1ms").arg(m_intervalMs); break;
         case ScriptTriggerMode::OnStart:  triggerStr = QStringLiteral("On start"); break;
         case ScriptTriggerMode::Manual:   triggerStr = QStringLiteral("Manual"); break;
+        case ScriptTriggerMode::OnInputChange: triggerStr = QStringLiteral("On input"); break;
         }
         p->drawText(QRectF(4, 4, SMALL_NODE_W - 8, 50), Qt::AlignCenter,
                     QString("Lua Script\n%1").arg(triggerStr));
@@ -1770,6 +1792,7 @@ private:
     ScriptTriggerMode m_triggerMode;
     int m_intervalMs;
     PortItem *m_scriptOutPort;
+    PortItem *m_dataInPort = nullptr;
     std::shared_ptr<ScriptOutput> m_output;
     QThread *m_thread = nullptr;
     ScriptRuntime *m_runtime = nullptr;
@@ -1778,19 +1801,25 @@ private:
 class AudioScriptNodeItem : public ScriptNodeItem {
 public:
     explicit AudioScriptNodeItem(NodeId id)
-        : ScriptNodeItem(id, QString(), ScriptTriggerMode::Manual, 1000)
+        : ScriptNodeItem(id, QString(), ScriptTriggerMode::Manual, 1000, /*withDataIn=*/false)
     {
         // Inputs left, outputs right — matches the rest of the graph.
         m_audioInPort = new PortItem(PortKind::AudioIn, this);
         m_audioInPort->setPos(0, SMALL_NODE_H / 2);
-        if (auto *out = scriptOutPort())
-            out->setPos(SMALL_NODE_W, SMALL_NODE_H / 2);
         m_analyzer = std::make_unique<AudioAnalyzer>();
         m_timer.start();
     }
 
     bool isAudioScript() const override { return true; }
     PortItem *audioInPort() const override { return m_audioInPort; }
+
+    AudioAnalyzerConfig analyzerConfig() const { return m_config; }
+    void setAnalyzerConfig(const AudioAnalyzerConfig &c) {
+        m_config = c;
+        if (m_analyzer)
+            m_analyzer->setConfig(m_config);
+        update();
+    }
 
     void setAudioSourcePath(const QString &path) override {
         if (path == m_audioPath)
@@ -1801,6 +1830,8 @@ public:
             publishSilentOutput();
             return;
         }
+        if (m_analyzer)
+            m_analyzer->setConfig(m_config);
         if (m_analyzer && m_analyzer->open(m_audioPath)) {
             m_hasAudio = true;
             m_lastMs = m_timer.elapsed();
@@ -1879,13 +1910,22 @@ public:
 
         p->setPen(QColor(230, 190, 90));
         p->setFont(QFont("Monospace", 8, QFont::Bold));
-        p->drawText(QRectF(4, 8, SMALL_NODE_W - 8, 36), Qt::AlignCenter,
+        p->drawText(QRectF(4, 6, SMALL_NODE_W - 8, 28), Qt::AlignCenter,
                     QStringLiteral("Audio Script"));
 
         p->setPen(QColor(160, 200, 180));
         p->setFont(QFont("Monospace", 7));
-        p->drawText(QRectF(4, 44, SMALL_NODE_W - 8, 40), Qt::AlignCenter,
-                    QStringLiteral("FFT → low/mid/high\nbeat + spectrum"));
+        p->drawText(QRectF(4, 34, SMALL_NODE_W - 8, 40), Qt::AlignCenter,
+                    QString("FFT %1 · %2 bins\nlow/mid/high · beat")
+                        .arg(m_config.fftSize).arg(m_config.binCount));
+
+        const QRectF buttonRect = getEditButtonRect();
+        p->setPen(QPen(QColor(230, 190, 90), 1));
+        p->setBrush(QColor(70, 55, 20));
+        p->drawRoundedRect(buttonRect, 3, 3);
+        p->setPen(QColor(255, 220, 140));
+        p->setFont(QFont("Monospace", 7));
+        p->drawText(buttonRect, Qt::AlignCenter, "Edit FFT");
 
         if (isSelected()) {
             p->setPen(QPen(kSelectionAccent, 2));
@@ -1897,10 +1937,142 @@ public:
 private:
     PortItem *m_audioInPort = nullptr;
     std::unique_ptr<AudioAnalyzer> m_analyzer;
+    AudioAnalyzerConfig m_config;
     QString m_audioPath;
     bool m_hasAudio = false;
     QElapsedTimer m_timer;
     qint64 m_lastMs = 0;
+};
+
+
+// Timing-only producer: emits a rising `tick` payload on a schedule so any
+// downstream OnInputChange script re-runs. Decouples scheduling from scripts.
+class TriggerNodeItem : public ScriptNodeItem {
+public:
+    enum class Mode { Interval = 0, TimeOfDay = 1, Manual = 2 };
+
+    explicit TriggerNodeItem(NodeId id)
+        : ScriptNodeItem(id, QString(), ScriptTriggerMode::Manual, 1000, /*withDataIn=*/false)
+    {
+        m_trigTimer = new QTimer();
+        QObject::connect(m_trigTimer, &QTimer::timeout, m_trigTimer, [this]() { onTimerTick(); });
+        applyTiming();
+    }
+
+    ~TriggerNodeItem() override {
+        if (m_trigTimer) {
+            m_trigTimer->stop();
+            m_trigTimer->deleteLater();
+            m_trigTimer = nullptr;
+        }
+    }
+
+    bool isTrigger() const { return true; }
+
+    Mode  triggerNodeMode() const { return m_mode; }
+    int   triggerInterval() const { return m_triggerInterval; }
+    QTime triggerTime()     const { return m_timeOfDay; }
+
+    void setTiming(Mode mode, int intervalMs, QTime timeOfDay) {
+        m_mode = mode;
+        m_triggerInterval = std::max(20, intervalMs);
+        m_timeOfDay = timeOfDay;
+        applyTiming();
+        update();
+    }
+
+    void pulse() {
+        if (!output()) return;
+        ++m_tickCount;
+        QJsonObject obj;
+        obj["tick"]  = static_cast<double>(m_tickCount);
+        obj["epoch"] = static_cast<double>(QDateTime::currentSecsSinceEpoch());
+        obj["pulse"] = true;
+        const QString json = QString::fromUtf8(QJsonDocument(obj).toJson(QJsonDocument::Compact));
+        {
+            QMutexLocker lock(&output()->mutex);
+            output()->json = json;
+        }
+        output()->version.fetch_add(1, std::memory_order_release);
+    }
+
+    void paint(QPainter *p, const QStyleOptionGraphicsItem *opt, QWidget *w) override {
+        Q_UNUSED(opt); Q_UNUSED(w);
+        p->setRenderHint(QPainter::Antialiasing);
+        p->setPen(QPen(QColor(50, 60, 70), 1));
+        p->setBrush(QColor(24, 30, 38));
+        p->drawRoundedRect(QRectF(0, 0, SMALL_NODE_W, SMALL_NODE_H), 4, 4);
+
+        p->setPen(QColor(120, 190, 230));
+        p->setFont(QFont("Monospace", 8, QFont::Bold));
+        p->drawText(QRectF(4, 6, SMALL_NODE_W - 8, 28), Qt::AlignCenter, QStringLiteral("Trigger"));
+
+        QString sub;
+        switch (m_mode) {
+        case Mode::Interval:  sub = QString("Every\n%1 ms").arg(m_triggerInterval); break;
+        case Mode::TimeOfDay: sub = QString("At\n%1").arg(m_timeOfDay.toString("HH:mm")); break;
+        case Mode::Manual:    sub = QStringLiteral("Manual\npulse"); break;
+        }
+        p->setPen(QColor(160, 200, 220));
+        p->setFont(QFont("Monospace", 7));
+        p->drawText(QRectF(4, 34, SMALL_NODE_W - 8, 40), Qt::AlignCenter, sub);
+
+        const QRectF buttonRect = getEditButtonRect();
+        p->setPen(QPen(QColor(120, 190, 230), 1));
+        p->setBrush(QColor(24, 50, 70));
+        p->drawRoundedRect(buttonRect, 3, 3);
+        p->setPen(QColor(180, 220, 250));
+        p->setFont(QFont("Monospace", 7));
+        p->drawText(buttonRect, Qt::AlignCenter, "Edit");
+
+        if (isSelected()) {
+            p->setPen(QPen(kSelectionAccent, 2));
+            p->setBrush(Qt::NoBrush);
+            p->drawRoundedRect(QRectF(0, 0, SMALL_NODE_W, SMALL_NODE_H).adjusted(1, 1, -1, -1), 4, 4);
+        }
+    }
+
+    void contextMenuEvent(QGraphicsSceneContextMenuEvent *e) override {
+        QMenu menu;
+        menu.addAction("Pulse now", [this]() { pulse(); });
+        menu.addAction("Delete", [this]() {
+            if (onDeleteRequested) onDeleteRequested(nodeId());
+        });
+        menu.exec(e->screenPos());
+        e->accept();
+    }
+
+private:
+    void applyTiming() {
+        if (!m_trigTimer) return;
+        m_trigTimer->stop();
+        m_lastFireDate = QDate();
+        if (m_mode == Mode::Interval)
+            m_trigTimer->start(m_triggerInterval);
+        else if (m_mode == Mode::TimeOfDay)
+            m_trigTimer->start(1000);   // poll once a second for the target time
+        // Manual: no timer.
+    }
+
+    void onTimerTick() {
+        if (m_mode == Mode::Interval) {
+            pulse();
+        } else if (m_mode == Mode::TimeOfDay) {
+            const QDate today = QDate::currentDate();
+            if (m_lastFireDate == today) return;
+            if (QTime::currentTime() >= m_timeOfDay) {
+                m_lastFireDate = today;
+                pulse();
+            }
+        }
+    }
+
+    Mode   m_mode = Mode::Interval;
+    int    m_triggerInterval = 1000;
+    QTime  m_timeOfDay = QTime(12, 0);
+    QTimer *m_trigTimer = nullptr;
+    qint64 m_tickCount = 0;
+    QDate  m_lastFireDate;
 };
 
 
@@ -2287,13 +2459,6 @@ public:
         return false;
     }
 
-    NodeId clipForShaderAudio(NodeId shaderNodeId) const {
-        for (const auto &e : m_edges)
-            if (e.edgeKind == ConnectionItem::ClipToShaderAudio && e.toNodeId == shaderNodeId)
-                return e.fromNodeId;
-        return 0;
-    }
-
     NodeId clipForAudioScript(NodeId scriptNodeId) const {
         for (const auto &e : m_edges)
             if (e.edgeKind == ConnectionItem::ClipToAudioScript && e.toNodeId == scriptNodeId)
@@ -2306,6 +2471,16 @@ public:
             if (e.edgeKind == ConnectionItem::ScriptToData && e.toNodeId == dataNodeId)
                 return e.fromNodeId;
         return 0;
+    }
+
+    // All script producers feeding a node's DataIn, in connection order. Later
+    // entries win when their JSON keys are merged into the `input` table.
+    QVector<NodeId> scriptProducersForData(NodeId dataNodeId) const {
+        QVector<NodeId> out;
+        for (const auto &e : m_edges)
+            if (e.edgeKind == ConnectionItem::ScriptToData && e.toNodeId == dataNodeId)
+                out.append(e.fromNodeId);
+        return out;
     }
 
     QJsonArray edgesToJson() const {
@@ -2457,8 +2632,9 @@ void ClipNodeItem::updateLayout() {
     } else {
         if (m_chainOutPort)
             m_chainOutPort->setPos(NODE_W, rightChainY);
+        // Text (and any future data-driven input): script in on the left edge.
         if (m_dataInPort)
-            m_dataInPort->setPos(NODE_W, IN_PORT_Y + PORT_R * 4);
+            m_dataInPort->setPos(0, cardMidY);
     }
     if (m_audioPort) m_audioPort->setPos(NODE_W, rightAudioY);
     if (m_shaderAudioInPort)
@@ -3135,8 +3311,8 @@ ClipNodeEditor::ClipNodeEditor(QWidget *parent)
     m_view->setContextMenuPolicy(Qt::CustomContextMenu);
 
     m_abScriptPollTimer = new QTimer(this);
-    connect(m_abScriptPollTimer, &QTimer::timeout, this, &ClipNodeEditor::pollAbSelectScripts);
-    m_abScriptPollTimer->start(100);
+    connect(m_abScriptPollTimer, &QTimer::timeout, this, &ClipNodeEditor::pollDataConsumers);
+    m_abScriptPollTimer->start(33);   // ~30 fps: propagate data through script chains
 }
 
 ClipNodeEditor::~ClipNodeEditor() {
@@ -3512,6 +3688,8 @@ void ClipNodeEditor::deleteNodeById(NodeId nodeId) {
     m_masterAudioInputNodes.remove(nodeId);
     m_audioMixerNodes.remove(nodeId);
     m_audioEffectNodes.remove(nodeId);
+    m_dataInputs.remove(nodeId);
+    m_lastMergedVersion.remove(nodeId);
     if (nodeId == m_outputNode) m_outputNode = 0;
     removeSceneItem(item);
     updateAbHighlights();
@@ -3676,7 +3854,41 @@ QString ClipNodeEditor::abSlotHotkeyLabel(const AbSlotRef &ref) const {
 // Applies a wired Script node's latest output to an A/B Select node: the script's
 // returned table may set "a" and/or "b" to a slot name (case-insensitive) or a
 // 1-based slot index, and that slot is sent to the matching deck.
-void ClipNodeEditor::pollAbSelectScripts() {
+void ClipNodeEditor::pollDataConsumers() {
+    // 1. Feed every script node's `input` from its upstream producers. Pushing
+    //    only on a version change keeps OnInputChange scripts from re-running
+    //    when nothing upstream moved.
+    for (auto it = m_scriptNodes.cbegin(); it != m_scriptNodes.cend(); ++it) {
+        ScriptNodeItem *sn = it.value();
+        if (!sn || sn->isAudioScript() || !sn->dataInPort())
+            continue;
+        const QVector<NodeId> producers = m_scene->scriptProducersForData(it.key());
+        uint verSum = 0;
+        const QString merged = mergeScriptInputs(producers, verSum);
+        if (!m_lastMergedVersion.contains(it.key()) || m_lastMergedVersion.value(it.key()) != verSum) {
+            m_lastMergedVersion[it.key()] = verSum;
+            sn->setInputJson(merged);
+        }
+    }
+
+    // 2. Refresh persistent merged feeds for multi-producer shader/text/AB nodes.
+    for (auto it = m_dataInputs.begin(); it != m_dataInputs.end(); ++it) {
+        const QVector<NodeId> producers = m_scene->scriptProducersForData(it.key());
+        if (producers.size() < 2 || !it.value())
+            continue;
+        uint verSum = 0;
+        const QString merged = mergeScriptInputs(producers, verSum);
+        if (m_lastMergedVersion.value(it.key(), ~0u) == verSum)
+            continue;
+        m_lastMergedVersion[it.key()] = verSum;
+        {
+            QMutexLocker lock(&it.value()->mutex);
+            it.value()->json = merged;
+        }
+        it.value()->version.fetch_add(1, std::memory_order_release);
+    }
+
+    // 3. Apply A/B-select scripts.
     for (auto it = m_abSelectNodes.cbegin(); it != m_abSelectNodes.cend(); ++it) {
         AbSelectNodeItem *ab = it.value();
         if (!ab->dataInPort() || !ab->dataInPort()->isConnected())
@@ -4051,21 +4263,6 @@ QVector<NodeId> ClipNodeEditor::allMasterAudioInputNodeIds() const {
     return m_masterAudioInputNodes.keys().toVector();
 }
 
-bool ClipNodeEditor::audioSourceForShader(NodeId shaderNodeId, QString &filePath) const {
-    const NodeId clipId = m_scene->clipForShaderAudio(shaderNodeId);
-    if (clipId == 0) return false;
-    const ClipNodeModel *node = nodeAt(clipId);
-    if (!node) return false;
-    const SourceDescriptor &desc = node->sourceDescriptor();
-    if (desc.kind != SourceDescriptor::Kind::VideoFile) return false;
-    filePath = desc.path;
-    return !filePath.isEmpty();
-}
-
-NodeId ClipNodeEditor::shaderAudioSourceNodeId(NodeId shaderNodeId) const {
-    return m_scene->clipForShaderAudio(shaderNodeId);
-}
-
 bool ClipNodeEditor::audioSourceForAudioScript(NodeId scriptNodeId, QString &filePath) const {
     const NodeId clipId = m_scene->clipForAudioScript(scriptNodeId);
     if (clipId == 0) return false;
@@ -4099,11 +4296,67 @@ void ClipNodeEditor::syncAudioScriptNode(NodeId scriptNodeId, double playbackTim
     scriptNode->setAudioSyncState(playbackTime, playing, speed);
 }
 
+QString ClipNodeEditor::mergeScriptInputs(const QVector<NodeId> &producers, uint &verSum) const {
+    verSum = 0;
+    QJsonObject combined;
+    for (NodeId pid : producers) {
+        auto *sn = m_scriptNodes.value(pid);
+        if (!sn) continue;
+        auto out = sn->output();
+        if (!out) continue;
+        verSum += out->version.load(std::memory_order_acquire);
+        QString j;
+        {
+            QMutexLocker lock(&out->mutex);
+            j = out->json;
+        }
+        const QJsonDocument doc = QJsonDocument::fromJson(j.toUtf8());
+        if (doc.isObject()) {
+            const QJsonObject o = doc.object();
+            for (auto it = o.begin(); it != o.end(); ++it)
+                combined.insert(it.key(), it.value());   // later producers win
+        }
+    }
+    return QString::fromUtf8(QJsonDocument(combined).toJson(QJsonDocument::Compact));
+}
+
+void ClipNodeEditor::syncAllAudioScripts(NodeId deckAClip, double timeA, bool playingA, double speedA,
+                                         NodeId deckBClip, double timeB, bool playingB, double speedB) {
+    for (auto it = m_scriptNodes.cbegin(); it != m_scriptNodes.cend(); ++it) {
+        if (!it.value() || !it.value()->isAudioScript())
+            continue;
+        const NodeId clip = m_scene->clipForAudioScript(it.key());
+        if (clip != 0 && clip == deckAClip)
+            syncAudioScriptNode(it.key(), timeA, playingA, speedA);
+        else if (clip != 0 && clip == deckBClip)
+            syncAudioScriptNode(it.key(), timeB, playingB, speedB);
+        else
+            syncAudioScriptNode(it.key(), 0.0, false, 1.0);
+    }
+}
+
 std::shared_ptr<ScriptOutput> ClipNodeEditor::scriptOutputForDataNode(NodeId dataNodeId) const {
-    const NodeId scriptId = m_scene->scriptNodeForData(dataNodeId);
-    if (scriptId == 0) return nullptr;
-    auto *scriptNode = m_scriptNodes.value(scriptId);
-    return scriptNode ? scriptNode->output() : nullptr;
+    const QVector<NodeId> producers = m_scene->scriptProducersForData(dataNodeId);
+    if (producers.isEmpty()) {
+        m_dataInputs.remove(dataNodeId);
+        return nullptr;
+    }
+    // Single producer: hand the consumer the producer's own output so audio-
+    // reactive data reaches shaders at render rate with no intermediate copy.
+    if (producers.size() == 1) {
+        m_dataInputs.remove(dataNodeId);
+        auto *sn = m_scriptNodes.value(producers.first());
+        return sn ? sn->output() : nullptr;
+    }
+    // Multiple producers: hand back a persistent merged output kept fresh by the
+    // poll loop (pollDataConsumers fills it within a tick).
+    auto slot = m_dataInputs.value(dataNodeId);
+    if (!slot) {
+        slot = std::make_shared<ScriptOutput>();
+        m_dataInputs.insert(dataNodeId, slot);
+        m_lastMergedVersion.remove(dataNodeId);   // force a fill next poll
+    }
+    return slot;
 }
 
 void ClipNodeEditor::wireTextScriptBinding(ClipNodeModel *model, NodeId id) {
@@ -4162,6 +4415,7 @@ void ClipNodeEditor::populateAddNodeMenu(QMenu *menu, bool includeInputNode) {
     menu->addSection(QStringLiteral("Script"));
     menu->addAction(QStringLiteral("Add Script Node"), this, &ClipNodeEditor::onAddScriptNode);
     menu->addAction(QStringLiteral("Add Audio Script Node"), this, &ClipNodeEditor::onAddAudioScriptNode);
+    menu->addAction(QStringLiteral("Add Trigger Node"), this, &ClipNodeEditor::onAddTriggerNode);
 #endif
 }
 
@@ -4175,12 +4429,72 @@ void ClipNodeEditor::onAddAudioScriptNode()   {
     if (!m_scene) return;
     auto *scriptNode = new AudioScriptNodeItem(m_nextId++);
     scriptNode->setPos(scenePosForView(m_view, QCursor::pos()));
+    scriptNode->onEditRequested = [this](NodeId nid) { onEditAudioScriptNode(nid); };
     m_scene->addItem(scriptNode);
     m_scriptNodes[scriptNode->nodeId()] = scriptNode;
     registerItem(scriptNode);
     wireDeleteCallback(scriptNode, [this](NodeId nid) { deleteNodeById(nid); });
     emit audioGraphChanged();
 #endif
+}
+
+void ClipNodeEditor::onAddTriggerNode() {
+#ifdef PRISM_HAVE_LUA
+    if (!m_scene) return;
+    auto *trig = new TriggerNodeItem(m_nextId++);
+    trig->setPos(scenePosForView(m_view, QCursor::pos()));
+    trig->onEditRequested = [this](NodeId nid) { onEditTriggerNode(nid); };
+    m_scene->addItem(trig);
+    m_scriptNodes[trig->nodeId()] = trig;
+    registerItem(trig);
+    wireDeleteCallback(trig, [this](NodeId nid) { deleteNodeById(nid); });
+    emit clipChainChanged();
+#endif
+}
+
+void ClipNodeEditor::onEditTriggerNode(NodeId nodeId) {
+    auto *trig = dynamic_cast<TriggerNodeItem *>(m_scriptNodes.value(nodeId));
+    if (!trig) return;
+
+    QDialog dialog(this);
+    dialog.setWindowTitle(QStringLiteral("Trigger Timing"));
+    auto *form = new QFormLayout(&dialog);
+
+    auto *modeCombo = new QComboBox(&dialog);
+    modeCombo->addItem(QStringLiteral("Interval"),       (int)TriggerNodeItem::Mode::Interval);
+    modeCombo->addItem(QStringLiteral("At time of day"), (int)TriggerNodeItem::Mode::TimeOfDay);
+    modeCombo->addItem(QStringLiteral("Manual pulse"),   (int)TriggerNodeItem::Mode::Manual);
+    modeCombo->setCurrentIndex((int)trig->triggerNodeMode());
+    form->addRow(QStringLiteral("Mode:"), modeCombo);
+
+    auto *intervalSpin = new QSpinBox(&dialog);
+    intervalSpin->setRange(20, 3600000);
+    intervalSpin->setSuffix(QStringLiteral(" ms"));
+    intervalSpin->setValue(trig->triggerInterval());
+    form->addRow(QStringLiteral("Interval:"), intervalSpin);
+
+    auto *timeEdit = new QTimeEdit(trig->triggerTime(), &dialog);
+    timeEdit->setDisplayFormat(QStringLiteral("HH:mm:ss"));
+    form->addRow(QStringLiteral("Time of day:"), timeEdit);
+
+    auto syncRows = [&]() {
+        const auto mode = (TriggerNodeItem::Mode)modeCombo->currentData().toInt();
+        intervalSpin->setEnabled(mode == TriggerNodeItem::Mode::Interval);
+        timeEdit->setEnabled(mode == TriggerNodeItem::Mode::TimeOfDay);
+    };
+    connect(modeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), &dialog,
+            [&](int) { syncRows(); });
+    syncRows();
+
+    auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dialog);
+    form->addRow(buttons);
+    connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+    connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+
+    if (dialog.exec() == QDialog::Accepted) {
+        trig->setTiming((TriggerNodeItem::Mode)modeCombo->currentData().toInt(),
+                        intervalSpin->value(), timeEdit->time());
+    }
 }
 
 QPointF ClipNodeEditor::scenePosForView(QGraphicsView *view, const QPoint &globalPos) const {
@@ -4226,7 +4540,7 @@ void ClipNodeEditor::addScriptNodeTo(ClipNodeScene *scene, QGraphicsView *view,
                                      const QPoint &globalPos) {
 #ifdef PRISM_HAVE_LUA
     if (!scene) return;
-    ScriptEditDialog dlg(QString(), ScriptTriggerMode::Periodic, 1000, this);
+    ScriptEditDialog dlg(QString(), ScriptTriggerMode::OnInputChange, 1000, this);
     if (dlg.exec() != QDialog::Accepted) return;
     const QString code = dlg.resultCode().trimmed();
     if (code.isEmpty()) return;
@@ -4513,6 +4827,68 @@ void ClipNodeEditor::onEditScriptNode(NodeId nodeId) {
 #endif
 }
 
+void ClipNodeEditor::onEditAudioScriptNode(NodeId nodeId) {
+    auto *sn = dynamic_cast<AudioScriptNodeItem *>(m_scriptNodes.value(nodeId));
+    if (!sn) return;
+
+    AudioAnalyzerConfig cfg = sn->analyzerConfig();
+
+    QDialog dialog(this);
+    dialog.setWindowTitle(QStringLiteral("Audio FFT Settings"));
+    auto *form = new QFormLayout(&dialog);
+
+    auto *fftCombo = new QComboBox(&dialog);
+    for (int n : { 256, 512, 1024, 2048, 4096, 8192 })
+        fftCombo->addItem(QString::number(n), n);
+    fftCombo->setCurrentIndex(std::max(0, fftCombo->findData(cfg.fftSize)));
+    form->addRow(QStringLiteral("FFT size:"), fftCombo);
+
+    auto *binsSpin = new QSpinBox(&dialog);
+    binsSpin->setRange(8, AudioAnalyzer::kMaxBins);
+    binsSpin->setValue(cfg.binCount);
+    form->addRow(QStringLiteral("Spectrum bins:"), binsSpin);
+
+    auto *smoothSpin = new QDoubleSpinBox(&dialog);
+    smoothSpin->setRange(0.0, 0.98);
+    smoothSpin->setSingleStep(0.05);
+    smoothSpin->setValue(cfg.smoothing);
+    form->addRow(QStringLiteral("Smoothing:"), smoothSpin);
+
+    auto *beatSpin = new QDoubleSpinBox(&dialog);
+    beatSpin->setRange(0.1, 5.0);
+    beatSpin->setSingleStep(0.1);
+    beatSpin->setValue(cfg.beatSensitivity);
+    form->addRow(QStringLiteral("Beat sensitivity:"), beatSpin);
+
+    auto *lowMidSpin = new QSpinBox(&dialog);
+    lowMidSpin->setRange(20, 20000);
+    lowMidSpin->setSuffix(QStringLiteral(" Hz"));
+    lowMidSpin->setValue(static_cast<int>(cfg.lowMidHz));
+    form->addRow(QStringLiteral("Low/Mid split:"), lowMidSpin);
+
+    auto *midHighSpin = new QSpinBox(&dialog);
+    midHighSpin->setRange(20, 20000);
+    midHighSpin->setSuffix(QStringLiteral(" Hz"));
+    midHighSpin->setValue(static_cast<int>(cfg.midHighHz));
+    form->addRow(QStringLiteral("Mid/High split:"), midHighSpin);
+
+    auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dialog);
+    form->addRow(buttons);
+    connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+    connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+
+    if (dialog.exec() == QDialog::Accepted) {
+        cfg.fftSize = fftCombo->currentData().toInt();
+        cfg.binCount = binsSpin->value();
+        cfg.smoothing = static_cast<float>(smoothSpin->value());
+        cfg.beatSensitivity = static_cast<float>(beatSpin->value());
+        cfg.lowMidHz = static_cast<float>(lowMidSpin->value());
+        cfg.midHighHz = static_cast<float>(midHighSpin->value());
+        sn->setAnalyzerConfig(cfg);
+        emit audioGraphChanged();
+    }
+}
+
 void ClipNodeEditor::onEditLayerCanvas(NodeId layerId) {
     auto *ly = dynamic_cast<LayerNodeItem *>(m_itemMap.value(layerId));
     if (!ly) return;
@@ -4746,7 +5122,23 @@ QJsonObject ClipNodeEditor::saveState(const QDir &sessionDir) const {
         obj["luaCode"] = sn->code();
         obj["triggerMode"] = static_cast<int>(sn->triggerMode());
         obj["intervalMs"] = sn->intervalMs();
-        obj["scriptType"] = sn->isAudioScript() ? QStringLiteral("audio") : QStringLiteral("lua");
+        if (auto *trig = dynamic_cast<TriggerNodeItem *>(sn)) {
+            obj["scriptType"] = QStringLiteral("trigger");
+            obj["trigMode"] = static_cast<int>(trig->triggerNodeMode());
+            obj["trigInterval"] = trig->triggerInterval();
+            obj["trigTime"] = trig->triggerTime().toString(QStringLiteral("HH:mm:ss"));
+        } else if (auto *as = dynamic_cast<AudioScriptNodeItem *>(sn)) {
+            obj["scriptType"] = QStringLiteral("audio");
+            const AudioAnalyzerConfig c = as->analyzerConfig();
+            obj["fftSize"] = c.fftSize;
+            obj["binCount"] = c.binCount;
+            obj["smoothing"] = c.smoothing;
+            obj["beatSensitivity"] = c.beatSensitivity;
+            obj["lowMidHz"] = c.lowMidHz;
+            obj["midHighHz"] = c.midHighHz;
+        } else {
+            obj["scriptType"] = QStringLiteral("lua");
+        }
         scriptNodes.append(obj);
     }
     root["scriptNodes"] = scriptNodes;
@@ -4835,6 +5227,7 @@ PortItem *ClipNodeEditor::findPort(NodeId nodeId, int portKindInt, int slotIndex
     if (auto *si = dynamic_cast<ScriptNodeItem *>(base)) {
         if (kind == PortKind::ScriptOut) return si->scriptOutPort();
         if (kind == PortKind::AudioIn)   return si->audioInPort();
+        if (kind == PortKind::DataIn)    return si->dataInPort();
     }
     return nullptr;
 }
@@ -5086,15 +5479,34 @@ void ClipNodeEditor::restoreState(const QJsonObject &state) {
         m_nextId = scriptId;
 #ifdef PRISM_HAVE_LUA
         ScriptNodeItem *sn = nullptr;
-        if (obj["scriptType"].toString() == QStringLiteral("audio")) {
-            sn = new AudioScriptNodeItem(m_nextId++);
+        const QString scriptType = obj["scriptType"].toString();
+        if (scriptType == QStringLiteral("audio")) {
+            auto *as = new AudioScriptNodeItem(m_nextId++);
+            AudioAnalyzerConfig c;
+            c.fftSize = obj["fftSize"].toInt(c.fftSize);
+            c.binCount = obj["binCount"].toInt(c.binCount);
+            c.smoothing = static_cast<float>(obj["smoothing"].toDouble(c.smoothing));
+            c.beatSensitivity = static_cast<float>(obj["beatSensitivity"].toDouble(c.beatSensitivity));
+            c.lowMidHz = static_cast<float>(obj["lowMidHz"].toDouble(c.lowMidHz));
+            c.midHighHz = static_cast<float>(obj["midHighHz"].toDouble(c.midHighHz));
+            as->setAnalyzerConfig(c);
+            as->onEditRequested = [this](NodeId sid) { onEditAudioScriptNode(sid); };
+            sn = as;
+        } else if (scriptType == QStringLiteral("trigger")) {
+            auto *trig = new TriggerNodeItem(m_nextId++);
+            trig->setTiming(static_cast<TriggerNodeItem::Mode>(obj["trigMode"].toInt(0)),
+                            obj["trigInterval"].toInt(1000),
+                            QTime::fromString(obj["trigTime"].toString(QStringLiteral("12:00:00")),
+                                              QStringLiteral("HH:mm:ss")));
+            trig->onEditRequested = [this](NodeId sid) { onEditTriggerNode(sid); };
+            sn = trig;
         } else {
             sn = new ScriptNodeItem(m_nextId++, obj["luaCode"].toString(),
                 static_cast<ScriptTriggerMode>(obj["triggerMode"].toInt(0)),
                 obj["intervalMs"].toInt(1000));
+            sn->onEditRequested = [this](NodeId sid) { onEditScriptNode(sid); };
         }
         sn->setPos(obj["posX"].toDouble(), obj["posY"].toDouble());
-        sn->onEditRequested = [this](NodeId sid) { onEditScriptNode(sid); };
         m_scene->addItem(sn);
         m_scriptNodes[scriptId] = sn;
         registerItem(sn);

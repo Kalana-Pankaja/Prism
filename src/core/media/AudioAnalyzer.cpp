@@ -10,16 +10,49 @@ static constexpr int kSampleRate = AudioDecoder::kOutputSampleRate;
 
 AudioAnalyzer::AudioAnalyzer()
     : m_decoder(new AudioDecoder())
-    , m_ringBuffer(kFftSize, 0.f)
-    , m_hannWindow(kFftSize)
-    , m_fftInput(kFftSize)
-    , m_spectrum(kBins, 0.f)
-    , m_smoothedSpectrum(kBins, 0.f)
 {
-    for (int i = 0; i < kFftSize; ++i) {
-        const float w = static_cast<float>(i) / static_cast<float>(kFftSize - 1);
+    allocateBuffers();
+}
+
+void AudioAnalyzer::allocateBuffers() {
+    const int n = m_config.fftSize;
+    m_ringBuffer.assign(n, 0.f);
+    m_hannWindow.assign(n, 0.f);
+    m_fftInput.assign(n, 0.f);
+    m_spectrum.assign(m_config.binCount, 0.f);
+    m_smoothedSpectrum.assign(m_config.binCount, 0.f);
+    for (int i = 0; i < n; ++i) {
+        const float w = static_cast<float>(i) / static_cast<float>(n - 1);
         m_hannWindow[i] = 0.5f * (1.f - std::cos(2.f * static_cast<float>(M_PI) * w));
     }
+    m_ringWrite = 0;
+    m_ringFilled = 0;
+
+    if (m_fftCfg) {
+        kiss_fftr_free(static_cast<kiss_fftr_cfg>(m_fftCfg));
+        m_fftCfg = nullptr;
+    }
+    if (m_decoder && m_decoder->isOpen())
+        m_fftCfg = kiss_fftr_alloc(n, 0, nullptr, nullptr);
+}
+
+void AudioAnalyzer::setConfig(const AudioAnalyzerConfig &cfg) {
+    AudioAnalyzerConfig c = cfg;
+    // FFT size must be a power of two within bounds.
+    c.fftSize = std::clamp(c.fftSize, 256, kMaxFftSize);
+    int pow2 = 256;
+    while (pow2 < c.fftSize) pow2 <<= 1;
+    c.fftSize = pow2;
+    c.binCount = std::clamp(c.binCount, 8, kMaxBins);
+    c.smoothing = std::clamp(c.smoothing, 0.f, 0.98f);
+    c.beatSensitivity = std::clamp(c.beatSensitivity, 0.1f, 5.f);
+    c.lowMidHz = std::clamp(c.lowMidHz, 20.f, 20000.f);
+    c.midHighHz = std::clamp(c.midHighHz, c.lowMidHz + 1.f, 20000.f);
+
+    const bool sizeChanged = (c.fftSize != m_config.fftSize) || (c.binCount != m_config.binCount);
+    m_config = c;
+    if (sizeChanged)
+        allocateBuffers();
 }
 
 AudioAnalyzer::~AudioAnalyzer() {
@@ -39,7 +72,7 @@ bool AudioAnalyzer::open(const QString &filePath, double startTime) {
     if (startTime > 0.0)
         m_decoder->seek(startTime);
 
-    m_fftCfg = kiss_fftr_alloc(kFftSize, 0, nullptr, nullptr);
+    m_fftCfg = kiss_fftr_alloc(m_config.fftSize, 0, nullptr, nullptr);
     if (!m_fftCfg) {
         m_decoder->close();
         return false;
@@ -115,9 +148,10 @@ void AudioAnalyzer::setPlaybackSpeed(double speed) {
 }
 
 void AudioAnalyzer::appendMonoSample(float sample) {
+    const int n = m_config.fftSize;
     m_ringBuffer[m_ringWrite] = sample;
-    m_ringWrite = (m_ringWrite + 1) % kFftSize;
-    m_ringFilled = std::min(m_ringFilled + 1, kFftSize);
+    m_ringWrite = (m_ringWrite + 1) % n;
+    m_ringFilled = std::min(m_ringFilled + 1, n);
 }
 
 void AudioAnalyzer::advance(double deltaSeconds) {
@@ -163,27 +197,32 @@ void AudioAnalyzer::advance(double deltaSeconds) {
     const float releasePerSecond = 3.0f;
     m_beatPulse = std::max(0.0f, m_beatPulse - static_cast<float>(deltaSeconds) * releasePerSecond);
 
-    if (m_ringFilled >= kFftSize)
+    if (m_ringFilled >= m_config.fftSize)
         computeSpectrum();
 }
 
 void AudioAnalyzer::computeSpectrum() {
-    for (int i = 0; i < kFftSize; ++i) {
-        const int idx = (m_ringWrite + i) % kFftSize;
+    const int n = m_config.fftSize;
+    const int bins = m_config.binCount;
+
+    for (int i = 0; i < n; ++i) {
+        const int idx = (m_ringWrite + i) % n;
         m_fftInput[i] = m_ringBuffer[idx] * m_hannWindow[i];
     }
 
-    std::vector<kiss_fft_cpx> freqData(kFftSize / 2 + 1);
+    std::vector<kiss_fft_cpx> freqData(n / 2 + 1);
     kiss_fftr(static_cast<kiss_fftr_cfg>(m_fftCfg),
               m_fftInput.data(),
               freqData.data());
 
-    const int numFftBins = kFftSize / 2;
-    std::vector<float> rawBins(kBins, 0.f);
+    const int numFftBins = n / 2;
+    const float freqPerBin = static_cast<float>(kSampleRate) / static_cast<float>(n);
 
-    for (int b = 0; b < kBins; ++b) {
-        const float t0 = static_cast<float>(b) / kBins;
-        const float t1 = static_cast<float>(b + 1) / kBins;
+    // ── Log-spaced display spectrum ──────────────────────────────────────────
+    std::vector<float> rawBins(bins, 0.f);
+    for (int b = 0; b < bins; ++b) {
+        const float t0 = static_cast<float>(b) / bins;
+        const float t1 = static_cast<float>(b + 1) / bins;
         const int binLow  = std::max(1, static_cast<int>(std::pow(numFftBins, t0)));
         const int binHigh = std::min(numFftBins, static_cast<int>(std::pow(numFftBins, t1)));
         float sum = 0.f;
@@ -202,49 +241,38 @@ void AudioAnalyzer::computeSpectrum() {
         maxVal = std::max(maxVal, v);
     const float norm = maxVal > 1e-6f ? maxVal : 1.f;
 
-    for (int b = 0; b < kBins; ++b) {
+    // Frame-blend smoothing: config.smoothing is the weight kept from the past.
+    const float keep = m_config.smoothing;
+    const float take = 1.f - keep;
+    for (int b = 0; b < bins; ++b) {
         const float normalized = std::clamp(rawBins[b] / norm, 0.f, 1.f);
-        m_spectrum[b] = m_smoothedSpectrum[b] * 0.5f + normalized * 0.5f;
+        m_spectrum[b] = m_smoothedSpectrum[b] * keep + normalized * take;
         m_smoothedSpectrum[b] = m_spectrum[b];
     }
 
-    // Broad perceptual bands on normalized log bins:
-    // low: kick/bass, mid: body/vocals, high: hats/detail.
-    const int lowEnd = std::max(1, kBins / 8);
-    const int midEnd = std::max(lowEnd + 1, (kBins * 5) / 8);
-
-    float lowSum = 0.f;
-    float midSum = 0.f;
-    float highSum = 0.f;
-    int lowCount = 0;
-    int midCount = 0;
-    int highCount = 0;
-    for (int b = 0; b < kBins; ++b) {
-        const float v = m_spectrum[b];
-        if (b < lowEnd) {
-            lowSum += v;
-            ++lowCount;
-        } else if (b < midEnd) {
-            midSum += v;
-            ++midCount;
-        } else {
-            highSum += v;
-            ++highCount;
-        }
+    // ── Perceptual bands from Hz crossovers on the raw linear FFT bins ────────
+    float lowSum = 0.f, midSum = 0.f, highSum = 0.f;
+    int lowCount = 0, midCount = 0, highCount = 0;
+    for (int i = 1; i <= numFftBins; ++i) {
+        const float re = freqData[i].r;
+        const float im = freqData[i].i;
+        const float mag = std::sqrt(re * re + im * im) / norm;
+        const float hz = static_cast<float>(i) * freqPerBin;
+        if (hz < m_config.lowMidHz)       { lowSum += mag;  ++lowCount; }
+        else if (hz < m_config.midHighHz) { midSum += mag;  ++midCount; }
+        else                              { highSum += mag; ++highCount; }
     }
+    const float lowRaw  = (lowCount  > 0) ? std::clamp(lowSum  / lowCount,  0.f, 1.f) : 0.f;
+    const float midRaw  = (midCount  > 0) ? std::clamp(midSum  / midCount,  0.f, 1.f) : 0.f;
+    const float highRaw = (highCount > 0) ? std::clamp(highSum / highCount, 0.f, 1.f) : 0.f;
 
-    const float lowRaw = (lowCount > 0) ? (lowSum / static_cast<float>(lowCount)) : 0.f;
-    const float midRaw = (midCount > 0) ? (midSum / static_cast<float>(midCount)) : 0.f;
-    const float highRaw = (highCount > 0) ? (highSum / static_cast<float>(highCount)) : 0.f;
+    m_lowBand  = m_lowBand  * keep + lowRaw  * take;
+    m_midBand  = m_midBand  * keep + midRaw  * take;
+    m_highBand = m_highBand * keep + highRaw * take;
 
-    // Slightly different smoothing per band to preserve punch in lows.
-    m_lowBand = m_lowBand * 0.68f + lowRaw * 0.32f;
-    m_midBand = m_midBand * 0.78f + midRaw * 0.22f;
-    m_highBand = m_highBand * 0.82f + highRaw * 0.18f;
-
-    // Beat pulse from low-band transient.
+    // Beat pulse from low-band transient; beatSensitivity scales the threshold.
     const float lowDelta = std::max(0.0f, m_lowBand - m_prevLowEnergy);
-    const float dynamicThreshold = 0.06f + m_level * 0.08f;
+    const float dynamicThreshold = (0.06f + m_level * 0.08f) / m_config.beatSensitivity;
     if (lowDelta > dynamicThreshold)
         m_beatPulse = std::max(m_beatPulse, std::clamp(lowDelta * 6.0f, 0.0f, 1.0f));
     m_prevLowEnergy = m_lowBand;

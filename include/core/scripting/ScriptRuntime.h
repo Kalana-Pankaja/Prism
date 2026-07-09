@@ -7,9 +7,10 @@
 #include <memory>
 
 enum class ScriptTriggerMode {
-    Periodic = 0,
-    OnStart  = 1,
-    Manual   = 2,
+    Periodic      = 0,
+    OnStart       = 1,
+    Manual        = 2,
+    OnInputChange = 3,   // re-run whenever an upstream node's output changes
 };
 
 class QTimer;
@@ -38,6 +39,9 @@ public slots:
     void applySettings(const QString &code, int triggerMode, int intervalMs);
     void runNow();
     void shutdown();
+    /// Replace the JSON handed to the script as the global `input` table on its
+    /// next run. When the trigger is OnInputChange, this also runs the script.
+    void setInput(const QString &json);
 
 signals:
     void executionFinished(bool ok);
@@ -53,6 +57,7 @@ private:
 
     std::shared_ptr<ScriptOutput> m_output;
     QString m_script;
+    QString m_inputJson;   // latest upstream JSON, exposed as the `input` global
     ScriptTriggerMode m_triggerMode = ScriptTriggerMode::Periodic;
     int m_intervalMs = 1000;
     QString m_lastError;

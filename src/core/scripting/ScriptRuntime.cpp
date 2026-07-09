@@ -74,6 +74,39 @@ QJsonValue luaToJsonValue(const sol::object &obj) {
     }
     return QJsonValue(QString::fromUtf8(obj.as<std::string>().c_str()));
 }
+
+// Build a Lua value mirroring a JSON value, for the `input` global.
+sol::object jsonToLua(sol::state_view lua, const QJsonValue &val) {
+    switch (val.type()) {
+    case QJsonValue::Bool:
+        return sol::make_object(lua, val.toBool());
+    case QJsonValue::Double: {
+        const double d = val.toDouble();
+        const qint64 i = static_cast<qint64>(d);
+        if (static_cast<double>(i) == d)
+            return sol::make_object(lua, static_cast<lua_Integer>(i));
+        return sol::make_object(lua, d);
+    }
+    case QJsonValue::String:
+        return sol::make_object(lua, val.toString().toUtf8().constData());
+    case QJsonValue::Array: {
+        sol::table t = lua.create_table();
+        const QJsonArray arr = val.toArray();
+        for (int i = 0; i < arr.size(); ++i)
+            t[i + 1] = jsonToLua(lua, arr.at(i));   // 1-based, Lua convention
+        return t;
+    }
+    case QJsonValue::Object: {
+        sol::table t = lua.create_table();
+        const QJsonObject obj = val.toObject();
+        for (auto it = obj.begin(); it != obj.end(); ++it)
+            t[it.key().toUtf8().constData()] = jsonToLua(lua, it.value());
+        return t;
+    }
+    default:
+        return sol::make_object(lua, sol::nil);
+    }
+}
 #endif
 
 } // namespace
@@ -115,6 +148,15 @@ void ScriptRuntime::setTrigger(ScriptTriggerMode mode, int intervalMs) {
         m_timer->start(m_intervalMs);
     else if (mode == ScriptTriggerMode::OnStart)
         runNow();
+    // OnInputChange / Manual are driven externally (setInput / runNow).
+}
+
+void ScriptRuntime::setInput(const QString &json) {
+    if (m_shuttingDown.load(std::memory_order_acquire))
+        return;
+    m_inputJson = json;
+    if (m_triggerMode == ScriptTriggerMode::OnInputChange)
+        executeScript();
 }
 
 void ScriptRuntime::applySettings(const QString &code, int triggerMode, int intervalMs) {
@@ -242,6 +284,19 @@ void ScriptRuntime::executeScript() {
 
     m_lastError.clear();
     sol::state &lua = m_lua->lua;
+
+    // Expose upstream data as the global `input` table (empty when unconnected).
+    if (m_inputJson.trimmed().isEmpty()) {
+        lua["input"] = lua.create_table();
+    } else {
+        const QJsonDocument inDoc = QJsonDocument::fromJson(m_inputJson.toUtf8());
+        if (inDoc.isObject())
+            lua["input"] = jsonToLua(lua, inDoc.object());
+        else if (inDoc.isArray())
+            lua["input"] = jsonToLua(lua, inDoc.array());
+        else
+            lua["input"] = lua.create_table();
+    }
 
     sol::protected_function_result result = lua.safe_script(
         m_script.toUtf8().constData(),
