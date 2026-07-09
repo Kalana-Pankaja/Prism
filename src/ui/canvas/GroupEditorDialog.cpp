@@ -61,6 +61,7 @@ GroupEditorDialog::GroupEditorDialog(NodeId groupId, ClipNodeEditor *editor, QWi
             [editor, groupId, view]() {
                 editor->addMasterAudioInputToGroup(groupId, view, true);
             },
+            []() {},
             NdiSource::isAvailable(),
 #ifdef PRISM_HAVE_WEBRTC
             WebRtcSource::isAvailable());

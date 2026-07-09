@@ -65,6 +65,7 @@ public:
         inline static constexpr const char *SkipNext = "skip_next";
         inline static constexpr const char *SkipPrevious = "skip_previous";
         inline static constexpr const char *Smartphone = "smartphone";
+        inline static constexpr const char *Speaker = "speaker";
         inline static constexpr const char *TextFields = "text_fields";
         inline static constexpr const char *Warning = "warning";
         inline static constexpr const char *ZoomIn = "zoom_in";

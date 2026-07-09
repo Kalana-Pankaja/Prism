@@ -65,6 +65,7 @@ AudioAnalyzer::~AudioAnalyzer() {
 
 bool AudioAnalyzer::open(const QString &filePath, double startTime) {
     close();
+    m_live = false;
 
     if (!m_decoder->open(filePath))
         return false;
@@ -114,10 +115,68 @@ void AudioAnalyzer::close() {
     m_playheadSeconds = 0.0;
     m_playbackSpeed = 1.0;
     m_hasData = false;
+    m_live = false;
+}
+
+bool AudioAnalyzer::beginLive() {
+    close();
+    m_live = true;
+    m_fftCfg = kiss_fftr_alloc(m_config.fftSize, 0, nullptr, nullptr);
+    if (!m_fftCfg) {
+        m_live = false;
+        return false;
+    }
+    std::fill(m_ringBuffer.begin(), m_ringBuffer.end(), 0.f);
+    std::fill(m_spectrum.begin(), m_spectrum.end(), 0.f);
+    std::fill(m_smoothedSpectrum.begin(), m_smoothedSpectrum.end(), 0.f);
+    m_ringWrite = 0;
+    m_ringFilled = 0;
+    m_level = 0.f;
+    m_lowBand = 0.f;
+    m_midBand = 0.f;
+    m_highBand = 0.f;
+    m_beatPulse = 0.f;
+    m_prevLowEnergy = 0.f;
+    m_playheadSeconds = 0.0;
+    m_playbackSpeed = 1.0;
+    m_hasData = false;
+    return true;
+}
+
+void AudioAnalyzer::feedStereoPcm(const QByteArray &pcm) {
+    if (!m_live || !m_fftCfg || pcm.isEmpty())
+        return;
+
+    const auto *data = reinterpret_cast<const float *>(pcm.constData());
+    const int frameSize = static_cast<int>(sizeof(float)) * AudioDecoder::kOutputChannels;
+    const int numFrames = pcm.size() / frameSize;
+    if (numFrames <= 0)
+        return;
+
+    double sumSq = 0.0;
+    int levelCount = 0;
+    for (int i = 0; i < numFrames; ++i) {
+        const float mono = (data[i * 2] + data[i * 2 + 1]) * 0.5f;
+        appendMonoSample(mono);
+        sumSq += static_cast<double>(mono) * static_cast<double>(mono);
+        ++levelCount;
+    }
+
+    if (levelCount > 0) {
+        const float rms = static_cast<float>(std::sqrt(sumSq / levelCount));
+        m_level = std::clamp(rms * 4.f, 0.f, 1.f);
+        m_playheadSeconds += static_cast<double>(numFrames) / static_cast<double>(kSampleRate);
+    }
+
+    const float dt = static_cast<float>(numFrames) / static_cast<float>(kSampleRate);
+    m_beatPulse = std::max(0.0f, m_beatPulse - 3.0f * dt);
+
+    if (m_ringFilled >= m_config.fftSize)
+        computeSpectrum();
 }
 
 bool AudioAnalyzer::seek(double seconds) {
-    if (!m_decoder || !m_decoder->isOpen())
+    if (m_live || !m_decoder || !m_decoder->isOpen())
         return false;
     const double clamped = std::max(0.0, seconds);
     if (!m_decoder->seek(clamped))
@@ -155,7 +214,7 @@ void AudioAnalyzer::appendMonoSample(float sample) {
 }
 
 void AudioAnalyzer::advance(double deltaSeconds) {
-    if (!m_decoder->isOpen() || !m_fftCfg || deltaSeconds <= 0.0)
+    if (m_live || !m_decoder->isOpen() || !m_fftCfg || deltaSeconds <= 0.0)
         return;
 
     deltaSeconds = std::min(deltaSeconds, 0.1);
@@ -214,6 +273,12 @@ void AudioAnalyzer::decay(double deltaSeconds) {
     fade(m_highBand);
     fade(m_prevLowEnergy);
     m_beatPulse = std::max(0.f, m_beatPulse - static_cast<float>(deltaSeconds) * 3.0f);
+    float maxSpec = 0.f;
+    for (float v : m_spectrum)
+        maxSpec = std::max(maxSpec, v);
+    if (m_level < 1e-4f && m_lowBand < 1e-4f && m_midBand < 1e-4f && m_highBand < 1e-4f
+        && maxSpec < 1e-4f)
+        m_hasData = false;
 }
 
 void AudioAnalyzer::computeSpectrum() {

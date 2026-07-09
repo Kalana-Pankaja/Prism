@@ -26,6 +26,7 @@ class AbSelectNodeItem;
 class ScriptNodeItem;
 class MasterAudioOutputNodeItem;
 class MasterAudioInputNodeItem;
+class MasterAudioCaptureNodeItem;
 class AudioMixerNodeItem;
 class AudioEffectNodeItem;
 
@@ -37,6 +38,15 @@ enum class AudioPlaybackMode {
 struct MasterAudioInputSettings {
     QString inputDeviceId;
     QString inputDeviceLabel;
+    int     volume = 100;
+    bool    muted = false;
+    NodeId  routedMasterOutputId = 0;
+    int     routedOutputPortIndex = -1;
+};
+
+struct MasterAudioCaptureSettings {
+    QString playbackDeviceId;
+    QString playbackDeviceLabel;
     int     volume = 100;
     bool    muted = false;
     NodeId  routedMasterOutputId = 0;
@@ -160,6 +170,7 @@ public:
 
     void populateAddNodeMenu(QMenu *menu, bool includeInputNode = false);
     void addMicInputAtCursor();
+    void addAudioCaptureAtCursor();
 
     // ── Output-node querying ─────────────────────────────────────────────────
     NodeId outputNodeId() const { return m_outputNode; }
@@ -170,14 +181,19 @@ public:
     bool audioSettingsForClip(NodeId clipId, int &volume, bool &muted, bool &routedToMaster, AudioPlaybackMode &playbackMode, int &delayMs, QString &outputDeviceId) const;
     bool resolveAudioStreamRoute(NodeId sourceNodeId, ResolvedAudioRoute &route) const;
     bool masterAudioInputSettings(NodeId inputNodeId, MasterAudioInputSettings &settings) const;
+    bool masterAudioCaptureSettings(NodeId captureNodeId, MasterAudioCaptureSettings &settings) const;
     bool masterAudioOutputDevice(NodeId masterOutputNodeId, QString &outputDeviceId) const;
     bool masterAudioOutputDeviceForPort(NodeId masterOutputNodeId, int portIndex, QString &outputDeviceId) const;
     NodeId audioOutputNodeId() const;
     QVector<NodeId> allMasterAudioInputNodeIds() const;
+    QVector<NodeId> allMasterAudioCaptureNodeIds() const;
     QVector<NodeId> allAudioMixerNodeIds() const;
     bool mixerSlotSettings(NodeId mixerId, int slotIndex, int &volume, bool &muted, QString &name) const;
     bool audioSourceForAudioScript(NodeId scriptNodeId, QString &filePath) const;
     NodeId audioSourceNodeIdForAudioScript(NodeId scriptNodeId) const;
+    bool isLiveAudioScriptProducer(NodeId producerId) const;
+    bool hasAudioScriptConsumer(NodeId producerId) const;
+    void feedLiveAudioForProducer(NodeId producerId, const QByteArray &pcm);
     NodeId dataScriptNodeId(NodeId dataNodeId) const;
     void syncAudioScriptNode(NodeId scriptNodeId, double playbackTime, bool playing, double speed);
     /// Drive every audio-script node from whichever deck owns its source clip, so
@@ -215,6 +231,7 @@ private slots:
     void onAddTriggerNode();
     void onEditClipAudio(NodeId clipId);
     void onEditMicInput(NodeId micId);
+    void onEditAudioCapture(NodeId captureId);
     void onEditAudioMixer(NodeId mixerId);
     void onEditScriptNode(NodeId nodeId);
     void onEditAudioScriptNode(NodeId nodeId);
@@ -252,6 +269,7 @@ private:
     void addAbSelectNodeAt(const QPoint &globalPos);
     void addMasterAudioOutputTo(ClipNodeScene *scene, QGraphicsView *view, const QPoint &globalPos);
     void addMasterAudioInputTo(ClipNodeScene *scene, QGraphicsView *view, const QPoint &globalPos);
+    void addMasterAudioCaptureTo(ClipNodeScene *scene, QGraphicsView *view, const QPoint &globalPos);
     void addAudioMixerAt(const QPoint &globalPos);
     void addScriptNodeTo(ClipNodeScene *scene, QGraphicsView *view, const QPoint &globalPos);
     void normalizeMixerInputs();
@@ -268,6 +286,7 @@ private:
     QMap<NodeId, ScriptNodeItem *> m_scriptNodes;
     QMap<NodeId, MasterAudioOutputNodeItem *> m_masterAudioNodes;
     QMap<NodeId, MasterAudioInputNodeItem *> m_masterAudioInputNodes;
+    QMap<NodeId, MasterAudioCaptureNodeItem *> m_masterAudioCaptureNodes;
     QMap<NodeId, AudioMixerNodeItem *> m_audioMixerNodes;
     QMap<NodeId, AudioEffectNodeItem *> m_audioEffectNodes;
     QTimer *m_abScriptPollTimer = nullptr;

@@ -169,6 +169,7 @@ set(SOURCES
     src/core/media/AudioAnalyzer.cpp
     src/core/media/AudioPlayer.cpp
     src/core/media/AudioInputCapture.cpp
+    src/core/media/AudioLoopbackCapture.cpp
     src/core/media/AudioInputMixRegistry.cpp
     src/core/sources/ImageSource.cpp
     src/core/sources/SlideshowSource.cpp
@@ -237,6 +238,7 @@ set(SOURCES
     src/ui/common/ThumbHelper.cpp
     src/ui/common/CodeHighlighter.cpp
     src/ui/common/CameraEnumerator.cpp
+    src/ui/common/AudioLoopbackEnumerator.cpp
     src/ui/common/CapturePicker.cpp
     src/ui/common/MaterialSymbols.cpp
     src/ui/hotkeys/HotkeyManager.cpp
@@ -260,6 +262,7 @@ set(SOURCES
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     list(APPEND SOURCES
         src/core/sources/ScreenSource_linux.cpp
+        src/core/media/AudioLoopbackCapture_gst_linux.cpp
         src/ui/output/VirtualCameraProgramSink_linux.cpp)
 elseif(WIN32)
     list(APPEND SOURCES
@@ -293,6 +296,8 @@ set(HEADERS
     include/core/media/AudioAnalyzer.h
     include/core/media/AudioPlayer.h
     include/core/media/AudioInputCapture.h
+    include/core/media/AudioLoopbackCapture.h
+    include/core/media/AudioLoopbackCaptureGStreamer.h
     include/core/media/AudioInputMixRegistry.h
     include/core/sources/ImageSource.h
     include/core/sources/SlideshowSource.h
@@ -365,6 +370,7 @@ set(HEADERS
     # Extracted helper / controller headers
     include/ui/common/ThumbHelper.h
     include/ui/common/CameraEnumerator.h
+    include/ui/common/AudioLoopbackEnumerator.h
     include/ui/common/CapturePicker.h
     include/ui/common/MaterialSymbols.h
     include/ui/hotkeys/HotkeyManager.h

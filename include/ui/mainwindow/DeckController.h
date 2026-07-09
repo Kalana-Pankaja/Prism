@@ -9,6 +9,7 @@
 #include "ui/output/OutputHub.h"
 #include "core/media/AudioPlayer.h"
 #include "core/media/AudioInputCapture.h"
+#include "core/media/AudioLoopbackCapture.h"
 
 class QSlider;
 class QPushButton;
@@ -89,4 +90,5 @@ private:
     std::unique_ptr<AudioPlayer> m_audioPlayerA;
     std::unique_ptr<AudioPlayer> m_audioPlayerB;
     std::unordered_map<NodeId, std::unique_ptr<AudioInputCapture>> m_inputCaptures;
+    std::unordered_map<NodeId, std::unique_ptr<AudioLoopbackCapture>> m_loopbackCaptures;
 };

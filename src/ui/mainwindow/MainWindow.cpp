@@ -770,6 +770,10 @@ void MainWindow::setupSourceMenu(QMenu *menu) {
                                 if (m_clipNodeEditor)
                                     m_clipNodeEditor->addMicInputAtCursor();
                             },
+                            [this]() {
+                                if (m_clipNodeEditor)
+                                    m_clipNodeEditor->addAudioCaptureAtCursor();
+                            },
                             NdiSource::isAvailable(),
 #ifdef PRISM_HAVE_WEBRTC
                             WebRtcSource::isAvailable());

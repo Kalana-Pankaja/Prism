@@ -52,6 +52,11 @@ public:
     float beatPulse() const { return m_beatPulse; }
     bool hasData() const { return m_hasData; }
 
+    /// Real-time PCM from live capture/mic nodes (float32 stereo interleaved).
+    bool beginLive();
+    void feedStereoPcm(const QByteArray &pcm);
+    bool isLive() const { return m_live; }
+
 private:
     void appendMonoSample(float sample);
     void computeSpectrum();
@@ -79,4 +84,5 @@ private:
     double m_playheadSeconds = 0.0;
     double m_playbackSpeed = 1.0;
     bool  m_hasData = false;
+    bool  m_live = false;
 };

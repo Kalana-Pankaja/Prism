@@ -613,6 +613,7 @@ void buildMenu(QMenu *menu,
                std::function<void()> onUrl,
                std::function<void(SourceDescriptor::Kind)> onKind,
                std::function<void()> onMicInput,
+               std::function<void()> onAudioCapture,
                bool ndiAvailable,
                bool webrtcAvailable)
 {
@@ -632,6 +633,7 @@ void buildMenu(QMenu *menu,
     addIconAction(MaterialSymbols::Names::PhotoCamera, QObject::tr("Camera…"),
                   [onKind]() { onKind(SourceDescriptor::Kind::Camera); });
     addIconAction(MaterialSymbols::Names::Mic, QObject::tr("Mic Input…"), std::move(onMicInput));
+    addIconAction(MaterialSymbols::Names::Speaker, QObject::tr("Audio Capture…"), std::move(onAudioCapture));
     addIconAction(MaterialSymbols::Names::DesktopWindows, QObject::tr("Screen Capture…"),
                   [onKind]() { onKind(SourceDescriptor::Kind::Screen); });
     addIconAction(MaterialSymbols::Names::SelectWindow, QObject::tr("Window / Tab…"),

@@ -30,6 +30,7 @@
 #include <QGraphicsTextItem>
 #include <QMediaDevices>
 #include <QAudioDevice>
+#include "ui/common/AudioLoopbackEnumerator.h"
 #include <QScrollBar>
 #include <QVBoxLayout>
 #include <QFormLayout>
@@ -104,6 +105,7 @@ class OutputNodeItem;
 class ScriptNodeItem;
 class MasterAudioOutputNodeItem;
 class MasterAudioInputNodeItem;
+class MasterAudioCaptureNodeItem;
 class AudioMixerNodeItem;
 class AudioEffectNodeItem;
 class ClipNodeScene;
@@ -193,8 +195,8 @@ bool portsCompatible(PortKind a, PortKind b) {
         (isMixedAudioInKind(a) && isAudioStreamOutKind(b))) return true;
     if ((a == PortKind::AudioControllerOut && b == PortKind::ShaderAudioIn) ||
         (a == PortKind::ShaderAudioIn && b == PortKind::AudioControllerOut)) return true;
-    if ((a == PortKind::AudioControllerOut && b == PortKind::AudioIn) ||
-        (a == PortKind::AudioIn && b == PortKind::AudioControllerOut)) return true;
+    if (((a == PortKind::AudioControllerOut || isAudioStreamOutKind(a)) && b == PortKind::AudioIn) ||
+        (a == PortKind::AudioIn && (b == PortKind::AudioControllerOut || isAudioStreamOutKind(b)))) return true;
     if ((a == PortKind::ScriptOut && b == PortKind::DataIn) ||
         (a == PortKind::DataIn && b == PortKind::ScriptOut)) return true;
     return false;
@@ -1630,6 +1632,112 @@ private:
     bool m_muted;
 };
 
+class MasterAudioCaptureNodeItem : public NodeItemBase {
+public:
+    explicit MasterAudioCaptureNodeItem(NodeId id, int volume = 100, bool muted = false)
+        : m_nodeId(id), m_volume(volume), m_muted(muted)
+    {
+        setFlags(ItemIsMovable | ItemSendsGeometryChanges | ItemIsSelectable);
+        setZValue(0);
+
+        m_audioOutPort = new PortItem(PortKind::MasterAudioInputOut, this);
+        m_audioOutPort->setPos(SMALL_NODE_W, SMALL_NODE_H / 2);
+    }
+
+    std::function<void(NodeId)> onDeleteRequested;
+    std::function<void(NodeId)> onEditRequested;
+    std::function<void(NodeId)> onSettingsChanged;
+
+    NodeId nodeId() const override { return m_nodeId; }
+    PortItem *audioOutPort() const { return m_audioOutPort; }
+
+    QString deviceId() const { return m_deviceId; }
+    QString deviceLabel() const { return m_deviceLabel; }
+    int volume() const { return m_volume; }
+    bool muted() const { return m_muted; }
+
+    void setDevice(const QString &id, const QString &label) {
+        m_deviceId = id;
+        m_deviceLabel = label;
+        update();
+    }
+    void setVolume(int volume) { m_volume = volume; update(); }
+    void setMuted(bool muted) { m_muted = muted; update(); }
+
+    QRectF boundingRect() const override { return QRectF(0, 0, SMALL_NODE_W, SMALL_NODE_H); }
+    QRectF editButtonRect() const { return QRectF(4, SMALL_NODE_H - 32, SMALL_NODE_W - 8, 24); }
+
+    void paint(QPainter *p, const QStyleOptionGraphicsItem *, QWidget *) override {
+        p->setRenderHint(QPainter::Antialiasing);
+        p->setPen(QPen(QColor(72, 58, 24), 1));
+        p->setBrush(QColor(40, 34, 18));
+        p->drawRoundedRect(QRectF(0, 0, SMALL_NODE_W, SMALL_NODE_H), 4, 4);
+
+        p->setPen(kAudioStreamPortColor);
+        p->setFont(QFont("Monospace", 8, QFont::Bold));
+        p->drawText(QRectF(6, 8, SMALL_NODE_W - 12, 36), Qt::AlignCenter,
+                    QStringLiteral("Audio Capture"));
+
+        p->setPen(QColor(230, 210, 180));
+        p->setFont(QFont("Monospace", 7));
+        const QString devText = m_deviceId.isEmpty()
+            ? QStringLiteral("Default Output")
+            : m_deviceLabel;
+        p->drawText(QRectF(6, 38, SMALL_NODE_W - 12, 18), Qt::AlignCenter,
+                    p->fontMetrics().elidedText(devText, Qt::ElideRight, SMALL_NODE_W - 12));
+
+        const QRectF er = editButtonRect();
+        p->setPen(QPen(kAudioStreamPortColor, 1));
+        p->setBrush(QColor(64, 52, 28));
+        p->drawRoundedRect(er, 3, 3);
+        p->setPen(QColor(245, 235, 210));
+        p->drawText(er, Qt::AlignCenter, "Edit");
+
+        if (isSelected()) {
+            p->setPen(QPen(kSelectionAccent, 2));
+            p->setBrush(Qt::NoBrush);
+            p->drawRoundedRect(QRectF(0, 0, SMALL_NODE_W, SMALL_NODE_H).adjusted(1, 1, -1, -1), 4, 4);
+        }
+    }
+
+    void mousePressEvent(QGraphicsSceneMouseEvent *e) override {
+        if (editButtonRect().contains(e->pos())) {
+            if (onEditRequested) onEditRequested(m_nodeId);
+            e->accept();
+            return;
+        }
+        QGraphicsItem::mousePressEvent(e);
+    }
+
+    void mouseDoubleClickEvent(QGraphicsSceneMouseEvent *e) override {
+        if (onEditRequested) onEditRequested(m_nodeId);
+        e->accept();
+    }
+
+    void contextMenuEvent(QGraphicsSceneContextMenuEvent *e) override {
+        QMenu menu;
+        menu.addAction("Edit Audio Capture…", [this]() {
+            if (onEditRequested) onEditRequested(m_nodeId);
+        });
+        menu.addAction("Delete", [this]() {
+            if (onDeleteRequested) onDeleteRequested(m_nodeId);
+        });
+        menu.exec(e->screenPos());
+        e->accept();
+    }
+
+protected:
+    QVariant itemChange(GraphicsItemChange change, const QVariant &value) override;
+
+private:
+    NodeId m_nodeId;
+    PortItem *m_audioOutPort = nullptr;
+    QString m_deviceId;
+    QString m_deviceLabel;
+    int m_volume;
+    bool m_muted;
+};
+
 class ScriptNodeItem : public NodeItemBase {
 public:
     ScriptNodeItem(NodeId id, const QString &code = QString(),
@@ -1824,6 +1932,7 @@ public:
     void setAudioSourcePath(const QString &path) override {
         if (path == m_audioPath)
             return;
+        m_liveSource = false;
         m_audioPath = path;
         if (m_audioPath.isEmpty()) {
             m_hasAudio = false;
@@ -1842,6 +1951,18 @@ public:
     }
 
     void setAudioSyncState(double playbackTime, bool playing, double speed) override {
+        if (m_liveSource) {
+            if (!m_hasAudio || !m_analyzer)
+                return;
+            const qint64 nowMs = m_timer.elapsed();
+            const double dt = (m_lastMs > 0) ? (nowMs - m_lastMs) * 0.001 : 0.0;
+            m_lastMs = nowMs;
+            if (dt > 0.0 && !playing)
+                m_analyzer->decay(dt);
+            if (dt > 0.0)
+                publishOutput();
+            return;
+        }
         if (!m_hasAudio || !m_analyzer)
             return;
         m_analyzer->setPlaybackSpeed(speed);
@@ -1904,6 +2025,62 @@ public:
         output()->version.fetch_add(1, std::memory_order_release);
     }
 
+    void setLiveSource(bool live) {
+        if (m_liveSource == live)
+            return;
+        m_liveSource = live;
+        m_audioPath.clear();
+        m_hasAudio = false;
+        if (live) {
+            if (!m_analyzer)
+                m_analyzer = std::make_unique<AudioAnalyzer>();
+            m_analyzer->setConfig(m_config);
+            m_hasAudio = m_analyzer->beginLive();
+            m_lastMs = m_timer.elapsed();
+            m_lastSignalMs = m_lastMs;
+        } else if (m_analyzer) {
+            m_analyzer->close();
+        }
+        if (!m_hasAudio)
+            publishSilentOutput();
+        update();
+    }
+
+    void feedLivePcm(const QByteArray &pcm) {
+        if (!m_liveSource || !m_analyzer || !m_hasAudio)
+            return;
+        const qint64 nowMs = m_timer.elapsed();
+        const double dt = (m_lastMs > 0) ? (nowMs - m_lastMs) * 0.001 : 0.0;
+        m_lastMs = nowMs;
+
+        if (AudioLoopbackEnumerator::pcmHasSignal(pcm)) {
+            m_lastSignalMs = nowMs;
+            m_analyzer->feedStereoPcm(pcm);
+            publishOutput();
+            return;
+        }
+
+        if (dt > 0.0) {
+            m_analyzer->decay(dt);
+            publishOutput();
+        }
+    }
+
+    void tickLive() {
+        if (!m_liveSource || !m_analyzer || !m_hasAudio)
+            return;
+        const qint64 nowMs = m_timer.elapsed();
+        const double dt = (m_lastMs > 0) ? (nowMs - m_lastMs) * 0.001 : 0.0;
+        m_lastMs = nowMs;
+        if (dt <= 0.0)
+            return;
+        // Keep decaying between capture pulls (same smooth fade as deck pause).
+        if ((nowMs - m_lastSignalMs) > 80) {
+            m_analyzer->decay(dt);
+            publishOutput();
+        }
+    }
+
     void paint(QPainter *p, const QStyleOptionGraphicsItem *opt, QWidget *w) override {
         Q_UNUSED(opt);
         Q_UNUSED(w);
@@ -1944,8 +2121,10 @@ private:
     AudioAnalyzerConfig m_config;
     QString m_audioPath;
     bool m_hasAudio = false;
+    bool m_liveSource = false;
     QElapsedTimer m_timer;
     qint64 m_lastMs = 0;
+    qint64 m_lastSignalMs = 0;
 };
 
 
@@ -2208,9 +2387,12 @@ public:
             outPort = (src->kind() == PortKind::AudioControllerOut) ? src : dst;
             inPort  = (src->kind() == PortKind::ShaderAudioIn) ? src : dst;
             kind = ConnectionItem::ClipToShaderAudio;
-        } else if ((src->kind() == PortKind::AudioControllerOut && dst->kind() == PortKind::AudioIn) ||
-                   (src->kind() == PortKind::AudioIn && dst->kind() == PortKind::AudioControllerOut)) {
-            outPort = (src->kind() == PortKind::AudioControllerOut) ? src : dst;
+        } else if (((src->kind() == PortKind::AudioControllerOut || isAudioStreamOutKind(src->kind()))
+                    && dst->kind() == PortKind::AudioIn)
+                   || (src->kind() == PortKind::AudioIn
+                       && (dst->kind() == PortKind::AudioControllerOut
+                           || isAudioStreamOutKind(dst->kind())))) {
+            outPort = (src->kind() == PortKind::AudioIn) ? dst : src;
             inPort  = (src->kind() == PortKind::AudioIn) ? src : dst;
             kind = ConnectionItem::ClipToAudioScript;
         } else if (isAudioStreamOutKind(src->kind()) && isMixedAudioInKind(dst->kind())) {
@@ -2861,6 +3043,12 @@ QVariant MasterAudioInputNodeItem::itemChange(GraphicsItemChange change, const Q
     return QGraphicsItem::itemChange(change, value);
 }
 
+QVariant MasterAudioCaptureNodeItem::itemChange(GraphicsItemChange change, const QVariant &value) {
+    if (change == ItemPositionHasChanged && scene())
+        static_cast<ClipNodeScene *>(scene())->updateConnectionsForNode(this);
+    return QGraphicsItem::itemChange(change, value);
+}
+
 QVariant ScriptNodeItem::itemChange(GraphicsItemChange change, const QVariant &value) {
     if (change == ItemPositionHasChanged && scene())
         static_cast<ClipNodeScene *>(scene())->updateConnectionsForNode(this);
@@ -3440,6 +3628,7 @@ static void wireDeleteCallback(NodeItemBase *item, const std::function<void(Node
     else if (auto *scr = dynamic_cast<ScriptNodeItem *>(item)) scr->onDeleteRequested = cb;
     else if (auto *mas = dynamic_cast<MasterAudioOutputNodeItem *>(item)) mas->onDeleteRequested = cb;
     else if (auto *mai = dynamic_cast<MasterAudioInputNodeItem *>(item)) mai->onDeleteRequested = cb;
+    else if (auto *mac = dynamic_cast<MasterAudioCaptureNodeItem *>(item)) mac->onDeleteRequested = cb;
     else if (auto *mx = dynamic_cast<AudioMixerNodeItem *>(item)) mx->onDeleteRequested = cb;
     else if (auto *ae = dynamic_cast<AudioEffectNodeItem *>(item)) ae->onDeleteRequested = cb;
 }
@@ -3657,7 +3846,8 @@ void ClipNodeEditor::deleteNodeById(NodeId nodeId) {
         const bool onlyOutput = m_nodeMap.isEmpty() && m_processNodes.isEmpty()
             && m_layerNodes.isEmpty() && m_abSelectNodes.isEmpty()
             && m_scriptNodes.isEmpty() && m_masterAudioNodes.isEmpty()
-            && m_masterAudioInputNodes.isEmpty() && m_audioMixerNodes.isEmpty()
+            && m_masterAudioInputNodes.isEmpty() && m_masterAudioCaptureNodes.isEmpty()
+            && m_audioMixerNodes.isEmpty()
             && m_audioEffectNodes.isEmpty();
         if (!onlyOutput) return;   // Output is not deletable while other nodes exist.
     }
@@ -3690,6 +3880,7 @@ void ClipNodeEditor::deleteNodeById(NodeId nodeId) {
     m_scriptNodes.remove(nodeId);
     m_masterAudioNodes.remove(nodeId);
     m_masterAudioInputNodes.remove(nodeId);
+    m_masterAudioCaptureNodes.remove(nodeId);
     m_audioMixerNodes.remove(nodeId);
     m_audioEffectNodes.remove(nodeId);
     m_dataInputs.remove(nodeId);
@@ -3737,6 +3928,7 @@ void ClipNodeEditor::clearAllNodes() {
     for (NodeId id : m_abSelectNodes.keys().toVector()) deleteNodeById(id);
     for (NodeId id : m_masterAudioNodes.keys().toVector()) deleteNodeById(id);
     for (NodeId id : m_masterAudioInputNodes.keys().toVector()) deleteNodeById(id);
+    for (NodeId id : m_masterAudioCaptureNodes.keys().toVector()) deleteNodeById(id);
     for (NodeId id : m_audioMixerNodes.keys().toVector()) deleteNodeById(id);
     for (NodeId id : m_audioEffectNodes.keys().toVector()) deleteNodeById(id);
     for (NodeId id : m_scriptNodes.keys().toVector()) deleteNodeById(id);
@@ -3757,6 +3949,7 @@ void ClipNodeEditor::clearAllNodes() {
     m_scriptNodes.clear();
     m_masterAudioNodes.clear();
     m_masterAudioInputNodes.clear();
+    m_masterAudioCaptureNodes.clear();
     m_audioMixerNodes.clear();
     m_audioEffectNodes.clear();
     m_deckAInput = 0;
@@ -3771,6 +3964,7 @@ bool ClipNodeEditor::isEmptyGraph() const {
     return m_nodeMap.isEmpty() && m_processNodes.isEmpty() && m_layerNodes.isEmpty()
         && m_abSelectNodes.isEmpty() && m_scriptNodes.isEmpty()
         && m_masterAudioNodes.isEmpty() && m_masterAudioInputNodes.isEmpty()
+        && m_masterAudioCaptureNodes.isEmpty()
         && m_audioMixerNodes.isEmpty() && m_audioEffectNodes.isEmpty();
 }
 
@@ -3859,6 +4053,11 @@ QString ClipNodeEditor::abSlotHotkeyLabel(const AbSlotRef &ref) const {
 // returned table may set "a" and/or "b" to a slot name (case-insensitive) or a
 // 1-based slot index, and that slot is sent to the matching deck.
 void ClipNodeEditor::pollDataConsumers() {
+    for (auto it = m_scriptNodes.cbegin(); it != m_scriptNodes.cend(); ++it) {
+        if (auto *as = dynamic_cast<AudioScriptNodeItem *>(it.value()))
+            as->tickLive();
+    }
+
     // 1. Feed every script node's `input` from its upstream producers. Pushing
     //    only on a version change keeps OnInputChange scripts from re-running
     //    when nothing upstream moved.
@@ -4043,6 +4242,8 @@ void ClipNodeEditor::normalizeMixerInputs() {
             return m->sourceName();
         if (auto *mic = dynamic_cast<MasterAudioInputNodeItem *>(m_itemMap.value(producer)))
             return mic->deviceLabel().isEmpty() ? QStringLiteral("Mic") : mic->deviceLabel();
+        if (auto *cap = dynamic_cast<MasterAudioCaptureNodeItem *>(m_itemMap.value(producer)))
+            return cap->deviceLabel().isEmpty() ? QStringLiteral("System Audio") : cap->deviceLabel();
         return {};
     };
     for (auto it = m_audioMixerNodes.cbegin(); it != m_audioMixerNodes.cend(); ++it) {
@@ -4235,6 +4436,29 @@ bool ClipNodeEditor::masterAudioInputSettings(NodeId inputNodeId, MasterAudioInp
     return true;
 }
 
+bool ClipNodeEditor::masterAudioCaptureSettings(NodeId captureNodeId, MasterAudioCaptureSettings &settings) const {
+    auto *captureNode = dynamic_cast<MasterAudioCaptureNodeItem *>(m_itemMap.value(captureNodeId));
+    if (!captureNode) return false;
+
+    settings.playbackDeviceId = captureNode->deviceId();
+    settings.playbackDeviceLabel = captureNode->deviceLabel();
+    settings.volume = 100;
+    settings.muted = false;
+    settings.routedMasterOutputId = 0;
+    settings.routedOutputPortIndex = -1;
+
+    ResolvedAudioRoute route;
+    if (resolveAudioStreamRoute(captureNodeId, route)) {
+        settings.routedMasterOutputId = route.outputNodeId;
+        settings.routedOutputPortIndex = route.outputPortIndex;
+        if (route.mixerSlotIndex >= 0) {
+            settings.volume = route.mixerSlotVolume;
+            settings.muted = route.mixerSlotMuted;
+        }
+    }
+    return true;
+}
+
 bool ClipNodeEditor::masterAudioOutputDevice(NodeId masterOutputNodeId, QString &outputDeviceId) const {
     return masterAudioOutputDeviceForPort(masterOutputNodeId, 0, outputDeviceId);
 }
@@ -4267,6 +4491,10 @@ QVector<NodeId> ClipNodeEditor::allMasterAudioInputNodeIds() const {
     return m_masterAudioInputNodes.keys().toVector();
 }
 
+QVector<NodeId> ClipNodeEditor::allMasterAudioCaptureNodeIds() const {
+    return m_masterAudioCaptureNodes.keys().toVector();
+}
+
 bool ClipNodeEditor::audioSourceForAudioScript(NodeId scriptNodeId, QString &filePath) const {
     const NodeId clipId = m_scene->clipForAudioScript(scriptNodeId);
     if (clipId == 0) return false;
@@ -4283,6 +4511,33 @@ NodeId ClipNodeEditor::audioSourceNodeIdForAudioScript(NodeId scriptNodeId) cons
     return m_scene->clipForAudioScript(scriptNodeId);
 }
 
+bool ClipNodeEditor::isLiveAudioScriptProducer(NodeId producerId) const {
+    return m_masterAudioCaptureNodes.contains(producerId)
+        || m_masterAudioInputNodes.contains(producerId);
+}
+
+bool ClipNodeEditor::hasAudioScriptConsumer(NodeId producerId) const {
+    for (auto it = m_scriptNodes.cbegin(); it != m_scriptNodes.cend(); ++it) {
+        if (!it.value() || !it.value()->isAudioScript())
+            continue;
+        if (m_scene->clipForAudioScript(it.key()) == producerId)
+            return true;
+    }
+    return false;
+}
+
+void ClipNodeEditor::feedLiveAudioForProducer(NodeId producerId, const QByteArray &pcm) {
+    for (auto it = m_scriptNodes.cbegin(); it != m_scriptNodes.cend(); ++it) {
+        auto *scriptNode = it.value();
+        if (!scriptNode || !scriptNode->isAudioScript())
+            continue;
+        if (m_scene->clipForAudioScript(it.key()) != producerId)
+            continue;
+        if (auto *as = dynamic_cast<AudioScriptNodeItem *>(scriptNode))
+            as->feedLivePcm(pcm);
+    }
+}
+
 NodeId ClipNodeEditor::dataScriptNodeId(NodeId dataNodeId) const {
     return m_scene->scriptNodeForData(dataNodeId);
 }
@@ -4291,6 +4546,17 @@ void ClipNodeEditor::syncAudioScriptNode(NodeId scriptNodeId, double playbackTim
     auto *scriptNode = m_scriptNodes.value(scriptNodeId);
     if (!scriptNode || !scriptNode->isAudioScript())
         return;
+
+    const NodeId producerId = m_scene->clipForAudioScript(scriptNodeId);
+    if (producerId != 0 && isLiveAudioScriptProducer(producerId)) {
+        if (auto *as = dynamic_cast<AudioScriptNodeItem *>(scriptNode))
+            as->setLiveSource(true);
+        return;
+    }
+
+    if (auto *as = dynamic_cast<AudioScriptNodeItem *>(scriptNode))
+        as->setLiveSource(false);
+
     QString audioPath;
     if (!audioSourceForAudioScript(scriptNodeId, audioPath)) {
         scriptNode->setAudioSourcePath(QString());
@@ -4413,6 +4679,7 @@ void ClipNodeEditor::populateAddNodeMenu(QMenu *menu, bool includeInputNode) {
     }
 
     menu->addAction(QStringLiteral("Add Audio Output"), this, &ClipNodeEditor::onAddMasterAudioOutput);
+    menu->addAction(QStringLiteral("Add Audio Capture"), this, [this]() { addAudioCaptureAtCursor(); });
     menu->addAction(QStringLiteral("Add Audio Mixer"), this, &ClipNodeEditor::onAddAudioMixer);
 
 #ifdef PRISM_HAVE_LUA
@@ -4424,6 +4691,7 @@ void ClipNodeEditor::populateAddNodeMenu(QMenu *menu, bool includeInputNode) {
 }
 
 void ClipNodeEditor::addMicInputAtCursor()     { addMasterAudioInputTo(m_scene, m_view, QCursor::pos()); }
+void ClipNodeEditor::addAudioCaptureAtCursor() { addMasterAudioCaptureTo(m_scene, m_view, QCursor::pos()); }
 void ClipNodeEditor::onAddMasterAudioOutput() { addMasterAudioOutputTo(m_scene, m_view, QCursor::pos()); }
 void ClipNodeEditor::onAddMasterAudioInput()  { addMicInputAtCursor(); }
 void ClipNodeEditor::onAddAudioMixer()        { addAudioMixerAt(QCursor::pos()); }
@@ -4534,6 +4802,20 @@ void ClipNodeEditor::addMasterAudioInputTo(ClipNodeScene *scene, QGraphicsView *
     emit audioGraphChanged();
 }
 
+void ClipNodeEditor::addMasterAudioCaptureTo(ClipNodeScene *scene, QGraphicsView *view,
+                                             const QPoint &globalPos) {
+    if (!scene) return;
+    auto *captureNode = new MasterAudioCaptureNodeItem(m_nextId++);
+    captureNode->setPos(scenePosForView(view, globalPos));
+    scene->addItem(captureNode);
+    m_masterAudioCaptureNodes[captureNode->nodeId()] = captureNode;
+    captureNode->onSettingsChanged = [this](NodeId) { emit audioGraphChanged(); };
+    captureNode->onEditRequested = [this](NodeId nid) { onEditAudioCapture(nid); };
+    registerItem(captureNode);
+    wireDeleteCallback(captureNode, [this](NodeId nid) { deleteNodeById(nid); });
+    emit audioGraphChanged();
+}
+
 void ClipNodeEditor::addAudioMixerAt(const QPoint &globalPos) {
     if (m_scene->onInsertMixer)
         m_scene->onInsertMixer(scenePosForView(m_view, globalPos));
@@ -4605,6 +4887,53 @@ void ClipNodeEditor::onEditMicInput(NodeId micId) {
 
     if (dialog.exec() == QDialog::Accepted) {
         mic->setDevice(deviceCombo->currentData().toString(), deviceCombo->currentText());
+        emit audioGraphChanged();
+    }
+}
+
+void ClipNodeEditor::onEditAudioCapture(NodeId captureId) {
+    auto *capture = dynamic_cast<MasterAudioCaptureNodeItem *>(m_itemMap.value(captureId));
+    if (!capture) return;
+
+    QDialog dialog(this);
+    dialog.setWindowTitle(QStringLiteral("Audio Capture"));
+    auto *layout = new QFormLayout(&dialog);
+
+    auto *deviceCombo = new QComboBox(&dialog);
+    for (const AudioOutputDeviceInfo &dev : AudioLoopbackEnumerator::listPlaybackDevices())
+        deviceCombo->addItem(dev.label, dev.id);
+    const int devIdx = deviceCombo->findData(capture->deviceId());
+    if (devIdx >= 0) deviceCombo->setCurrentIndex(devIdx);
+
+    layout->addRow(QStringLiteral("Playback Device:"), deviceCombo);
+
+    auto *hintLabel = new QLabel(&dialog);
+    hintLabel->setWordWrap(true);
+    auto updateHint = [hintLabel, deviceCombo]() {
+        const QString playbackId = deviceCombo->currentData().toString();
+        const QString monitor = AudioLoopbackEnumerator::monitorLabelForPlaybackDevice(playbackId);
+        if (monitor.isEmpty()) {
+            hintLabel->setText(QObject::tr(
+                "Captures audio playing on the selected output device. "
+                "No monitor source was found for this device — pick the device "
+                "that is actually playing sound (speakers vs headset)."));
+        } else {
+            hintLabel->setText(QObject::tr(
+                "Captures audio playing on the selected output device via:\n%1")
+                                   .arg(monitor));
+        }
+    };
+    updateHint();
+    QObject::connect(deviceCombo, &QComboBox::currentIndexChanged, &dialog, updateHint);
+    layout->addRow(QString(), hintLabel);
+
+    auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dialog);
+    layout->addRow(buttons);
+    connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+    connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+
+    if (dialog.exec() == QDialog::Accepted) {
+        capture->setDevice(deviceCombo->currentData().toString(), deviceCombo->currentText());
         emit audioGraphChanged();
     }
 }
@@ -5181,6 +5510,20 @@ QJsonObject ClipNodeEditor::saveState(const QDir &sessionDir) const {
     }
     root["masterAudioInputNodes"] = masterAudioInputNodes;
 
+    QJsonArray masterAudioCaptureNodes;
+    for (auto it = m_masterAudioCaptureNodes.cbegin(); it != m_masterAudioCaptureNodes.cend(); ++it) {
+        auto *cap = it.value();
+        QJsonObject obj;
+        obj["id"] = (qint64)cap->nodeId();
+        obj["posX"] = cap->pos().x(); obj["posY"] = cap->pos().y();
+        obj["deviceId"] = cap->deviceId();
+        obj["deviceLabel"] = cap->deviceLabel();
+        obj["volume"] = cap->volume();
+        obj["muted"] = cap->muted();
+        masterAudioCaptureNodes.append(obj);
+    }
+    root["masterAudioCaptureNodes"] = masterAudioCaptureNodes;
+
     root["connections"] = m_scene->edgesToJson();
     return root;
 }
@@ -5228,6 +5571,9 @@ PortItem *ClipNodeEditor::findPort(NodeId nodeId, int portKindInt, int slotIndex
     if (auto *mi = dynamic_cast<MasterAudioInputNodeItem *>(base)) {
         if (kind == PortKind::MasterAudioInputOut) return mi->audioOutPort();
     }
+    if (auto *mc = dynamic_cast<MasterAudioCaptureNodeItem *>(base)) {
+        if (kind == PortKind::MasterAudioInputOut) return mc->audioOutPort();
+    }
     if (auto *si = dynamic_cast<ScriptNodeItem *>(base)) {
         if (kind == PortKind::ScriptOut) return si->scriptOutPort();
         if (kind == PortKind::AudioIn)   return si->audioInPort();
@@ -5256,6 +5602,7 @@ void ClipNodeEditor::restoreConnections(ClipNodeScene *scene, const QJsonArray &
             toPort   = findPort(to,   (int)PortKind::ShaderAudioIn);
         } else if (kind == ConnectionItem::ClipToAudioScript) {
             fromPort = findPort(from, (int)PortKind::AudioControllerOut);
+            if (!fromPort) fromPort = findPort(from, (int)PortKind::MasterAudioInputOut);
             toPort   = findPort(to,   (int)PortKind::AudioIn);
         } else if (kind == ConnectionItem::ControllerToMaster) {
             fromPort = findPort(from, (int)PortKind::AudioControllerOut);
@@ -5575,6 +5922,22 @@ void ClipNodeEditor::restoreState(const QJsonObject &state) {
         wireDeleteCallback(in, [this](NodeId nid) { deleteNodeById(nid); });
     }
 
+    for (const auto &val : state["masterAudioCaptureNodes"].toArray()) {
+        const QJsonObject obj = val.toObject();
+        const NodeId captureId = (NodeId)obj["id"].toInteger();
+        m_nextId = captureId;
+        auto *cap = new MasterAudioCaptureNodeItem(m_nextId++, obj["volume"].toInt(100),
+                                                   obj["muted"].toBool(false));
+        cap->setPos(obj["posX"].toDouble(), obj["posY"].toDouble());
+        cap->setDevice(obj["deviceId"].toString(), obj["deviceLabel"].toString());
+        cap->onSettingsChanged = [this](NodeId) { emit audioGraphChanged(); };
+        cap->onEditRequested = [this](NodeId nid) { onEditAudioCapture(nid); };
+        m_scene->addItem(cap);
+        m_masterAudioCaptureNodes[captureId] = cap;
+        registerItem(cap);
+        wireDeleteCallback(cap, [this](NodeId nid) { deleteNodeById(nid); });
+    }
+
     restoreConnections(m_scene, state["connections"].toArray());
     migrateLegacyAudioConnections();
 
@@ -5586,7 +5949,8 @@ void ClipNodeEditor::restoreState(const QJsonObject &state) {
         && !(m_nodeMap.isEmpty() && m_processNodes.isEmpty()
              && m_layerNodes.isEmpty() && m_abSelectNodes.isEmpty()
              && m_scriptNodes.isEmpty() && m_masterAudioNodes.isEmpty()
-             && m_masterAudioInputNodes.isEmpty() && m_audioMixerNodes.isEmpty()
+             && m_masterAudioInputNodes.isEmpty() && m_masterAudioCaptureNodes.isEmpty()
+            && m_audioMixerNodes.isEmpty()
              && m_audioEffectNodes.isEmpty()))
         ensureOutputNode();
 

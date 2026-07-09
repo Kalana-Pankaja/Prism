@@ -87,6 +87,7 @@ void DeckController::setDeckSpeed(bool deckA, double speed) {
 
 void DeckController::releaseAllMasterAudioInputs() {
     m_inputCaptures.clear();
+    m_loopbackCaptures.clear();
     AudioInputMixRegistry::clearAll();
 }
 
@@ -98,16 +99,22 @@ void DeckController::syncMasterAudioInputs() {
         MasterAudioInputSettings settings;
         if (!m_editor->masterAudioInputSettings(inputId, settings))
             continue;
-        if (settings.routedMasterOutputId == 0)
+
+        ResolvedAudioRoute route;
+        const bool routedToOutput = m_editor->resolveAudioStreamRoute(inputId, route);
+        const bool feedsScript = m_editor->hasAudioScriptConsumer(inputId);
+        if (!routedToOutput && !feedsScript)
             continue;
 
         QString outputDeviceId;
-        if (settings.routedOutputPortIndex >= 0) {
-            if (!m_editor->masterAudioOutputDeviceForPort(
-                    settings.routedMasterOutputId, settings.routedOutputPortIndex, outputDeviceId))
+        if (routedToOutput) {
+            if (settings.routedOutputPortIndex >= 0) {
+                if (!m_editor->masterAudioOutputDeviceForPort(
+                        settings.routedMasterOutputId, settings.routedOutputPortIndex, outputDeviceId))
+                    continue;
+            } else if (!m_editor->masterAudioOutputDevice(settings.routedMasterOutputId, outputDeviceId)) {
                 continue;
-        } else if (!m_editor->masterAudioOutputDevice(settings.routedMasterOutputId, outputDeviceId)) {
-            continue;
+            }
         }
 
         activeInputs.insert(inputId);
@@ -123,14 +130,68 @@ void DeckController::syncMasterAudioInputs() {
         capture->setTargetOutputDeviceId(outputDeviceId);
         capture->setVolumePercent(settings.volume);
         capture->setMuted(settings.muted);
+        if (routedToOutput)
+            capture->setEffectChain(route.effects);
+        else
+            capture->setEffectChain({});
+        capture->setProgramRecordingTap([this, inputId](const QByteArray &pcm) {
+            if (m_outputHub)
+                m_outputHub->submitMicProgramAudioChunk(pcm);
+            if (m_editor)
+                m_editor->feedLiveAudioForProducer(inputId, pcm);
+        });
+
+        if (needsRestart)
+            capture->start();
+    }
+
+    QSet<NodeId> activeCaptures;
+    for (NodeId captureId : m_editor->allMasterAudioCaptureNodeIds()) {
+        MasterAudioCaptureSettings settings;
+        if (!m_editor->masterAudioCaptureSettings(captureId, settings))
+            continue;
+
         ResolvedAudioRoute route;
-        if (m_editor->resolveAudioStreamRoute(inputId, route))
+        const bool routedToOutput = m_editor->resolveAudioStreamRoute(captureId, route);
+        const bool feedsScript = m_editor->hasAudioScriptConsumer(captureId);
+        if (!routedToOutput && !feedsScript)
+            continue;
+
+        QString outputDeviceId;
+        if (routedToOutput) {
+            if (settings.routedOutputPortIndex >= 0) {
+                if (!m_editor->masterAudioOutputDeviceForPort(
+                        settings.routedMasterOutputId, settings.routedOutputPortIndex, outputDeviceId))
+                    continue;
+            } else if (!m_editor->masterAudioOutputDevice(settings.routedMasterOutputId, outputDeviceId)) {
+                continue;
+            }
+        }
+
+        activeCaptures.insert(captureId);
+        auto &capture = m_loopbackCaptures[captureId];
+        if (!capture)
+            capture = std::make_unique<AudioLoopbackCapture>(this);
+
+        const bool needsRestart = !capture->isRunning()
+            || capture->playbackDeviceId() != settings.playbackDeviceId
+            || capture->targetOutputDeviceId() != outputDeviceId;
+
+        capture->setPlaybackDeviceId(settings.playbackDeviceId);
+        capture->setTargetOutputDeviceId(outputDeviceId);
+        capture->setVolumePercent(settings.volume);
+        capture->setMuted(settings.muted);
+        if (routedToOutput)
             capture->setEffectChain(route.effects);
         else
             capture->setEffectChain({});
         capture->setProgramRecordingTap([this](const QByteArray &pcm) {
             if (m_outputHub)
                 m_outputHub->submitMicProgramAudioChunk(pcm);
+        });
+        capture->setAnalysisTap([this, captureId](const QByteArray &pcm) {
+            if (m_editor)
+                m_editor->feedLiveAudioForProducer(captureId, pcm);
         });
 
         if (needsRestart)
@@ -141,6 +202,15 @@ void DeckController::syncMasterAudioInputs() {
         if (!activeInputs.contains(it->first)) {
             it->second->stop();
             it = m_inputCaptures.erase(it);
+        } else {
+            ++it;
+        }
+    }
+
+    for (auto it = m_loopbackCaptures.begin(); it != m_loopbackCaptures.end(); ) {
+        if (!activeCaptures.contains(it->first)) {
+            it->second->stop();
+            it = m_loopbackCaptures.erase(it);
         } else {
             ++it;
         }
