@@ -209,7 +209,7 @@ jobs:
         uses: Minionguyjpro/Inno-Setup-Action@v1.2.6
         with:
           path: installer/windows/Prism.iss
-          options: >-
+          options: |
             /DMyAppVersion=${{ needs.meta.outputs.version }}
             /DMyAppSource=${{ github.workspace }}\dist\bin
 
