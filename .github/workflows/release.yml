@@ -154,16 +154,20 @@ jobs:
           cache: true
           add-tools-to-path: true
 
-      - name: Cache vcpkg
+      - name: Cache vcpkg binary packages
         uses: actions/cache@v4
-        id: vcpkg-cache
         with:
-          path: vcpkg
-          key: vcpkg-win-${{ hashFiles('CMakeLists.txt') }}
+          path: ${{ github.workspace }}\vcpkg_bincache
+          key: vcpkg-bincache-win-${{ hashFiles('CMakeLists.txt') }}
+          restore-keys: |
+            vcpkg-bincache-win-
 
       - name: Install vcpkg dependencies
         shell: pwsh
+        env:
+          VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}\vcpkg_bincache
         run: |
+          New-Item -ItemType Directory -Force -Path $env:VCPKG_DEFAULT_BINARY_CACHE | Out-Null
           if (-not (Test-Path vcpkg\vcpkg.exe)) {
             git clone --depth 1 https://github.com/microsoft/vcpkg.git vcpkg
             .\vcpkg\bootstrap-vcpkg.bat
@@ -213,7 +217,8 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path dist | Out-Null
-          Copy-Item installer\windows\output\*.exe dist\ -Force
+          Copy-Item installer\windows\output\Prism-Setup-x64.exe `
+            "dist\Prism-Setup-${{ needs.meta.outputs.version }}-x64.exe" -Force
 
       - name: Upload installer artifact
         uses: actions/upload-artifact@v4
