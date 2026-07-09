@@ -201,6 +201,21 @@ void AudioAnalyzer::advance(double deltaSeconds) {
         computeSpectrum();
 }
 
+void AudioAnalyzer::decay(double deltaSeconds) {
+    if (deltaSeconds <= 0.0)
+        return;
+    const float k = std::exp(static_cast<float>(-deltaSeconds) * 6.f);
+    auto fade = [k](float &v) { v = (v * k < 1e-4f) ? 0.f : v * k; };
+    for (float &v : m_spectrum) fade(v);
+    for (float &v : m_smoothedSpectrum) fade(v);
+    fade(m_level);
+    fade(m_lowBand);
+    fade(m_midBand);
+    fade(m_highBand);
+    fade(m_prevLowEnergy);
+    m_beatPulse = std::max(0.f, m_beatPulse - static_cast<float>(deltaSeconds) * 3.0f);
+}
+
 void AudioAnalyzer::computeSpectrum() {
     const int n = m_config.fftSize;
     const int bins = m_config.binCount;

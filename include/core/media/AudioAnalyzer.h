@@ -38,6 +38,8 @@ public:
     bool open(const QString &filePath, double startTime = 0.0);
     void close();
     void advance(double deltaSeconds);
+    /// Fade all outputs toward zero without consuming audio (playback paused).
+    void decay(double deltaSeconds);
     bool seek(double seconds);
     void setPlaybackSpeed(double speed);
     double currentTime() const { return m_playheadSeconds; }

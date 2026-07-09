@@ -1848,15 +1848,15 @@ public:
         const double drift = std::abs(m_analyzer->currentTime() - playbackTime);
         if (drift > 0.08)
             m_analyzer->seek(playbackTime);
-        if (!playing) {
-            publishSilentOutput();
-            return;
-        }
         const qint64 nowMs = m_timer.elapsed();
         const double dt = (m_lastMs > 0) ? (nowMs - m_lastMs) * 0.001 : 0.0;
         m_lastMs = nowMs;
-        if (dt > 0.0)
-            m_analyzer->advance(dt);
+        if (dt > 0.0) {
+            if (playing)
+                m_analyzer->advance(dt);
+            else
+                m_analyzer->decay(dt);
+        }
         publishOutput();
     }
 
@@ -1892,6 +1892,10 @@ public:
         obj["level"] = 0.0;
         obj["beat"] = 0.0;
         obj["hasAudio"] = false;
+        QJsonArray spectrum;
+        for (int i = 0; i < m_config.binCount; ++i)
+            spectrum.append(0.0);
+        obj["spectrum"] = spectrum;
         const QString json = QString::fromUtf8(QJsonDocument(obj).toJson(QJsonDocument::Compact));
         {
             QMutexLocker lock(&output()->mutex);
