@@ -236,11 +236,43 @@ void DeckController::refreshShaderAudioForActiveDecks() {
         MediaSource *src = deckA ? out->sourceA() : out->sourceB();
         if (!src || src->type() != MediaSource::Type::Shader) return;
 
+        auto *shader = static_cast<ShaderSource *>(src);
+        const NodeId scriptId = m_editor->dataScriptNodeId(nodeId);
+        shader->setDataSource(m_editor->scriptOutputForDataNode(nodeId));
+        if (scriptId != 0) {
+            // Data-driven shader path: avoid legacy direct-audio fallback.
+            shader->setAudioSource(QString());
+            shader->clearAudioSyncState();
+
+            const NodeId scriptAudioNodeId = m_editor->audioSourceNodeIdForAudioScript(scriptId);
+            if (scriptAudioNodeId == m_aClipNodeId) {
+                m_editor->syncAudioScriptNode(scriptId, out->getCurrentTimeA(), out->isPlayingA(), m_speedA);
+            } else if (scriptAudioNodeId == m_bClipNodeId) {
+                m_editor->syncAudioScriptNode(scriptId, out->getCurrentTimeB(), out->isPlayingB(), m_speedB);
+            } else {
+                m_editor->syncAudioScriptNode(scriptId, 0.0, false, 1.0);
+            }
+            return;
+        }
+
         QString audioPath;
         if (m_editor->audioSourceForShader(nodeId, audioPath))
-            static_cast<ShaderSource *>(src)->setAudioSource(audioPath);
-        else
-            static_cast<ShaderSource *>(src)->setAudioSource(QString());
+            shader->setAudioSource(audioPath);
+        else {
+            shader->setAudioSource(QString());
+            shader->clearAudioSyncState();
+            return;
+        }
+
+        const NodeId audioNodeId = m_editor->shaderAudioSourceNodeId(nodeId);
+        if (audioNodeId == m_aClipNodeId) {
+            shader->setAudioSyncState(out->getCurrentTimeA(), out->isPlayingA(), m_speedA);
+        } else if (audioNodeId == m_bClipNodeId) {
+            shader->setAudioSyncState(out->getCurrentTimeB(), out->isPlayingB(), m_speedB);
+        } else {
+            shader->clearAudioSyncState();
+        }
+
     };
 
     refresh(true,  m_aClipNodeId);
@@ -317,6 +349,8 @@ void DeckController::assignNodeToDeck(ClipNodeModel *node, NodeId nodeId, bool d
                 QString audioPath;
                 if (m_editor->audioSourceForShader(nodeId, audioPath))
                     static_cast<ShaderSource *>(src.get())->setAudioSource(audioPath);
+                static_cast<ShaderSource *>(src.get())->setDataSource(
+                    m_editor->scriptOutputForDataNode(nodeId));
             } else if (desc.kind == Kind::Text) {
                 if (auto data = m_editor->scriptOutputForDataNode(nodeId))
                     static_cast<TextSource *>(src.get())->setDataSource(data);
@@ -375,6 +409,8 @@ void DeckController::assignNodeToDeck(ClipNodeModel *node, NodeId nodeId, bool d
             QString audioPath;
             if (m_editor->audioSourceForShader(nodeId, audioPath))
                 static_cast<ShaderSource *>(src.get())->setAudioSource(audioPath);
+            static_cast<ShaderSource *>(src.get())->setDataSource(
+                m_editor->scriptOutputForDataNode(nodeId));
         }
         if (desc.kind == Kind::Text) {
             if (auto data = m_editor->scriptOutputForDataNode(nodeId))

@@ -168,6 +168,11 @@ VideoWidget::NodeChainSource SourceFactory::makeLayerEntry(const ResolvedLayer &
                 if (auto *textSrc = dynamic_cast<TextSource *>(entry.source.get()))
                     textSrc->setDataSource(data);
             }
+        } else if (desc.kind == Kind::Shader) {
+            if (auto data = editor->scriptOutputForDataNode(layer.inputNodeId)) {
+                if (auto *shaderSrc = dynamic_cast<ShaderSource *>(entry.source.get()))
+                    shaderSrc->setDataSource(data);
+            }
         }
 
         entry.source = ProcessEffects::applySourceEffects(std::move(entry.source),

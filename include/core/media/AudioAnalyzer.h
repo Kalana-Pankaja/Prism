@@ -20,9 +20,16 @@ public:
     bool open(const QString &filePath, double startTime = 0.0);
     void close();
     void advance(double deltaSeconds);
+    bool seek(double seconds);
+    void setPlaybackSpeed(double speed);
+    double currentTime() const { return m_playheadSeconds; }
 
     const std::vector<float> &spectrum() const { return m_spectrum; }
     float level() const { return m_level; }
+    float lowBand() const { return m_lowBand; }
+    float midBand() const { return m_midBand; }
+    float highBand() const { return m_highBand; }
+    float beatPulse() const { return m_beatPulse; }
     bool hasData() const { return m_hasData; }
 
 private:
@@ -41,5 +48,12 @@ private:
     int   m_ringWrite = 0;
     int   m_ringFilled = 0;
     float m_level = 0.f;
+    float m_lowBand = 0.f;
+    float m_midBand = 0.f;
+    float m_highBand = 0.f;
+    float m_beatPulse = 0.f;
+    float m_prevLowEnergy = 0.f;
+    double m_playheadSeconds = 0.0;
+    double m_playbackSpeed = 1.0;
     bool  m_hasData = false;
 };

@@ -4,6 +4,7 @@
 #include "ui/common/MaterialSymbols.h"
 #include "core/project/AssetPathResolver.h"
 #include "core/scripting/ScriptRuntime.h"
+#include "core/media/AudioAnalyzer.h"
 #include "ui/editors/ScriptEditDialog.h"
 #include "ui/canvas/TransformEditorDialog.h"
 #include "ui/canvas/CropSelectorWidget.h"
@@ -13,6 +14,7 @@
 #include <QJsonObject>
 #include <QJsonDocument>
 #include <QMutexLocker>
+#include <QElapsedTimer>
 #include <QTimer>
 #include <QGraphicsScene>
 #include <QGraphicsView>
@@ -188,6 +190,8 @@ bool portsCompatible(PortKind a, PortKind b) {
         (isMixedAudioInKind(a) && isAudioStreamOutKind(b))) return true;
     if ((a == PortKind::AudioControllerOut && b == PortKind::ShaderAudioIn) ||
         (a == PortKind::ShaderAudioIn && b == PortKind::AudioControllerOut)) return true;
+    if ((a == PortKind::AudioControllerOut && b == PortKind::AudioIn) ||
+        (a == PortKind::AudioIn && b == PortKind::AudioControllerOut)) return true;
     if ((a == PortKind::ScriptOut && b == PortKind::DataIn) ||
         (a == PortKind::DataIn && b == PortKind::ScriptOut)) return true;
     return false;
@@ -245,7 +249,7 @@ public:
                     ControllerToMaster = 3, LegacyClipToTransform = 4,
                     ClipToShaderAudio = 5, ScriptToData = 6, InputToMaster = 7,
                     AbToOutput = 8, StreamToMixer = 9, MixerToOutput = 10,
-                    AudioEffectChain = 11 };
+                    AudioEffectChain = 11, ClipToAudioScript = 12 };
 
     ConnectionItem(PortItem *from, PortItem *to, EdgeKind kind)
         : QGraphicsPathItem(nullptr), m_from(from), m_to(to), m_kind(kind)
@@ -257,6 +261,7 @@ public:
         else if (kind == AbToOutput) color = QColor(0xe0, 0x50, 0x50);
         else if (kind == AudioToController) color = QColor(0xe8, 0x80, 0x30);
         else if (kind == ClipToShaderAudio) color = QColor(0xe8, 0x90, 0x40);
+        else if (kind == ClipToAudioScript) color = QColor(0xe4, 0xb0, 0x42);
         else if (kind == StreamToMixer) color = kAudioStreamPortColor;
         else if (kind == AudioEffectChain) color = kAudioStreamPortColor;
         else if (kind == MixerToOutput) color = kMixedAudioPortColor;
@@ -1667,6 +1672,10 @@ public:
     NodeId nodeId() const override { return m_nodeId; }
     PortItem *scriptOutPort() const { return m_scriptOutPort; }
     std::shared_ptr<ScriptOutput> output() const { return m_output; }
+    virtual PortItem *audioInPort() const { return nullptr; }
+    virtual bool isAudioScript() const { return false; }
+    virtual void setAudioSourcePath(const QString &) {}
+    virtual void setAudioSyncState(double, bool, double) {}
 
     QString code() const { return m_code; }
     ScriptTriggerMode triggerMode() const { return m_triggerMode; }
@@ -1764,6 +1773,134 @@ private:
     std::shared_ptr<ScriptOutput> m_output;
     QThread *m_thread = nullptr;
     ScriptRuntime *m_runtime = nullptr;
+};
+
+class AudioScriptNodeItem : public ScriptNodeItem {
+public:
+    explicit AudioScriptNodeItem(NodeId id)
+        : ScriptNodeItem(id, QString(), ScriptTriggerMode::Manual, 1000)
+    {
+        // Inputs left, outputs right — matches the rest of the graph.
+        m_audioInPort = new PortItem(PortKind::AudioIn, this);
+        m_audioInPort->setPos(0, SMALL_NODE_H / 2);
+        if (auto *out = scriptOutPort())
+            out->setPos(SMALL_NODE_W, SMALL_NODE_H / 2);
+        m_analyzer = std::make_unique<AudioAnalyzer>();
+        m_timer.start();
+    }
+
+    bool isAudioScript() const override { return true; }
+    PortItem *audioInPort() const override { return m_audioInPort; }
+
+    void setAudioSourcePath(const QString &path) override {
+        if (path == m_audioPath)
+            return;
+        m_audioPath = path;
+        if (m_audioPath.isEmpty()) {
+            m_hasAudio = false;
+            publishSilentOutput();
+            return;
+        }
+        if (m_analyzer && m_analyzer->open(m_audioPath)) {
+            m_hasAudio = true;
+            m_lastMs = m_timer.elapsed();
+        } else {
+            m_hasAudio = false;
+            publishSilentOutput();
+        }
+    }
+
+    void setAudioSyncState(double playbackTime, bool playing, double speed) override {
+        if (!m_hasAudio || !m_analyzer)
+            return;
+        m_analyzer->setPlaybackSpeed(speed);
+        const double drift = std::abs(m_analyzer->currentTime() - playbackTime);
+        if (drift > 0.08)
+            m_analyzer->seek(playbackTime);
+        if (!playing) {
+            publishSilentOutput();
+            return;
+        }
+        const qint64 nowMs = m_timer.elapsed();
+        const double dt = (m_lastMs > 0) ? (nowMs - m_lastMs) * 0.001 : 0.0;
+        m_lastMs = nowMs;
+        if (dt > 0.0)
+            m_analyzer->advance(dt);
+        publishOutput();
+    }
+
+    void publishOutput() {
+        if (!m_analyzer || !m_hasAudio || !output())
+            return;
+        QJsonObject obj;
+        obj["low"] = m_analyzer->lowBand();
+        obj["mid"] = m_analyzer->midBand();
+        obj["high"] = m_analyzer->highBand();
+        obj["level"] = m_analyzer->level();
+        obj["beat"] = m_analyzer->beatPulse();
+        obj["hasAudio"] = m_analyzer->hasData();
+        QJsonArray spectrum;
+        for (float v : m_analyzer->spectrum())
+            spectrum.append(std::clamp(static_cast<double>(v), 0.0, 1.0));
+        obj["spectrum"] = spectrum;
+        const QString json = QString::fromUtf8(QJsonDocument(obj).toJson(QJsonDocument::Compact));
+        {
+            QMutexLocker lock(&output()->mutex);
+            output()->json = json;
+        }
+        output()->version.fetch_add(1, std::memory_order_release);
+    }
+
+    void publishSilentOutput() {
+        if (!output())
+            return;
+        QJsonObject obj;
+        obj["low"] = 0.0;
+        obj["mid"] = 0.0;
+        obj["high"] = 0.0;
+        obj["level"] = 0.0;
+        obj["beat"] = 0.0;
+        obj["hasAudio"] = false;
+        const QString json = QString::fromUtf8(QJsonDocument(obj).toJson(QJsonDocument::Compact));
+        {
+            QMutexLocker lock(&output()->mutex);
+            output()->json = json;
+        }
+        output()->version.fetch_add(1, std::memory_order_release);
+    }
+
+    void paint(QPainter *p, const QStyleOptionGraphicsItem *opt, QWidget *w) override {
+        Q_UNUSED(opt);
+        Q_UNUSED(w);
+        p->setRenderHint(QPainter::Antialiasing);
+        p->setPen(QPen(QColor(62, 52, 35), 1));
+        p->setBrush(QColor(34, 30, 22));
+        p->drawRoundedRect(QRectF(0, 0, SMALL_NODE_W, SMALL_NODE_H), 4, 4);
+
+        p->setPen(QColor(230, 190, 90));
+        p->setFont(QFont("Monospace", 8, QFont::Bold));
+        p->drawText(QRectF(4, 8, SMALL_NODE_W - 8, 36), Qt::AlignCenter,
+                    QStringLiteral("Audio Script"));
+
+        p->setPen(QColor(160, 200, 180));
+        p->setFont(QFont("Monospace", 7));
+        p->drawText(QRectF(4, 44, SMALL_NODE_W - 8, 40), Qt::AlignCenter,
+                    QStringLiteral("FFT → low/mid/high\nbeat + spectrum"));
+
+        if (isSelected()) {
+            p->setPen(QPen(kSelectionAccent, 2));
+            p->setBrush(Qt::NoBrush);
+            p->drawRoundedRect(QRectF(0, 0, SMALL_NODE_W, SMALL_NODE_H).adjusted(1, 1, -1, -1), 4, 4);
+        }
+    }
+
+private:
+    PortItem *m_audioInPort = nullptr;
+    std::unique_ptr<AudioAnalyzer> m_analyzer;
+    QString m_audioPath;
+    bool m_hasAudio = false;
+    QElapsedTimer m_timer;
+    qint64 m_lastMs = 0;
 };
 
 
@@ -1895,6 +2032,11 @@ public:
             outPort = (src->kind() == PortKind::AudioControllerOut) ? src : dst;
             inPort  = (src->kind() == PortKind::ShaderAudioIn) ? src : dst;
             kind = ConnectionItem::ClipToShaderAudio;
+        } else if ((src->kind() == PortKind::AudioControllerOut && dst->kind() == PortKind::AudioIn) ||
+                   (src->kind() == PortKind::AudioIn && dst->kind() == PortKind::AudioControllerOut)) {
+            outPort = (src->kind() == PortKind::AudioControllerOut) ? src : dst;
+            inPort  = (src->kind() == PortKind::AudioIn) ? src : dst;
+            kind = ConnectionItem::ClipToAudioScript;
         } else if (isAudioStreamOutKind(src->kind()) && isMixedAudioInKind(dst->kind())) {
             outPort = src;
             inPort  = dst;
@@ -2152,6 +2294,13 @@ public:
         return 0;
     }
 
+    NodeId clipForAudioScript(NodeId scriptNodeId) const {
+        for (const auto &e : m_edges)
+            if (e.edgeKind == ConnectionItem::ClipToAudioScript && e.toNodeId == scriptNodeId)
+                return e.fromNodeId;
+        return 0;
+    }
+
     NodeId scriptNodeForData(NodeId dataNodeId) const {
         for (const auto &e : m_edges)
             if (e.edgeKind == ConnectionItem::ScriptToData && e.toNodeId == dataNodeId)
@@ -2293,14 +2442,27 @@ void ConnectionItem::contextMenuEvent(QGraphicsSceneContextMenuEvent *e) {
 void ClipNodeItem::updateLayout() {
     prepareGeometryChange();
     const qreal midY = nodeHeight() / 2.0;
+    const qreal cardMidY = PROXY_Y + bodyHeight() / 2.0;
     const qreal rightAudioY = midY + (m_chainOutPort ? 14.0 : 0.0);
     const qreal rightChainY = midY - (m_audioPort && m_chainOutPort ? 14.0 : 0.0);
-    if (m_chainOutPort) m_chainOutPort->setPos(NODE_W, rightChainY);
+    const bool shaderNode = m_model
+        && m_model->sourceDescriptor().kind == SourceDescriptor::Kind::Shader;
+
+    if (shaderNode) {
+        // Shader: script in on the left, video out on the right.
+        if (m_dataInPort)
+            m_dataInPort->setPos(0, cardMidY);
+        if (m_chainOutPort)
+            m_chainOutPort->setPos(NODE_W, cardMidY);
+    } else {
+        if (m_chainOutPort)
+            m_chainOutPort->setPos(NODE_W, rightChainY);
+        if (m_dataInPort)
+            m_dataInPort->setPos(NODE_W, IN_PORT_Y + PORT_R * 4);
+    }
     if (m_audioPort) m_audioPort->setPos(NODE_W, rightAudioY);
     if (m_shaderAudioInPort)
         m_shaderAudioInPort->setPos(0, IN_PORT_Y + PORT_R * 4);
-    if (m_dataInPort)
-        m_dataInPort->setPos(NODE_W, IN_PORT_Y + PORT_R * 4);
     if (scene())
         static_cast<ClipNodeScene *>(scene())->updateConnectionsForNode(this);
     update();
@@ -3192,8 +3354,9 @@ ClipNodeModel *ClipNodeEditor::addSourceNode(const SourceDescriptor &descIn, con
 
     const NodeId id = m_nextId++;
     auto *model = new ClipNodeModel(this);
-    const bool hasShaderAudioIn = (desc.kind == SourceDescriptor::Kind::Shader);
-    const bool hasDataIn = (desc.kind == SourceDescriptor::Kind::Text);
+    const bool hasShaderAudioIn = false;
+    const bool hasDataIn = (desc.kind == SourceDescriptor::Kind::Text
+                         || desc.kind == SourceDescriptor::Kind::Shader);
     auto *nodeItem = new ClipNodeItem(model, id, false, false, hasShaderAudioIn, hasDataIn);
 
     if (viewForPos)
@@ -3210,6 +3373,7 @@ ClipNodeModel *ClipNodeEditor::addSourceNode(const SourceDescriptor &descIn, con
 
     model->setNodeId(id);
     model->loadSource(desc, thumbnail);
+    nodeItem->updateLayout();
     if (desc.kind == SourceDescriptor::Kind::Text)
         wireTextScriptBinding(model, id);
     connectNodeSignals(model, id);
@@ -3898,6 +4062,43 @@ bool ClipNodeEditor::audioSourceForShader(NodeId shaderNodeId, QString &filePath
     return !filePath.isEmpty();
 }
 
+NodeId ClipNodeEditor::shaderAudioSourceNodeId(NodeId shaderNodeId) const {
+    return m_scene->clipForShaderAudio(shaderNodeId);
+}
+
+bool ClipNodeEditor::audioSourceForAudioScript(NodeId scriptNodeId, QString &filePath) const {
+    const NodeId clipId = m_scene->clipForAudioScript(scriptNodeId);
+    if (clipId == 0) return false;
+    const ClipNodeModel *node = nodeAt(clipId);
+    if (!node) return false;
+    const SourceDescriptor &desc = node->sourceDescriptor();
+    if (desc.kind != SourceDescriptor::Kind::VideoFile
+        && desc.kind != SourceDescriptor::Kind::AudioFile) return false;
+    filePath = desc.path;
+    return !filePath.isEmpty();
+}
+
+NodeId ClipNodeEditor::audioSourceNodeIdForAudioScript(NodeId scriptNodeId) const {
+    return m_scene->clipForAudioScript(scriptNodeId);
+}
+
+NodeId ClipNodeEditor::dataScriptNodeId(NodeId dataNodeId) const {
+    return m_scene->scriptNodeForData(dataNodeId);
+}
+
+void ClipNodeEditor::syncAudioScriptNode(NodeId scriptNodeId, double playbackTime, bool playing, double speed) {
+    auto *scriptNode = m_scriptNodes.value(scriptNodeId);
+    if (!scriptNode || !scriptNode->isAudioScript())
+        return;
+    QString audioPath;
+    if (!audioSourceForAudioScript(scriptNodeId, audioPath)) {
+        scriptNode->setAudioSourcePath(QString());
+        return;
+    }
+    scriptNode->setAudioSourcePath(audioPath);
+    scriptNode->setAudioSyncState(playbackTime, playing, speed);
+}
+
 std::shared_ptr<ScriptOutput> ClipNodeEditor::scriptOutputForDataNode(NodeId dataNodeId) const {
     const NodeId scriptId = m_scene->scriptNodeForData(dataNodeId);
     if (scriptId == 0) return nullptr;
@@ -3960,6 +4161,7 @@ void ClipNodeEditor::populateAddNodeMenu(QMenu *menu, bool includeInputNode) {
 #ifdef PRISM_HAVE_LUA
     menu->addSection(QStringLiteral("Script"));
     menu->addAction(QStringLiteral("Add Script Node"), this, &ClipNodeEditor::onAddScriptNode);
+    menu->addAction(QStringLiteral("Add Audio Script Node"), this, &ClipNodeEditor::onAddAudioScriptNode);
 #endif
 }
 
@@ -3968,6 +4170,18 @@ void ClipNodeEditor::onAddMasterAudioOutput() { addMasterAudioOutputTo(m_scene, 
 void ClipNodeEditor::onAddMasterAudioInput()  { addMicInputAtCursor(); }
 void ClipNodeEditor::onAddAudioMixer()        { addAudioMixerAt(QCursor::pos()); }
 void ClipNodeEditor::onAddScriptNode()        { addScriptNodeTo(m_scene, m_view, QCursor::pos()); }
+void ClipNodeEditor::onAddAudioScriptNode()   {
+#ifdef PRISM_HAVE_LUA
+    if (!m_scene) return;
+    auto *scriptNode = new AudioScriptNodeItem(m_nextId++);
+    scriptNode->setPos(scenePosForView(m_view, QCursor::pos()));
+    m_scene->addItem(scriptNode);
+    m_scriptNodes[scriptNode->nodeId()] = scriptNode;
+    registerItem(scriptNode);
+    wireDeleteCallback(scriptNode, [this](NodeId nid) { deleteNodeById(nid); });
+    emit audioGraphChanged();
+#endif
+}
 
 QPointF ClipNodeEditor::scenePosForView(QGraphicsView *view, const QPoint &globalPos) const {
     if (!view) return QPointF(20, 20);
@@ -4285,6 +4499,8 @@ void ClipNodeEditor::onEditScriptNode(NodeId nodeId) {
 #ifdef PRISM_HAVE_LUA
     auto *scriptNode = m_scriptNodes.value(nodeId);
     if (!scriptNode) return;
+    if (scriptNode->isAudioScript())
+        return;
     ScriptEditDialog dlg(scriptNode->code(), scriptNode->triggerMode(),
                          scriptNode->intervalMs(), this);
     if (dlg.exec() != QDialog::Accepted) return;
@@ -4530,6 +4746,7 @@ QJsonObject ClipNodeEditor::saveState(const QDir &sessionDir) const {
         obj["luaCode"] = sn->code();
         obj["triggerMode"] = static_cast<int>(sn->triggerMode());
         obj["intervalMs"] = sn->intervalMs();
+        obj["scriptType"] = sn->isAudioScript() ? QStringLiteral("audio") : QStringLiteral("lua");
         scriptNodes.append(obj);
     }
     root["scriptNodes"] = scriptNodes;
@@ -4617,6 +4834,7 @@ PortItem *ClipNodeEditor::findPort(NodeId nodeId, int portKindInt, int slotIndex
     }
     if (auto *si = dynamic_cast<ScriptNodeItem *>(base)) {
         if (kind == PortKind::ScriptOut) return si->scriptOutPort();
+        if (kind == PortKind::AudioIn)   return si->audioInPort();
     }
     return nullptr;
 }
@@ -4639,6 +4857,9 @@ void ClipNodeEditor::restoreConnections(ClipNodeScene *scene, const QJsonArray &
         } else if (kind == ConnectionItem::ClipToShaderAudio) {
             fromPort = findPort(from, (int)PortKind::AudioControllerOut);
             toPort   = findPort(to,   (int)PortKind::ShaderAudioIn);
+        } else if (kind == ConnectionItem::ClipToAudioScript) {
+            fromPort = findPort(from, (int)PortKind::AudioControllerOut);
+            toPort   = findPort(to,   (int)PortKind::AudioIn);
         } else if (kind == ConnectionItem::ControllerToMaster) {
             fromPort = findPort(from, (int)PortKind::AudioControllerOut);
             if (!fromPort) fromPort = findPort(from, (int)PortKind::AudioEffectOut);
@@ -4700,8 +4921,9 @@ void ClipNodeEditor::restoreState(const QJsonObject &state) {
         const SourceDescriptor desc = descriptorFromJson(obj["source"].toObject());
         const bool audioOnly = obj["audioOnly"].toBool(desc.kind == SourceDescriptor::Kind::AudioFile);
         const bool hasAudio = obj["hasAudio"].toBool(audioOnly);
-        const bool hasShaderAudioIn = (desc.kind == SourceDescriptor::Kind::Shader);
-        const bool hasDataIn = (desc.kind == SourceDescriptor::Kind::Text);
+        const bool hasShaderAudioIn = false;
+        const bool hasDataIn = (desc.kind == SourceDescriptor::Kind::Text
+                             || desc.kind == SourceDescriptor::Kind::Shader);
 
         // Version 2 stored {0 = Deck A only, 1 = Deck B only, 2 = Always};
         // version 3 stores {0 = Always, 1 = Active deck}.
@@ -4731,6 +4953,7 @@ void ClipNodeEditor::restoreState(const QJsonObject &state) {
             model->loadClip(desc.path, QPixmap{});
         else
             model->loadSource(desc, QPixmap{});
+        nodeItem->updateLayout();
         if (desc.kind == Kind::Text)
             wireTextScriptBinding(model, id);
         if (obj.contains("settings"))
@@ -4862,9 +5085,14 @@ void ClipNodeEditor::restoreState(const QJsonObject &state) {
         const NodeId scriptId = (NodeId)obj["id"].toInteger();
         m_nextId = scriptId;
 #ifdef PRISM_HAVE_LUA
-        auto *sn = new ScriptNodeItem(m_nextId++, obj["luaCode"].toString(),
-            static_cast<ScriptTriggerMode>(obj["triggerMode"].toInt(0)),
-            obj["intervalMs"].toInt(1000));
+        ScriptNodeItem *sn = nullptr;
+        if (obj["scriptType"].toString() == QStringLiteral("audio")) {
+            sn = new AudioScriptNodeItem(m_nextId++);
+        } else {
+            sn = new ScriptNodeItem(m_nextId++, obj["luaCode"].toString(),
+                static_cast<ScriptTriggerMode>(obj["triggerMode"].toInt(0)),
+                obj["intervalMs"].toInt(1000));
+        }
         sn->setPos(obj["posX"].toDouble(), obj["posY"].toDouble());
         sn->onEditRequested = [this](NodeId sid) { onEditScriptNode(sid); };
         m_scene->addItem(sn);
@@ -4953,6 +5181,11 @@ void ClipNodeEditor::restoreState(const QJsonObject &state) {
     m_deckAInput = (NodeId)state["deckAInput"].toInteger(0);
     m_deckBInput = (NodeId)state["deckBInput"].toInteger(0);
     updateAbHighlights();
+
+    for (auto it = m_itemMap.cbegin(); it != m_itemMap.cend(); ++it) {
+        if (auto *clip = dynamic_cast<ClipNodeItem *>(it.value()))
+            clip->updateLayout();
+    }
 
     emit deckAClipChanged(m_deckAInput);
     emit deckBClipChanged(m_deckBInput);

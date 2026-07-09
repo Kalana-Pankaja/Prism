@@ -1,5 +1,6 @@
 #pragma once
 #include "core/sources/MediaSource.h"
+#include "core/scripting/ScriptOutput.h"
 #include <QString>
 #include <QSize>
 #include <QByteArray>
@@ -27,6 +28,9 @@ public:
     QString lastError()   const { return m_lastError; }
 
     void setAudioSource(const QString &filePath);
+    void setAudioSyncState(double playbackTime, bool playing, double speed = 1.0);
+    void clearAudioSyncState();
+    void setDataSource(std::shared_ptr<ScriptOutput> data);
 
     Type           type()      const override { return Type::Shader; }
     bool           isReady()   const override { return m_ready; }
@@ -56,7 +60,14 @@ private:
     QElapsedTimer m_timer;
     qint64        m_lastFrameMs = 0;
     std::unique_ptr<AudioAnalyzer> m_analyzer;
+    std::shared_ptr<ScriptOutput> m_dataSource;
+    uint          m_dataVersion = 0;
+    QString       m_audioSourcePath;
     unsigned int  m_spectrumTex = 0;
+    bool          m_audioSyncEnabled = false;
+    bool          m_audioPlaying = true;
+    double        m_audioSyncTime = 0.0;
+    double        m_audioSyncSpeed = 1.0;
 
     bool    m_glInitialized = false;
     bool    m_compiled      = false;

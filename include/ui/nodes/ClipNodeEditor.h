@@ -177,6 +177,11 @@ public:
     QVector<NodeId> allAudioMixerNodeIds() const;
     bool mixerSlotSettings(NodeId mixerId, int slotIndex, int &volume, bool &muted, QString &name) const;
     bool audioSourceForShader(NodeId shaderNodeId, QString &filePath) const;
+    NodeId shaderAudioSourceNodeId(NodeId shaderNodeId) const;
+    bool audioSourceForAudioScript(NodeId scriptNodeId, QString &filePath) const;
+    NodeId audioSourceNodeIdForAudioScript(NodeId scriptNodeId) const;
+    NodeId dataScriptNodeId(NodeId dataNodeId) const;
+    void syncAudioScriptNode(NodeId scriptNodeId, double playbackTime, bool playing, double speed);
     std::shared_ptr<ScriptOutput> scriptOutputForDataNode(NodeId dataNodeId) const;
 
     // ── Session persistence ──────────────────────────────────────────────────
@@ -204,6 +209,7 @@ private slots:
     void onAddMasterAudioInput();
     void onAddAudioMixer();
     void onAddScriptNode();
+    void onAddAudioScriptNode();
     void onEditClipAudio(NodeId clipId);
     void onEditMicInput(NodeId micId);
     void onEditAudioMixer(NodeId mixerId);

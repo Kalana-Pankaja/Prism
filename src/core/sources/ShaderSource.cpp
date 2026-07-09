@@ -7,8 +7,14 @@
 #include <QOpenGLFunctions>
 #include <QSurfaceFormat>
 #include <QVector2D>
+#include <QVector3D>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QMutexLocker>
 #include <QDebug>
 #include <algorithm>
+#include <cmath>
 
 static const char *kVertexShader =
     "attribute vec2 position;\n"
@@ -31,14 +37,43 @@ void ShaderSource::setShaderCode(const QString &code) {
 }
 
 void ShaderSource::setAudioSource(const QString &filePath) {
+    if (filePath == m_audioSourcePath)
+        return;
+
     if (filePath.isEmpty()) {
         m_analyzer.reset();
+        m_audioSourcePath.clear();
+        clearAudioSyncState();
         return;
     }
     if (!m_analyzer)
         m_analyzer = std::make_unique<AudioAnalyzer>();
-    if (!m_analyzer->open(filePath))
+    if (!m_analyzer->open(filePath)) {
         m_analyzer.reset();
+        m_audioSourcePath.clear();
+        clearAudioSyncState();
+        return;
+    }
+    m_audioSourcePath = filePath;
+}
+
+void ShaderSource::setAudioSyncState(double playbackTime, bool playing, double speed) {
+    m_audioSyncEnabled = true;
+    m_audioSyncTime = std::max(0.0, playbackTime);
+    m_audioPlaying = playing;
+    m_audioSyncSpeed = (speed > 0.01) ? speed : 1.0;
+}
+
+void ShaderSource::clearAudioSyncState() {
+    m_audioSyncEnabled = false;
+    m_audioSyncTime = 0.0;
+    m_audioSyncSpeed = 1.0;
+    m_audioPlaying = true;
+}
+
+void ShaderSource::setDataSource(std::shared_ptr<ScriptOutput> data) {
+    m_dataSource = std::move(data);
+    m_dataVersion = 0;
 }
 
 bool ShaderSource::nextFrame() {
@@ -48,8 +83,19 @@ bool ShaderSource::nextFrame() {
         : 0.0;
     m_lastFrameMs = nowMs;
 
-    if (m_analyzer && delta > 0.0)
-        m_analyzer->advance(delta);
+    if (m_analyzer) {
+        if (m_audioSyncEnabled) {
+            m_analyzer->setPlaybackSpeed(m_audioSyncSpeed);
+            const double drift = std::abs(m_analyzer->currentTime() - m_audioSyncTime);
+            if (drift > 0.08)
+                m_analyzer->seek(m_audioSyncTime);
+            if (m_audioPlaying && delta > 0.0)
+                m_analyzer->advance(delta);
+        } else if (delta > 0.0) {
+            m_analyzer->setPlaybackSpeed(1.0);
+            m_analyzer->advance(delta);
+        }
+    }
 
     if (!m_glInitialized)
         return initGL();
@@ -199,7 +245,53 @@ void ShaderSource::renderToBuffer() {
     m_program->setUniformValue("u_time",
         static_cast<float>(m_timer.elapsed() * 0.001));
 
-    if (m_analyzer && m_analyzer->hasData()) {
+    bool hasScriptAudio = false;
+    if (m_dataSource) {
+        const uint ver = m_dataSource->version.load(std::memory_order_acquire);
+        if (ver != m_dataVersion) {
+            m_dataVersion = ver;
+        }
+
+        QString json;
+        {
+            QMutexLocker lock(&m_dataSource->mutex);
+            json = m_dataSource->json;
+        }
+        const QJsonDocument doc = QJsonDocument::fromJson(json.toUtf8());
+        if (doc.isObject()) {
+            const QJsonObject obj = doc.object();
+            const float low = std::clamp(static_cast<float>(obj.value("low").toDouble(0.0)), 0.0f, 1.0f);
+            const float mid = std::clamp(static_cast<float>(obj.value("mid").toDouble(0.0)), 0.0f, 1.0f);
+            const float high = std::clamp(static_cast<float>(obj.value("high").toDouble(0.0)), 0.0f, 1.0f);
+            const float level = std::clamp(static_cast<float>(obj.value("level").toDouble(0.0)), 0.0f, 1.0f);
+            const float beat = std::clamp(static_cast<float>(obj.value("beat").toDouble(0.0)), 0.0f, 1.0f);
+            const bool hasAudio = obj.value("hasAudio").toBool(level > 0.001f);
+
+            if (obj.contains("spectrum") && obj.value("spectrum").isArray()) {
+                const QJsonArray arr = obj.value("spectrum").toArray();
+                const int bins = std::min(static_cast<int>(arr.size()), AudioAnalyzer::kBins);
+                QByteArray texData(AudioAnalyzer::kBins, 0);
+                for (int i = 0; i < bins; ++i) {
+                    const float v = std::clamp(static_cast<float>(arr.at(i).toDouble(0.0)), 0.0f, 1.0f);
+                    texData[i] = static_cast<char>(v * 255.0f);
+                }
+                f->glActiveTexture(GL_TEXTURE0);
+                f->glBindTexture(GL_TEXTURE_2D, m_spectrumTex);
+                f->glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0,
+                                   AudioAnalyzer::kBins, 1,
+                                   GL_LUMINANCE, GL_UNSIGNED_BYTE, texData.constData());
+                m_program->setUniformValue("u_spectrum", 0);
+            }
+
+            m_program->setUniformValue("u_audioLevel", level);
+            m_program->setUniformValue("u_bands", QVector3D(low, mid, high));
+            m_program->setUniformValue("u_beatPulse", beat);
+            m_program->setUniformValue("u_hasAudio", hasAudio);
+            hasScriptAudio = hasAudio;
+        }
+    }
+
+    if (!hasScriptAudio && m_analyzer && m_analyzer->hasData()) {
         const auto &spec = m_analyzer->spectrum();
         QByteArray texData(spec.size(), 0);
         for (int i = 0; i < spec.size(); ++i)
@@ -212,8 +304,13 @@ void ShaderSource::renderToBuffer() {
                            GL_LUMINANCE, GL_UNSIGNED_BYTE, texData.constData());
         m_program->setUniformValue("u_spectrum", 0);
         m_program->setUniformValue("u_audioLevel", m_analyzer->level());
+        m_program->setUniformValue("u_bands",
+                                   QVector3D(m_analyzer->lowBand(),
+                                             m_analyzer->midBand(),
+                                             m_analyzer->highBand()));
+        m_program->setUniformValue("u_beatPulse", m_analyzer->beatPulse());
         m_program->setUniformValue("u_hasAudio", true);
-    } else {
+    } else if (!hasScriptAudio) {
         m_program->setUniformValue("u_hasAudio", false);
     }
 

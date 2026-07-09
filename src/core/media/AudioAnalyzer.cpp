@@ -51,6 +51,13 @@ bool AudioAnalyzer::open(const QString &filePath, double startTime) {
     m_ringWrite = 0;
     m_ringFilled = 0;
     m_level = 0.f;
+    m_lowBand = 0.f;
+    m_midBand = 0.f;
+    m_highBand = 0.f;
+    m_beatPulse = 0.f;
+    m_prevLowEnergy = 0.f;
+    m_playheadSeconds = std::max(0.0, startTime);
+    m_playbackSpeed = 1.0;
     m_hasData = false;
     return true;
 }
@@ -66,7 +73,45 @@ void AudioAnalyzer::close() {
     m_ringWrite = 0;
     m_ringFilled = 0;
     m_level = 0.f;
+    m_lowBand = 0.f;
+    m_midBand = 0.f;
+    m_highBand = 0.f;
+    m_beatPulse = 0.f;
+    m_prevLowEnergy = 0.f;
+    m_playheadSeconds = 0.0;
+    m_playbackSpeed = 1.0;
     m_hasData = false;
+}
+
+bool AudioAnalyzer::seek(double seconds) {
+    if (!m_decoder || !m_decoder->isOpen())
+        return false;
+    const double clamped = std::max(0.0, seconds);
+    if (!m_decoder->seek(clamped))
+        return false;
+
+    std::fill(m_ringBuffer.begin(), m_ringBuffer.end(), 0.f);
+    std::fill(m_spectrum.begin(), m_spectrum.end(), 0.f);
+    std::fill(m_smoothedSpectrum.begin(), m_smoothedSpectrum.end(), 0.f);
+    m_ringWrite = 0;
+    m_ringFilled = 0;
+    m_level = 0.f;
+    m_lowBand = 0.f;
+    m_midBand = 0.f;
+    m_highBand = 0.f;
+    m_beatPulse = 0.f;
+    m_prevLowEnergy = 0.f;
+    m_playheadSeconds = clamped;
+    m_hasData = false;
+    return true;
+}
+
+void AudioAnalyzer::setPlaybackSpeed(double speed) {
+    if (!m_decoder)
+        return;
+    const double clamped = (speed > 0.01) ? speed : 1.0;
+    m_playbackSpeed = clamped;
+    m_decoder->setPlaybackSpeed(clamped);
 }
 
 void AudioAnalyzer::appendMonoSample(float sample) {
@@ -110,7 +155,13 @@ void AudioAnalyzer::advance(double deltaSeconds) {
     if (levelCount > 0) {
         const float rms = static_cast<float>(std::sqrt(sumSq / levelCount));
         m_level = std::clamp(rms * 4.f, 0.f, 1.f);
+        const double decodedSeconds = static_cast<double>(samplesDecoded) / static_cast<double>(kSampleRate);
+        m_playheadSeconds += decodedSeconds * m_playbackSpeed;
     }
+
+    // Fast attack / slower release beat pulse envelope.
+    const float releasePerSecond = 3.0f;
+    m_beatPulse = std::max(0.0f, m_beatPulse - static_cast<float>(deltaSeconds) * releasePerSecond);
 
     if (m_ringFilled >= kFftSize)
         computeSpectrum();
@@ -156,6 +207,47 @@ void AudioAnalyzer::computeSpectrum() {
         m_spectrum[b] = m_smoothedSpectrum[b] * 0.5f + normalized * 0.5f;
         m_smoothedSpectrum[b] = m_spectrum[b];
     }
+
+    // Broad perceptual bands on normalized log bins:
+    // low: kick/bass, mid: body/vocals, high: hats/detail.
+    const int lowEnd = std::max(1, kBins / 8);
+    const int midEnd = std::max(lowEnd + 1, (kBins * 5) / 8);
+
+    float lowSum = 0.f;
+    float midSum = 0.f;
+    float highSum = 0.f;
+    int lowCount = 0;
+    int midCount = 0;
+    int highCount = 0;
+    for (int b = 0; b < kBins; ++b) {
+        const float v = m_spectrum[b];
+        if (b < lowEnd) {
+            lowSum += v;
+            ++lowCount;
+        } else if (b < midEnd) {
+            midSum += v;
+            ++midCount;
+        } else {
+            highSum += v;
+            ++highCount;
+        }
+    }
+
+    const float lowRaw = (lowCount > 0) ? (lowSum / static_cast<float>(lowCount)) : 0.f;
+    const float midRaw = (midCount > 0) ? (midSum / static_cast<float>(midCount)) : 0.f;
+    const float highRaw = (highCount > 0) ? (highSum / static_cast<float>(highCount)) : 0.f;
+
+    // Slightly different smoothing per band to preserve punch in lows.
+    m_lowBand = m_lowBand * 0.68f + lowRaw * 0.32f;
+    m_midBand = m_midBand * 0.78f + midRaw * 0.22f;
+    m_highBand = m_highBand * 0.82f + highRaw * 0.18f;
+
+    // Beat pulse from low-band transient.
+    const float lowDelta = std::max(0.0f, m_lowBand - m_prevLowEnergy);
+    const float dynamicThreshold = 0.06f + m_level * 0.08f;
+    if (lowDelta > dynamicThreshold)
+        m_beatPulse = std::max(m_beatPulse, std::clamp(lowDelta * 6.0f, 0.0f, 1.0f));
+    m_prevLowEnergy = m_lowBand;
 
     m_hasData = true;
 }

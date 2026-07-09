@@ -1121,6 +1121,8 @@ void MainWindow::onTimerUpdate() {
     }
     MaterialSymbols::setPlayPause(ui->bDeckPlayBtn, out->isPlayingB(), 22);
 
+    // Keep shader audio analysis phase-locked to the live deck clocks.
+    m_deckController->refreshShaderAudioForActiveDecks();
     refreshPreviewPixmaps();
 
     m_outputHub->setActiveDeckNodes(m_deckController->activeNodeA(), m_deckController->activeNodeB());
