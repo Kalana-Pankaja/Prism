@@ -32,6 +32,7 @@ env:
     qtwebsockets
     qtwebchannel
     qtpositioning
+    qtserialport
   QT_QPA_PLATFORM: offscreen
   FETCHCONTENT_BASE_DIR: ${{ github.workspace }}/.deps
 
