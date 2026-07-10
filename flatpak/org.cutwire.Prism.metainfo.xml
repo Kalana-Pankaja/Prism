@@ -99,6 +99,23 @@
     </screenshot>
   </screenshots>
   <releases>
+    <release version="0.1.2" date="2026-07-10">
+      <description>
+        <p
+                >This release brings GPU-accelerated layer composition, a wider set of audio and
+                shader tools, and Windows platform fixes.</p>
+        <ul>
+          <li>Layer composition now runs on the GPU, with smoother scrubbing and playback</li>
+          <li
+                    >New audio capture node, enhanced audio analysis, and more FFT-driven shader
+                    types including particle terrain and wave curtain</li>
+          <li>Improved process nodes, script node experience, and node menu</li>
+          <li>Windows audio capture support and fixes for platform-specific launch issues</li>
+          <li
+                    >Fixed shader decay after audio pause and sources not refreshing after edits</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.1.1" date="2026-07-06">
       <description>
         <p

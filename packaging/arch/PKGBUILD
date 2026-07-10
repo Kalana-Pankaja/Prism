@@ -1,6 +1,6 @@
 # Maintainer: Suhas Dissanayake <suhasdissa@gmail.com>
 pkgname=prism
-pkgver=0.1.1
+pkgver=0.1.2
 pkgrel=1
 pkgdesc="Qt6 live media mixer/switcher with FFmpeg, OpenGL and a dark Resolume-inspired UI"
 arch=('x86_64')
