@@ -430,7 +430,7 @@ target_include_directories(prism_core PUBLIC
     include
     "${CMAKE_CURRENT_BINARY_DIR}/include"
     third_party/qrcodegen
-    ${FFMPEG_INCLUDE_DIRS}
+    ${FFMPEG_INCLUDE_DIR}
 )
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     target_include_directories(prism_core PUBLIC

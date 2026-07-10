@@ -25,7 +25,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  QT_VERSION: "6.8.2"
+  QT_VERSION: "6.10.3"
   QT_MODULES: >-
     qtmultimedia
     qtwebengine
@@ -35,6 +35,12 @@ env:
     qtserialport
   QT_QPA_PLATFORM: offscreen
   FETCHCONTENT_BASE_DIR: ${{ github.workspace }}/.deps
+  # Pinned to match the FFmpeg version QtMultimedia's ffmpeg backend bundles for
+  # QT_VERSION above (check doc.qt.io/qt-6/qtmultimedia-attribution-ffmpeg.html
+  # when bumping QT_VERSION) — linking a mismatched FFmpeg build alongside Qt's
+  # own private copy crashes at runtime (two FFmpeg ABIs loaded in one process).
+  FFMPEG_BUILD_TAG: "autobuild-2026-07-09-14-21"
+  FFMPEG_BUILD_VERSION: "n7.1.5-1-g7d0e842004"
 
 jobs:
   meta:
@@ -55,7 +61,7 @@ jobs:
 
   linux:
     name: Linux AppImage
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     needs: meta
     if: inputs.platform == 'all' || inputs.platform == 'linux'
     timeout-minutes: 90
@@ -69,7 +75,6 @@ jobs:
             build-essential cmake ninja-build pkg-config \
             libgl1-mesa-dev libglib2.0-dev libdbus-1-dev \
             libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
-            libavcodec-dev libavformat-dev libavutil-dev libswscale-dev libswresample-dev libavfilter-dev \
             libre2-dev libzip-dev libssl-dev liblua5.4-dev \
             libfontconfig1-dev libfreetype6-dev libxkbcommon-dev \
             libx11-dev libx11-xcb-dev libxext-dev libxfixes-dev libxi-dev libxrender-dev \
@@ -94,11 +99,19 @@ jobs:
           path: .deps
           key: deps-linux-${{ hashFiles('CMakeLists.txt') }}
 
+      - name: Fetch pinned FFmpeg
+        shell: bash
+        run: |
+          mkdir -p "${GITHUB_WORKSPACE}/.deps/ffmpeg"
+          curl -sL "https://github.com/BtbN/FFmpeg-Builds/releases/download/${FFMPEG_BUILD_TAG}/ffmpeg-${FFMPEG_BUILD_VERSION}-linux64-lgpl-shared-7.1.tar.xz" \
+            | tar -xJf - --strip-components=1 -C "${GITHUB_WORKSPACE}/.deps/ffmpeg"
+
       - name: Configure
         run: |
+          export PKG_CONFIG_PATH="${GITHUB_WORKSPACE}/.deps/ffmpeg/lib/pkgconfig:${PKG_CONFIG_PATH:-}"
           cmake -B build -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_PREFIX_PATH="${QT_ROOT_DIR}" \
+            -DCMAKE_PREFIX_PATH="${QT_ROOT_DIR};${GITHUB_WORKSPACE}/.deps/ffmpeg" \
             -DFETCHCONTENT_BASE_DIR="${FETCHCONTENT_BASE_DIR}" \
             -DPRISM_WITH_NDI=OFF \
             -DPRISM_WITH_WEBRTC=ON \
@@ -120,7 +133,7 @@ jobs:
           chmod +x linuxdeploy.AppImage linuxdeploy-plugin-qt.AppImage
           export QMAKE="${QT_ROOT_DIR}/bin/qmake"
           export VERSION="${{ needs.meta.outputs.version }}"
-          export LD_LIBRARY_PATH="${QT_ROOT_DIR}/lib:${LD_LIBRARY_PATH:-}"
+          export LD_LIBRARY_PATH="${QT_ROOT_DIR}/lib:${GITHUB_WORKSPACE}/.deps/ffmpeg/lib:${LD_LIBRARY_PATH:-}"
           ./linuxdeploy.AppImage --appdir AppDir --plugin qt --output appimage \
             -d flatpak/org.cutwire.Prism.desktop \
             -i flatpak/share/icons/hicolor/256x256/apps/org.cutwire.Prism.png \
@@ -173,10 +186,10 @@ jobs:
             git clone --depth 1 https://github.com/microsoft/vcpkg.git vcpkg
             .\vcpkg\bootstrap-vcpkg.bat
           }
-          .\vcpkg\vcpkg.exe install re2 ffmpeg libzip openssl --triplet x64-windows
+          .\vcpkg\vcpkg.exe install re2 libzip openssl --triplet x64-windows
 
-      # Save even when a later step fails so the ~30 min ffmpeg build is not
-      # repeated on the next run (actions/cache only saves on job success).
+      # Save even when a later step fails so the vcpkg build is not repeated on
+      # the next run (actions/cache only saves on job success).
       - name: Save vcpkg binary cache
         if: always() && steps.vcpkg-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
@@ -190,13 +203,26 @@ jobs:
           path: .deps
           key: deps-win-${{ hashFiles('CMakeLists.txt') }}
 
+      # Pinned to match the FFmpeg version QtMultimedia's ffmpeg backend bundles
+      # (see the FFMPEG_BUILD_TAG comment at the top of this file) instead of
+      # vcpkg's floating ffmpeg port, which does not track Qt's bundled version
+      # and previously caused two mismatched FFmpeg ABIs to be loaded at once.
+      - name: Fetch pinned FFmpeg
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path .deps\ffmpeg | Out-Null
+          Invoke-WebRequest -Uri "https://github.com/BtbN/FFmpeg-Builds/releases/download/$env:FFMPEG_BUILD_TAG/ffmpeg-$env:FFMPEG_BUILD_VERSION-win64-lgpl-shared-7.1.zip" -OutFile ffmpeg.zip
+          Expand-Archive -Path ffmpeg.zip -DestinationPath .deps\ffmpeg_extracted
+          $extractedRoot = (Get-ChildItem .deps\ffmpeg_extracted)[0].FullName
+          Move-Item "$extractedRoot\*" .deps\ffmpeg
+
       - name: Configure
         shell: pwsh
         run: |
           cmake -B build -G "Visual Studio 17 2022" -A x64 `
             -DCMAKE_BUILD_TYPE=Release `
             -DCMAKE_TOOLCHAIN_FILE=${{ github.workspace }}\vcpkg\scripts\buildsystems\vcpkg.cmake `
-            -DCMAKE_PREFIX_PATH=${{ env.QT_ROOT_DIR }} `
+            -DCMAKE_PREFIX_PATH="${{ env.QT_ROOT_DIR }};${{ github.workspace }}\.deps\ffmpeg" `
             -DFETCHCONTENT_BASE_DIR=${{ env.FETCHCONTENT_BASE_DIR }} `
             -DPRISM_WITH_NDI=OFF `
             -DPRISM_WITH_WEBRTC=ON `
@@ -215,6 +241,7 @@ jobs:
           Copy-Item build\Release\onnxruntime*.dll dist\bin -Force -ErrorAction SilentlyContinue
           & "${{ env.QT_ROOT_DIR }}\bin\windeployqt.exe" --release --no-translations dist\bin\Prism.exe
           Copy-Item vcpkg\installed\x64-windows\bin\*.dll dist\bin -Force
+          Copy-Item .deps\ffmpeg\bin\*.dll dist\bin -Force
 
       - name: Build Inno Setup installer
         uses: Minionguyjpro/Inno-Setup-Action@v1.2.6
