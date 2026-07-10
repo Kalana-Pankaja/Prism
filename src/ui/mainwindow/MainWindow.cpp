@@ -901,10 +901,16 @@ void MainWindow::pushDecks() {
         const ResolvedLayer base = stream.layers.first();
 
         // Flattened Layer group as the deck primary: no single input node, so it
-        // takes a dedicated path that assigns the pre-built composite source.
+        // takes a dedicated path. The composite delegates its timeline to its
+        // bottom clip, so scrub/speed/play/audio bind to that clip's node.
         if (base.composite) {
-            speedSlider->setVisible(false);
-            speedLabel->setVisible(false);
+            const NodeId primaryId = base.composite->layers.isEmpty()
+                ? 0 : base.composite->layers.first().inputNodeId;
+            ClipNodeModel *primaryNode = m_clipNodeEditor->nodeAt(primaryId);
+            const bool speedControl =
+                primaryNode && primaryNode->sourceDescriptor().hasSpeedControl();
+            speedSlider->setVisible(speedControl);
+            speedLabel->setVisible(speedControl);
             auto applyCompositeBase = [&]() {
                 if (deckA) {
                     out->setBaseA(base.baseX, base.baseY, base.baseW, base.baseH);
@@ -928,8 +934,8 @@ void MainWindow::pushDecks() {
                     curBase.clear(); curOv.clear();
                     return;
                 }
-                m_deckController->assignCompositeToDeck(std::move(src), base.layerNodeId, deckA,
-                    slider, playBtn, selLabel, timeLabel, QStringLiteral("Layer"));
+                m_deckController->assignCompositeToDeck(std::move(src), primaryId, primaryNode,
+                    deckA, slider, playBtn, selLabel, timeLabel);
                 applyCompositeBase();
                 if (deckA) out->setNodeChainA({});
                 else       out->setNodeChainB({});

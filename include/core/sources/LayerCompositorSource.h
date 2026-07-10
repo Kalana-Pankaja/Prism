@@ -3,6 +3,7 @@
 #include "core/sources/MediaSource.h"
 #include "core/effects/EffectPassRunner.h"
 
+#include <QElapsedTimer>
 #include <QImage>
 #include <QSize>
 #include <memory>
@@ -16,6 +17,12 @@
 /// compositor — operates on the flattened composite rather than on each layer
 /// independently. frameData() falls back to a lazy GPU→CPU read for non-GL
 /// consumers (thumbnails) and CPU effects chained after it.
+///
+/// The bottom layer (index 0) is the "primary": the source delegates its timeline
+/// (duration/currentTime/seek/play/pause) to it, so the deck's existing pacing
+/// drives the bottom clip's scrub/speed/trim/repeat/audio with no special-casing.
+/// The remaining (upper) layers are advanced on their own wall-clock so they play
+/// at their native rate regardless of the deck speed applied to the bottom.
 class LayerCompositorSource : public MediaSource {
 public:
     struct Layer {
@@ -23,6 +30,9 @@ public:
         float bx = 0.f, by = 0.f, bw = 1.f, bh = 1.f;  // normalised canvas placement
         bool  visible = true;
         bool  flipH = false, flipV = false;
+        // Self-pacing state for non-primary layers.
+        QElapsedTimer clock;
+        double        anchor = 0.0;
     };
 
     LayerCompositorSource(std::vector<Layer> layers, QSize canvas)
@@ -36,10 +46,20 @@ public:
     bool    hasAlpha()    const override { return true; }
     unsigned int glTexture() const override { return m_outTex; }
 
-    void play()  override { for (auto &l : m_layers) if (l.source) l.source->play(); }
-    void pause() override { for (auto &l : m_layers) if (l.source) l.source->pause(); }
+    // Timeline delegates to the bottom (primary) layer.
+    double  duration()    const override { return primary() ? primary()->duration() : 0.0; }
+    double  currentTime() const override { return primary() ? primary()->currentTime() : 0.0; }
+    void    seek(double s)      override { if (primary()) primary()->seek(s); }
+    void    play()  override { if (primary()) primary()->play(); }
+    void    pause() override { if (primary()) primary()->pause(); }
 
 private:
+    MediaSource *primary() const {
+        return m_layers.empty() ? nullptr : m_layers.front().source.get();
+    }
+    /// Advance one non-primary layer at its native 1× rate; loops at its end.
+    static bool advanceTop(Layer &l);
+
     std::vector<Layer> m_layers;
     QSize              m_canvas;
     mutable EffectPassRunner m_runner;   // readback() in const frameData()

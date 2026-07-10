@@ -38,12 +38,13 @@ public:
                                   QSlider *crossfader);
 
     /// Assign a pre-built flattened Layer-group (composite) source to a deck. The
-    /// group has no single input node, so this skips descriptor-based building and
-    /// per-clip deck audio (sub-clip audio is driven by the audio graph).
-    void assignCompositeToDeck(std::unique_ptr<MediaSource> src, NodeId layerNodeId,
-                               bool deckA, QSlider *progressSlider, QPushButton *playBtn,
-                               QLabel *selectedLabel, QLabel *timeLabel,
-                               const QString &name);
+    /// composite delegates its timeline to its bottom (primary) clip, so the deck's
+    /// scrub/speed/play/audio bind to @p primaryNode. When @p primaryNode is null
+    /// (bottom is not a plain clip), the deck runs LIVE with no scrub.
+    void assignCompositeToDeck(std::unique_ptr<MediaSource> src, NodeId primaryNodeId,
+                               ClipNodeModel *primaryNode, bool deckA,
+                               QSlider *progressSlider, QPushButton *playBtn,
+                               QLabel *selectedLabel, QLabel *timeLabel);
 
     // ── Audio ────────────────────────────────────────────────────────────────
     void stopDeckAudio(bool deckA);

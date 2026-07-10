@@ -14,16 +14,47 @@ QImage wrapFrame(MediaSource *src) {
 }
 } // namespace
 
+bool LayerCompositorSource::advanceTop(Layer &l) {
+    if (!l.source) return false;
+    const double dur = l.source->duration();
+    if (dur <= 0.0)                      // live/image/canvas: one frame per tick
+        return l.source->nextFrame();
+
+    if (!l.clock.isValid()) {
+        l.anchor = l.source->currentTime();
+        l.clock.start();
+    }
+    double desired = l.anchor + l.clock.elapsed() / 1000.0;   // native 1× rate
+    if (desired >= dur) {                                     // loop
+        l.source->seek(0.0);
+        l.anchor = 0.0;
+        l.clock.restart();
+        desired = 0.0;
+    }
+    bool decoded = false;
+    int steps = 0;
+    while (l.source->currentTime() < desired && steps < 8) {
+        if (!l.source->nextFrame()) break;
+        decoded = true;
+        ++steps;
+    }
+    return decoded;
+}
+
 bool LayerCompositorSource::nextFrame() {
     if (m_canvas.isEmpty()) return false;
 
-    // Advance every sub-layer; recomposite if anything moved or on the first frame.
+    // The bottom layer (index 0) is advanced once per call — the deck's pacing
+    // controls how often that happens, so its speed/scrub apply to the bottom.
+    // Upper layers self-pace to their native rate so deck speed doesn't scale them.
     bool anyNew = (m_outTex == 0);
     bool anyReady = false;
-    for (Layer &l : m_layers) {
+    for (size_t i = 0; i < m_layers.size(); ++i) {
+        Layer &l = m_layers[i];
         if (!l.source) continue;
-        if (l.source->nextFrame()) anyNew = true;
-        if (l.source->isReady())   anyReady = true;
+        const bool n = (i == 0) ? l.source->nextFrame() : advanceTop(l);
+        if (n) anyNew = true;
+        if (l.source->isReady()) anyReady = true;
     }
     if (!anyNew) return false;
     if (!anyReady) return false;

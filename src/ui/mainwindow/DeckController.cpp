@@ -482,22 +482,51 @@ void DeckController::assignSourceToActiveDeck(std::unique_ptr<MediaSource> src,
     else     { out->setSourceB(std::move(src)); out->playB(); }
 }
 
-void DeckController::assignCompositeToDeck(std::unique_ptr<MediaSource> src, NodeId layerNodeId,
-                                           bool deckA, QSlider *progressSlider, QPushButton *playBtn,
-                                           QLabel *selectedLabel, QLabel *timeLabel,
-                                           const QString &name) {
-    if (deckA) m_aClipNodeId = layerNodeId;
-    else       m_bClipNodeId = layerNodeId;
-
+void DeckController::assignCompositeToDeck(std::unique_ptr<MediaSource> src, NodeId primaryNodeId,
+                                           ClipNodeModel *primaryNode, bool deckA,
+                                           QSlider *progressSlider, QPushButton *playBtn,
+                                           QLabel *selectedLabel, QLabel *timeLabel) {
     auto *out = m_outputWindow->videoWidget();
-    if (deckA) { out->setOverlaysA({}); out->setSourceA(std::move(src)); out->playA(); }
-    else       { out->setOverlaysB({}); out->setSourceB(std::move(src)); out->playB(); }
+    // The bottom (primary) clip owns the deck's timeline/audio; the composite source
+    // delegates its timeline to it, so the normal deck controls act on the bottom.
+    if (deckA) m_aClipNodeId = primaryNodeId; else m_bClipNodeId = primaryNodeId;
+    if (deckA) out->setOverlaysA({}); else out->setOverlaysB({});
 
-    // A composite group has no single clip timeline/audio; the audio graph drives
-    // each sub-clip's audio independently.
-    stopDeckAudio(deckA);
-    progressSlider->setVisible(false);
-    playBtn->setVisible(false);
-    selectedLabel->setText(QStringLiteral("%1: %2").arg(deckA ? "A" : "B", name));
-    timeLabel->setText(QStringLiteral("LIVE"));
+    if (!primaryNode) {
+        // Bottom layer is not a plain clip (e.g. a nested group): run it LIVE.
+        if (deckA) { out->setSourceA(std::move(src)); out->playA(); }
+        else       { out->setSourceB(std::move(src)); out->playB(); }
+        stopDeckAudio(deckA);
+        progressSlider->setVisible(false);
+        playBtn->setVisible(false);
+        selectedLabel->setText(QStringLiteral("%1: Layer").arg(deckA ? "A" : "B"));
+        timeLabel->setText(QStringLiteral("LIVE"));
+        return;
+    }
+
+    const SourceDescriptor &desc = primaryNode->sourceDescriptor();
+    if (deckA) {
+        out->setRepeatA(primaryNode->isRepeat());
+        out->setTrimPointsA(primaryNode->startTime(), primaryNode->endTime());
+        out->setSourceA(std::move(src));
+        if (primaryNode->startTime() > 0) out->seekA(primaryNode->startTime());
+        out->playA();
+    } else {
+        out->setRepeatB(primaryNode->isRepeat());
+        out->setTrimPointsB(primaryNode->startTime(), primaryNode->endTime());
+        out->setSourceB(std::move(src));
+        if (primaryNode->startTime() > 0) out->seekB(primaryNode->startTime());
+        out->playB();
+    }
+    updateDeckAudio(deckA, primaryNodeId, primaryNode, primaryNode->startTime(), true);
+
+    const double dur = deckA ? out->getDurationA() : out->getDurationB();
+    progressSlider->setRange(0, 1000);
+    progressSlider->setValue(0);
+    progressSlider->setVisible(desc.isSeekable());
+    progressSlider->setEnabled(desc.isSeekable() && dur > 0);
+    playBtn->setVisible(desc.isPausable());
+    playBtn->setEnabled(desc.isPausable());
+    selectedLabel->setText(QStringLiteral("%1: %2").arg(deckA ? "A" : "B", primaryNode->sourceName()));
+    timeLabel->setText(formatTimeShort(primaryNode->startTime()) + " / " + formatTimeShort(dur));
 }
