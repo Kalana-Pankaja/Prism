@@ -4238,19 +4238,30 @@ ResolvedStream ClipNodeEditor::evaluateVideoInputGuarded(NodeId producerNode,
     }
 
     if (auto *ly = dynamic_cast<LayerNodeItem *>(item)) {
-        // Bottom of the list = bottom-most layer, so walk slots last→first
-        // (ResolvedStream index 0 is the bottom layer).
+        // A Layer node flattens its inputs into ONE composited stream so that a
+        // downstream process effect operates on the composite, not on each layer
+        // independently. The sub-layers are collected bottom→top (index 0 = bottom)
+        // into a nested stream and carried on a single composite ResolvedLayer.
+        auto sub = std::make_shared<ResolvedStream>();
+        sub->canvasWidth = ly->canvasW();
+        sub->canvasHeight = ly->canvasH();
         for (int i = ly->slotCount() - 1; i >= 0; --i) {
             const NodeId up = m_scene->producerForInputPort(ly->inPort(i));
             if (up == 0) continue;
-            ResolvedStream sub = evaluateVideoInputGuarded(up, visited);
-            const LayerSlot &s = ly->slot(i);
-            for (ResolvedLayer &l : sub.layers) {
-                l.baseX = s.baseX; l.baseY = s.baseY; l.baseW = s.baseW; l.baseH = s.baseH;
-                l.visible = l.visible && s.visible;
-                out.layers.push_back(l);
+            ResolvedStream s = evaluateVideoInputGuarded(up, visited);
+            const LayerSlot &slot = ly->slot(i);
+            for (ResolvedLayer &l : s.layers) {
+                l.baseX = slot.baseX; l.baseY = slot.baseY;
+                l.baseW = slot.baseW; l.baseH = slot.baseH;
+                l.visible = l.visible && slot.visible;
+                sub->layers.push_back(l);
             }
         }
+
+        ResolvedLayer composite;
+        composite.composite = sub;
+        composite.layerNodeId = producerNode;
+        out.layers.push_back(composite);
         out.canvasWidth = ly->canvasW();
         out.canvasHeight = ly->canvasH();
         return out;

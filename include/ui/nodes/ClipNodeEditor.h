@@ -10,6 +10,7 @@
 #include <QPixmap>
 #include <QPoint>
 #include <QRectF>
+#include <memory>
 #include "core/sources/SourceDescriptor.h"
 #include "core/scripting/ScriptOutput.h"
 #include "ui/nodes/ClipNodeModel.h"
@@ -88,8 +89,16 @@ struct AbSlotInfo {
     NodeId    producer = 0; // node wired into the slot
 };
 
+struct ResolvedStream;
+
 /// One resolved layer feeding a deck: an Input node producing pixels plus the
-/// folded crop/flip, Layer placement, and decorator effects to apply.
+/// Layer placement and decorator effects to apply. (Crop/Flip are now ordinary
+/// ordered decorator effects in sourceEffects, so cropX/flipH stay at identity.)
+///
+/// When @ref composite is set, this layer is a Layer node flattened into a single
+/// GPU-composited stream: @ref inputNodeId is 0 and the sub-layers in @ref composite
+/// are composited (bottom→top) into one texture before @ref sourceEffects are
+/// applied. @ref layerNodeId identifies the Layer node for UI/deck bookkeeping.
 struct ResolvedLayer {
     NodeId inputNodeId = 0;
     float  cropX = 0.f, cropY = 0.f, cropW = 1.f, cropH = 1.f;
@@ -97,6 +106,8 @@ struct ResolvedLayer {
     float  baseX = 0.f, baseY = 0.f, baseW = 1.f, baseH = 1.f;
     bool   visible = true;
     QVector<SourceEffectRef> sourceEffects;   // decorator effects, upstream→downstream
+    std::shared_ptr<ResolvedStream> composite;   // set ⇒ flattened Layer node
+    NodeId layerNodeId = 0;                        // owning Layer node (composite only)
 };
 
 /// A fully resolved blue video stream (bottom→top layers plus canvas size).

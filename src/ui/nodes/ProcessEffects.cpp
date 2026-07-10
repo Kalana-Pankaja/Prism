@@ -79,17 +79,14 @@ ProcessEffectDescriptor makeCrop() {
     d.name = "Crop";
     d.menuLabel = "Crop";
     d.defaultParams = QJsonObject{{"x", 0.0}, {"y", 0.0}, {"w", 1.0}, {"h", 1.0}};
-    d.fold = [](ResolvedLayer &l, const QJsonObject &p) {
-        const float nx = (float)p["x"].toDouble(0.0);
-        const float ny = (float)p["y"].toDouble(0.0);
-        const float nw = (float)p["w"].toDouble(1.0);
-        const float nh = (float)p["h"].toDouble(1.0);
-        const float ax = l.flipH ? (1.f - nx - nw) : nx;
-        const float ay = l.flipV ? (1.f - ny - nh) : ny;
-        l.cropX = l.cropX + ax * l.cropW;
-        l.cropY = l.cropY + ay * l.cropH;
-        l.cropW = nw * l.cropW;
-        l.cropH = nh * l.cropH;
+    d.isDecorator = true;
+    d.wrapSource = [](std::unique_ptr<MediaSource> inner, const QJsonObject &p)
+        -> std::unique_ptr<MediaSource> {
+        return std::make_unique<CropSource>(std::move(inner),
+                                            (float)p["x"].toDouble(0.0),
+                                            (float)p["y"].toDouble(0.0),
+                                            (float)p["w"].toDouble(1.0),
+                                            (float)p["h"].toDouble(1.0));
     };
     d.editLabel = "Edit Crop";
     d.editDialog = [](QWidget *parent, QJsonObject &params, const QImage &referenceFrame) {
@@ -123,7 +120,11 @@ ProcessEffectDescriptor makeFlipH() {
     d.name = "Flip H";
     d.menuLabel = "Flip Horizontal";
     d.available = false;   // superseded by the combined Flip node
-    d.fold = [](ResolvedLayer &l, const QJsonObject &) { l.flipH = !l.flipH; };
+    d.isDecorator = true;
+    d.wrapSource = [](std::unique_ptr<MediaSource> inner, const QJsonObject &)
+        -> std::unique_ptr<MediaSource> {
+        return std::make_unique<FlipSource>(std::move(inner), true, false);
+    };
     return d;
 }
 
@@ -133,7 +134,11 @@ ProcessEffectDescriptor makeFlipV() {
     d.name = "Flip V";
     d.menuLabel = "Flip Vertical";
     d.available = false;   // superseded by the combined Flip node
-    d.fold = [](ResolvedLayer &l, const QJsonObject &) { l.flipV = !l.flipV; };
+    d.isDecorator = true;
+    d.wrapSource = [](std::unique_ptr<MediaSource> inner, const QJsonObject &)
+        -> std::unique_ptr<MediaSource> {
+        return std::make_unique<FlipSource>(std::move(inner), false, true);
+    };
     return d;
 }
 
@@ -162,10 +167,13 @@ ProcessEffectDescriptor makeFlip() {
     d.name = "Flip";
     d.menuLabel = "Flip";
     d.defaultParams = QJsonObject{{"direction", 1}};   // 0=H, 1=V, 2=Both
-    d.fold = [](ResolvedLayer &l, const QJsonObject &p) {
+    d.isDecorator = true;
+    d.wrapSource = [](std::unique_ptr<MediaSource> inner, const QJsonObject &p)
+        -> std::unique_ptr<MediaSource> {
         const int dir = p["direction"].toInt(1);
-        if (dir == 0 || dir == 2) l.flipH = !l.flipH;
-        if (dir == 1 || dir == 2) l.flipV = !l.flipV;
+        return std::make_unique<FlipSource>(std::move(inner),
+                                            dir == 0 || dir == 2,
+                                            dir == 1 || dir == 2);
     };
     d.editLabel = "Direction";
     d.dynamicLabel = [](const QJsonObject &p) {
@@ -324,7 +332,9 @@ ProcessEffectDescriptor makeBlur() {
     d.defaultParams = QJsonObject{{"radius", 6}};
     d.wrapSource = [](std::unique_ptr<MediaSource> inner, const QJsonObject &p)
         -> std::unique_ptr<MediaSource> {
-        return std::make_unique<BlurSource>(std::move(inner), p["radius"].toInt(6));
+        // GPU proof-of-concept: blur runs as two fragment-shader passes in an
+        // offscreen FBO and stays GPU-resident (glTexture()) for the compositor.
+        return std::make_unique<GpuBlurSource>(std::move(inner), p["radius"].toInt(6));
     };
     d.editLabel = "Radius";
     d.editDialog = [](QWidget *parent, QJsonObject &params, const QImage &) {

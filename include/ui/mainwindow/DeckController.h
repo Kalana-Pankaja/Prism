@@ -37,6 +37,14 @@ public:
                                   const QString &name,
                                   QSlider *crossfader);
 
+    /// Assign a pre-built flattened Layer-group (composite) source to a deck. The
+    /// group has no single input node, so this skips descriptor-based building and
+    /// per-clip deck audio (sub-clip audio is driven by the audio graph).
+    void assignCompositeToDeck(std::unique_ptr<MediaSource> src, NodeId layerNodeId,
+                               bool deckA, QSlider *progressSlider, QPushButton *playBtn,
+                               QLabel *selectedLabel, QLabel *timeLabel,
+                               const QString &name);
+
     // ── Audio ────────────────────────────────────────────────────────────────
     void stopDeckAudio(bool deckA);
     /// Exchange the A/B audio players + node ids (pairs with VideoWidget::swapDeckContents).

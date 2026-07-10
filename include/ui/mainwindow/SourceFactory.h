@@ -22,6 +22,12 @@ public:
     static VideoWidget::NodeChainSource makeLayerEntry(const ResolvedLayer &layer,
                                                        ClipNodeEditor *editor);
 
+    /// Build the MediaSource for one resolved layer, applying its ordered effects.
+    /// Handles both ordinary input layers and flattened Layer-node composites
+    /// (recursively). Returns nullptr if the source cannot be produced.
+    static std::unique_ptr<MediaSource> buildLayerSource(const ResolvedLayer &layer,
+                                                         ClipNodeEditor *editor);
+
     /// Build the full deck stream (index 0 = bottom/deck-primary, 1..N = overlays).
     static std::vector<VideoWidget::NodeChainSource>
     buildStream(const ResolvedStream &stream, ClipNodeEditor *editor);

@@ -10,6 +10,7 @@
 #include "core/sources/HtmlSource.h"
 #include "core/sources/HtmlWorkspace.h"
 #include "core/sources/TextSource.h"
+#include "core/sources/LayerCompositorSource.h"
 #include "core/sources/NdiSource.h"
 #ifdef PRISM_HAVE_WEBRTC
 #include "core/sources/WebRtcSource.h"
@@ -136,9 +137,60 @@ std::unique_ptr<MediaSource> SourceFactory::create(const SourceDescriptor &desc)
     return nullptr;
 }
 
+std::unique_ptr<MediaSource> SourceFactory::buildLayerSource(const ResolvedLayer &layer,
+                                                             ClipNodeEditor *editor) {
+    using Kind = SourceDescriptor::Kind;
+
+    // Flattened Layer node: composite its sub-layers (recursively) into one source.
+    if (layer.composite) {
+        std::vector<LayerCompositorSource::Layer> subs;
+        for (const ResolvedLayer &sl : layer.composite->layers) {
+            auto s = buildLayerSource(sl, editor);
+            if (!s) continue;
+            LayerCompositorSource::Layer cl;
+            cl.source = std::move(s);
+            cl.bx = sl.baseX; cl.by = sl.baseY; cl.bw = sl.baseW; cl.bh = sl.baseH;
+            cl.visible = sl.visible;
+            cl.flipH = sl.flipH; cl.flipV = sl.flipV;
+            subs.push_back(std::move(cl));
+        }
+        const QSize canvas(layer.composite->canvasWidth, layer.composite->canvasHeight);
+        if (subs.empty() || canvas.isEmpty()) return nullptr;
+        std::unique_ptr<MediaSource> comp =
+            std::make_unique<LayerCompositorSource>(std::move(subs), canvas);
+        return ProcessEffects::applySourceEffects(std::move(comp), layer.sourceEffects);
+    }
+
+    ClipNodeModel *node = editor->nodeAt(layer.inputNodeId);
+    if (!node) return nullptr;
+    const SourceDescriptor &desc = node->sourceDescriptor();
+
+    auto src = create(desc);
+    if (!src) return nullptr;
+
+    if (desc.kind == Kind::VideoFile) {
+        auto *vfs = static_cast<VideoFileSource *>(src.get());
+        if (node->startTime() > 0) vfs->seek(node->startTime());
+        vfs->nextFrame();
+    } else if (desc.kind == Kind::Image) {
+        src->nextFrame();
+    } else if (desc.kind == Kind::Text) {
+        if (auto data = editor->scriptOutputForDataNode(layer.inputNodeId)) {
+            if (auto *textSrc = dynamic_cast<TextSource *>(src.get()))
+                textSrc->setDataSource(data);
+        }
+    } else if (desc.kind == Kind::Shader) {
+        if (auto data = editor->scriptOutputForDataNode(layer.inputNodeId)) {
+            if (auto *shaderSrc = dynamic_cast<ShaderSource *>(src.get()))
+                shaderSrc->setDataSource(data);
+        }
+    }
+
+    return ProcessEffects::applySourceEffects(std::move(src), layer.sourceEffects);
+}
+
 VideoWidget::NodeChainSource SourceFactory::makeLayerEntry(const ResolvedLayer &layer,
                                                            ClipNodeEditor *editor) {
-    using Kind = SourceDescriptor::Kind;
     VideoWidget::NodeChainSource entry;
     entry.cropX = layer.cropX; entry.cropY = layer.cropY;
     entry.cropW = layer.cropW; entry.cropH = layer.cropH;
@@ -147,37 +199,8 @@ VideoWidget::NodeChainSource SourceFactory::makeLayerEntry(const ResolvedLayer &
     entry.baseW = layer.baseW; entry.baseH = layer.baseH;
     entry.visible = layer.visible;
 
-    ClipNodeModel *node = editor->nodeAt(layer.inputNodeId);
-    if (!node) return entry;
-    const SourceDescriptor &desc = node->sourceDescriptor();
-
-    auto src = create(desc);
-    if (src) {
-        if (desc.kind == Kind::VideoFile) {
-            auto *vfs = static_cast<VideoFileSource *>(src.get());
-            if (node->startTime() > 0) vfs->seek(node->startTime());
-            vfs->nextFrame();
-        } else if (desc.kind == Kind::Image) {
-            src->nextFrame();
-        }
-        entry.playing = true;
-        entry.source  = std::move(src);
-
-        if (desc.kind == Kind::Text) {
-            if (auto data = editor->scriptOutputForDataNode(layer.inputNodeId)) {
-                if (auto *textSrc = dynamic_cast<TextSource *>(entry.source.get()))
-                    textSrc->setDataSource(data);
-            }
-        } else if (desc.kind == Kind::Shader) {
-            if (auto data = editor->scriptOutputForDataNode(layer.inputNodeId)) {
-                if (auto *shaderSrc = dynamic_cast<ShaderSource *>(entry.source.get()))
-                    shaderSrc->setDataSource(data);
-            }
-        }
-
-        entry.source = ProcessEffects::applySourceEffects(std::move(entry.source),
-                                                          layer.sourceEffects);
-    }
+    entry.source = buildLayerSource(layer, editor);
+    entry.playing = (entry.source != nullptr);
     return entry;
 }
 

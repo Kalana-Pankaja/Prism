@@ -185,6 +185,8 @@ set(SOURCES
     src/core/project/ProjectPackager.cpp
     src/core/sources/ShaderSource.cpp
     src/core/sources/EffectSources.cpp
+    src/core/sources/LayerCompositorSource.cpp
+    src/core/effects/EffectPassRunner.cpp
     src/core/sources/HtmlSource.cpp
     src/core/sources/HtmlWorkspace.cpp
     src/core/sources/TextSource.cpp
@@ -315,6 +317,8 @@ set(HEADERS
     include/core/project/ProjectPackager.h
     include/core/sources/ShaderSource.h
     include/core/sources/EffectSources.h
+    include/core/sources/LayerCompositorSource.h
+    include/core/effects/EffectPassRunner.h
     include/core/sources/HtmlSource.h
     include/core/sources/HtmlWorkspace.h
     include/core/sources/TextSource.h

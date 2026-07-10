@@ -79,14 +79,22 @@ private slots:
         QCOMPARE(stream.layers.size(), 1);
         const ResolvedLayer &l = stream.layers.first();
         QCOMPARE(l.inputNodeId, (NodeId)1);
-        QCOMPARE(l.cropX, 0.25f);
-        QCOMPARE(l.cropY, 0.1f);
-        QCOMPARE(l.cropW, 0.5f);
-        QCOMPARE(l.cropH, 0.8f);
-        QVERIFY(l.flipH);
+        // Crop and Flip are now ordered decorator effects (not draw-time folds), so
+        // the resolved layer keeps identity placement and records every effect, in
+        // upstream→downstream order: Crop(0), FlipH(1), Segment(3).
+        QCOMPARE(l.cropX, 0.f);
+        QCOMPARE(l.cropW, 1.f);
+        QVERIFY(!l.flipH);
         QVERIFY(!l.flipV);
-        QCOMPARE(l.sourceEffects.size(), 1);
-        QCOMPARE(l.sourceEffects.first().effectId, 3);
+        QCOMPARE(l.sourceEffects.size(), 3);
+        QCOMPARE(l.sourceEffects.at(0).effectId, 0);
+        QCOMPARE(l.sourceEffects.at(1).effectId, 1);
+        QCOMPARE(l.sourceEffects.at(2).effectId, 3);
+        const QJsonObject cropParams = l.sourceEffects.at(0).params;
+        QCOMPARE(cropParams["x"].toDouble(), 0.25);
+        QCOMPARE(cropParams["y"].toDouble(), 0.1);
+        QCOMPARE(cropParams["w"].toDouble(), 0.5);
+        QCOMPARE(cropParams["h"].toDouble(), 0.8);
     }
 
     void legacyLoadAndFold() {
@@ -140,7 +148,69 @@ private slots:
         // The upstream part still evaluates.
         const ResolvedStream upstream = m_editor->evaluateVideoInput(2);
         QCOMPARE(upstream.layers.size(), 1);
-        QCOMPARE(upstream.layers.first().cropX, 0.25f);
+        QCOMPARE(upstream.layers.first().sourceEffects.size(), 1);
+        QCOMPARE(upstream.layers.first().sourceEffects.first().effectId, 0);
+        QCOMPARE(upstream.layers.first().sourceEffects.first().params["x"].toDouble(), 0.25);
+    }
+
+    // Input(1) ┐
+    // Input(2) ┼─► Layer(10, 2 slots) ─► Output(5)
+    // The Layer node must flatten to ONE composite ResolvedLayer carrying both
+    // sub-layers, so a downstream process would act on the composite.
+    void layerNodeFlattensToComposite() {
+        auto input = [](qint64 id) {
+            QJsonObject src;
+            src["kind"] = (int)SourceDescriptor::Kind::Canvas;
+            src["displayName"] = QStringLiteral("Clip %1").arg(id);
+            QJsonObject o;
+            o["id"] = id;
+            o["source"] = src;
+            o["hasAudio"] = false;
+            return o;
+        };
+        auto slot = []() {
+            QJsonObject s;
+            s["baseX"] = 0.0; s["baseY"] = 0.0; s["baseW"] = 1.0; s["baseH"] = 1.0;
+            s["visible"] = true; s["name"] = QString();
+            return s;
+        };
+        QJsonObject layer;
+        layer["id"] = 10;
+        layer["posX"] = 0.0; layer["posY"] = 0.0;
+        layer["canvasW"] = 1920; layer["canvasH"] = 1080;
+        layer["slots"] = QJsonArray{slot(), slot()};
+
+        auto chain = [](qint64 from, qint64 to, int toPort) {
+            QJsonObject c;
+            c["from"] = from; c["to"] = to;
+            c["kind"] = 0; c["toPortIndex"] = toPort;
+            return c;
+        };
+
+        QJsonObject state;
+        state["graphVersion"] = 3;
+        state["nextId"] = 11;
+        state["inputNodes"] = QJsonArray{input(1), input(2)};
+        state["layerNodes"] = QJsonArray{layer};
+        state["outputNode"] = QJsonObject{{"id", 5}};
+        state["connections"] = QJsonArray{chain(1, 10, 0), chain(2, 10, 1), chain(10, 5, -1)};
+
+        m_editor->restoreState(state);
+
+        const ResolvedStream stream = m_editor->evaluateVideoInput(10);
+        QCOMPARE(stream.layers.size(), 1);
+        const ResolvedLayer &l = stream.layers.first();
+        QVERIFY(l.composite != nullptr);
+        QCOMPARE(l.layerNodeId, (NodeId)10);
+        QCOMPARE(stream.canvasWidth, 1920);
+        QCOMPARE(stream.canvasHeight, 1080);
+        QCOMPARE(l.composite->canvasWidth, 1920);
+        QCOMPARE(l.composite->canvasHeight, 1080);
+        QCOMPARE(l.composite->layers.size(), 2);
+        QSet<NodeId> ids;
+        for (const ResolvedLayer &sl : l.composite->layers) ids.insert(sl.inputNodeId);
+        QVERIFY(ids.contains((NodeId)1));
+        QVERIFY(ids.contains((NodeId)2));
     }
 
     void registryIsConsistent() {

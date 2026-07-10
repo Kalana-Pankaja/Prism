@@ -481,3 +481,23 @@ void DeckController::assignSourceToActiveDeck(std::unique_ptr<MediaSource> src,
     if (toA) { out->setSourceA(std::move(src)); out->playA(); }
     else     { out->setSourceB(std::move(src)); out->playB(); }
 }
+
+void DeckController::assignCompositeToDeck(std::unique_ptr<MediaSource> src, NodeId layerNodeId,
+                                           bool deckA, QSlider *progressSlider, QPushButton *playBtn,
+                                           QLabel *selectedLabel, QLabel *timeLabel,
+                                           const QString &name) {
+    if (deckA) m_aClipNodeId = layerNodeId;
+    else       m_bClipNodeId = layerNodeId;
+
+    auto *out = m_outputWindow->videoWidget();
+    if (deckA) { out->setOverlaysA({}); out->setSourceA(std::move(src)); out->playA(); }
+    else       { out->setOverlaysB({}); out->setSourceB(std::move(src)); out->playB(); }
+
+    // A composite group has no single clip timeline/audio; the audio graph drives
+    // each sub-clip's audio independently.
+    stopDeckAudio(deckA);
+    progressSlider->setVisible(false);
+    playBtn->setVisible(false);
+    selectedLabel->setText(QStringLiteral("%1: %2").arg(deckA ? "A" : "B", name));
+    timeLabel->setText(QStringLiteral("LIVE"));
+}

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/sources/MediaSource.h"
+#include "core/effects/EffectPassRunner.h"
 
 #include <QColor>
 #include <QImage>
@@ -49,6 +50,35 @@ protected:
 
     std::unique_ptr<MediaSource> m_inner;
     QImage m_output;
+};
+
+/// Crops the frame to a normalised [0,1] sub-rectangle, changing the output size.
+/// A decorator (rather than a draw-time texcoord fold) so its position in the node
+/// chain is honoured relative to other effects (e.g. crop-then-blur ≠ blur-then-crop).
+class CropSource : public FrameEffectSource {
+public:
+    CropSource(std::unique_ptr<MediaSource> inner, float x, float y, float w, float h)
+        : FrameEffectSource(std::move(inner)), m_x(x), m_y(y), m_w(w), m_h(h) {}
+
+protected:
+    QImage process(const QImage &in) override;
+
+private:
+    float m_x = 0.f, m_y = 0.f, m_w = 1.f, m_h = 1.f;
+};
+
+/// Mirrors the frame horizontally and/or vertically. A decorator for the same
+/// ordering reason as CropSource.
+class FlipSource : public FrameEffectSource {
+public:
+    FlipSource(std::unique_ptr<MediaSource> inner, bool flipH, bool flipV)
+        : FrameEffectSource(std::move(inner)), m_h(flipH), m_v(flipV) {}
+
+protected:
+    QImage process(const QImage &in) override;
+
+private:
+    bool m_h = false, m_v = false;
 };
 
 /// Rotates the frame by a fixed multiple of 90 degrees.
@@ -135,6 +165,40 @@ protected:
 private:
     QVector<QPointF> m_points;   // normalised polygon vertices
     bool m_invert = false;
+};
+
+/// GPU separable Gaussian-ish blur (proof-of-concept for the shader effect path).
+/// Unlike the CPU FrameEffectSource decorators, this renders the inner frame through
+/// two fragment-shader passes in an offscreen FBO and exposes the result via
+/// glTexture(), so VideoWidget's compositor binds it directly with no CPU readback.
+/// frameData() falls back to a lazy GPU→CPU read for CPU effects chained after it.
+class GpuBlurSource : public MediaSource {
+public:
+    GpuBlurSource(std::unique_ptr<MediaSource> inner, int radius)
+        : m_inner(std::move(inner)), m_radius(radius) {}
+
+    Type    type()        const override { return m_inner ? m_inner->type() : Type::Canvas; }
+    bool    isReady()     const override { return m_inner && m_inner->isReady() && m_outTex != 0; }
+    QSize   frameSize()   const override { return m_inner ? m_inner->frameSize() : QSize(); }
+    const uint8_t *frameData() const override;
+    bool    nextFrame()         override;
+    bool    hasAlpha()    const override { return true; }
+    unsigned int glTexture() const override { return m_outTex; }
+
+    double  duration()    const override { return m_inner ? m_inner->duration() : 0.0; }
+    double  currentTime() const override { return m_inner ? m_inner->currentTime() : 0.0; }
+    void    seek(double s)      override { if (m_inner) m_inner->seek(s); }
+    void    play()             override { if (m_inner) m_inner->play(); }
+    void    pause()            override { if (m_inner) m_inner->pause(); }
+    QString displayName() const override { return m_inner ? m_inner->displayName() : QString(); }
+
+private:
+    std::unique_ptr<MediaSource> m_inner;
+    int          m_radius = 6;
+    mutable EffectPassRunner m_runner;   // readback() in const frameData()
+    unsigned int m_outTex = 0;
+    mutable QImage m_cpu;        // lazy readback cache for frameData()
+    mutable bool   m_cpuValid = false;
 };
 
 /// Multiplies the frame alpha by a constant opacity factor.

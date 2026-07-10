@@ -1,5 +1,6 @@
 #include "ui/mainwindow/MainWindow.h"
 #include "ui_MainWindow.h"
+#include <functional>
 #include "ui/canvas/VideoWidget.h"
 #include "ui/output/MirrorOutputWindow.h"
 #include "ui/mainwindow/SourcePrompt.h"
@@ -813,7 +814,22 @@ void MainWindow::pushDecks() {
     // A stream's source identity: base source key + ordered overlay keys. The key
     // captures file/kind/trim but NOT placement, so equal keys mean the decoded
     // MediaSources can be reused (only transforms/order updated), never reopened.
-    auto layerKey = [&](const ResolvedLayer &l) -> QString {
+    // Identity key for deck-source reuse. Recursive: a flattened Layer composite
+    // hashes its sub-layers (content + placement) and canvas so the deck rebuilds
+    // when the group changes but not every frame when it is unchanged.
+    std::function<QString(const ResolvedLayer &)> layerKey =
+        [&](const ResolvedLayer &l) -> QString {
+        if (l.composite) {
+            QString k = QStringLiteral("L%1:%2x%3{")
+                .arg(l.layerNodeId).arg(l.composite->canvasWidth).arg(l.composite->canvasHeight);
+            for (const ResolvedLayer &sl : l.composite->layers) {
+                k += layerKey(sl)
+                   + QStringLiteral("@%1,%2,%3,%4,%5;")
+                       .arg(sl.baseX).arg(sl.baseY).arg(sl.baseW).arg(sl.baseH)
+                       .arg((sl.visible ? 1 : 0));
+            }
+            return k + QStringLiteral("}") + ProcessEffects::sourceEffectsKey(l.sourceEffects);
+        }
         ClipNodeModel *n = m_clipNodeEditor->nodeAt(l.inputNodeId);
         if (!n) return QStringLiteral("%1:?").arg(l.inputNodeId);
         const SourceDescriptor &d = n->sourceDescriptor();
@@ -883,6 +899,45 @@ void MainWindow::pushDecks() {
             return;
         }
         const ResolvedLayer base = stream.layers.first();
+
+        // Flattened Layer group as the deck primary: no single input node, so it
+        // takes a dedicated path that assigns the pre-built composite source.
+        if (base.composite) {
+            speedSlider->setVisible(false);
+            speedLabel->setVisible(false);
+            auto applyCompositeBase = [&]() {
+                if (deckA) {
+                    out->setBaseA(base.baseX, base.baseY, base.baseW, base.baseH);
+                    out->setCropA(0.f, 0.f, 1.f, 1.f);
+                    out->setFlipA(false, false);
+                    out->setCanvasSizeA(stream.canvasWidth, stream.canvasHeight);
+                } else {
+                    out->setBaseB(base.baseX, base.baseY, base.baseW, base.baseH);
+                    out->setCropB(0.f, 0.f, 1.f, 1.f);
+                    out->setFlipB(false, false);
+                    out->setCanvasSizeB(stream.canvasWidth, stream.canvasHeight);
+                }
+            };
+            if (sameStream(dBase, dOv, curBase, curOv)) {
+                applyCompositeBase();
+            } else {
+                auto src = SourceFactory::buildLayerSource(base, m_clipNodeEditor);
+                if (!src) {
+                    if (deckA) { out->clearDeckA(); m_deckController->setActiveNodeA(0); }
+                    else       { out->clearDeckB(); m_deckController->setActiveNodeB(0); }
+                    curBase.clear(); curOv.clear();
+                    return;
+                }
+                m_deckController->assignCompositeToDeck(std::move(src), base.layerNodeId, deckA,
+                    slider, playBtn, selLabel, timeLabel, QStringLiteral("Layer"));
+                applyCompositeBase();
+                if (deckA) out->setNodeChainA({});
+                else       out->setNodeChainB({});
+                curBase = dBase; curOv = dOv;
+            }
+            return;
+        }
+
         ClipNodeModel *node = m_clipNodeEditor->nodeAt(base.inputNodeId);
         if (!node) return;
         const bool speedControl = node->sourceDescriptor().hasSpeedControl();
