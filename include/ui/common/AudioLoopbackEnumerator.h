@@ -21,6 +21,12 @@ QAudioDevice monitorForPlaybackDevice(const QString &outputDeviceId);
 /// PulseAudio/PipeWire monitor source id derived from a playback device id.
 QString monitorSourceIdForPlayback(const QString &outputDeviceId);
 
+/// Raw output device id for a chosen playback device, with no ".monitor"
+/// suffix — used as the PipeWire target-object on Linux, since PipeWire (as
+/// opposed to PulseAudio) has no separate monitor-source object: you target
+/// the sink node itself and request its monitor via a stream property.
+QString sinkNodeIdForPlayback(const QString &outputDeviceId);
+
 /// Human-readable monitor source label for UI hints (empty if unresolved).
 QString monitorLabelForPlaybackDevice(const QString &outputDeviceId);
 

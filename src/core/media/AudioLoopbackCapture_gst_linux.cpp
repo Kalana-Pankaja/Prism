@@ -14,17 +14,17 @@ GstElement *g_appsink = nullptr;
 
 } // namespace
 
-bool start(const QString &pulseMonitorDeviceId) {
+bool start(const QString &sinkNodeId) {
     stop();
 
-    if (pulseMonitorDeviceId.isEmpty())
+    if (sinkNodeId.isEmpty())
         return false;
 
     if (!gst_is_initialized())
         gst_init(nullptr, nullptr);
 
     g_pipeline = gst_pipeline_new("audio-loopback");
-    GstElement *src = gst_element_factory_make("pulsesrc", "src");
+    GstElement *src = gst_element_factory_make("pipewiresrc", "src");
     GstElement *convert = gst_element_factory_make("audioconvert", "convert");
     GstElement *resample = gst_element_factory_make("audioresample", "resample");
     GstElement *capsfilter = gst_element_factory_make("capsfilter", "caps");
@@ -36,7 +36,16 @@ bool start(const QString &pulseMonitorDeviceId) {
         return false;
     }
 
-    g_object_set(src, "device", pulseMonitorDeviceId.toUtf8().constData(), nullptr);
+    g_object_set(src, "target-object", sinkNodeId.toUtf8().constData(), nullptr);
+
+    // PipeWire has no separate ".monitor" device object the way PulseAudio
+    // does — you target the sink node itself and ask PipeWire to hand you
+    // its monitor (loopback) stream via this property instead of a regular
+    // capture stream.
+    GstStructure *streamProps = gst_structure_new("props",
+        "stream.capture.sink", G_TYPE_BOOLEAN, TRUE, nullptr);
+    g_object_set(src, "stream-properties", streamProps, nullptr);
+    gst_structure_free(streamProps);
 
     GstCaps *caps = gst_caps_from_string(
         "audio/x-raw,format=F32LE,channels=2,rate=44100,layout=interleaved");
@@ -59,12 +68,12 @@ bool start(const QString &pulseMonitorDeviceId) {
 
     const GstStateChangeReturn ret = gst_element_set_state(g_pipeline, GST_STATE_PLAYING);
     if (ret == GST_STATE_CHANGE_FAILURE) {
-        qWarning() << "AudioLoopbackGst: failed to start pipeline for" << pulseMonitorDeviceId;
+        qWarning() << "AudioLoopbackGst: failed to start pipeline for" << sinkNodeId;
         stop();
         return false;
     }
 
-    qInfo() << "AudioLoopbackGst: capturing monitor" << pulseMonitorDeviceId;
+    qInfo() << "AudioLoopbackGst: capturing monitor of sink" << sinkNodeId;
     return true;
 }
 

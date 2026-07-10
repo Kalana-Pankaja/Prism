@@ -77,6 +77,13 @@ QString monitorSourceIdForPlayback(const QString &outputDeviceId) {
     return id + QStringLiteral(".monitor");
 }
 
+QString sinkNodeIdForPlayback(const QString &outputDeviceId) {
+    const QAudioDevice output = outputDeviceForId(outputDeviceId);
+    if (output.isNull())
+        return {};
+    return QString::fromUtf8(output.id());
+}
+
 QList<AudioOutputDeviceInfo> listPlaybackDevices()
 {
     QList<AudioOutputDeviceInfo> devices;

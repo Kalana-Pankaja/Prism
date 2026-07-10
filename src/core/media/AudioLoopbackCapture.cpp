@@ -78,13 +78,14 @@ bool AudioLoopbackCapture::start() {
 
 #if defined(Q_OS_LINUX)
     m_useGStreamer = false;
-    if (AudioLoopbackGst::start(monitorId)) {
+    const QString sinkId = AudioLoopbackEnumerator::sinkNodeIdForPlayback(m_playbackDeviceId);
+    if (AudioLoopbackGst::start(sinkId)) {
         m_useGStreamer = true;
         m_pullTimer.start();
         pullInput();
         return true;
     }
-    qWarning() << "AudioLoopbackCapture: GStreamer monitor capture failed for" << monitorId
+    qWarning() << "AudioLoopbackCapture: GStreamer monitor capture failed for" << sinkId
                << "- trying Qt audio input";
 #endif
 

@@ -10,6 +10,10 @@ depends=(
     'qt6-base' 'qt6-multimedia' 'qt6-multimedia-ffmpeg' 'qt6-webengine'
     'qt6-webchannel' 'qt6-positioning' 'qt6-serialport' 'qt6-websockets'
     'ffmpeg' 'gstreamer' 'gst-plugins-base'
+    # Screen capture (ScreenSource_linux.cpp) and audio loopback capture
+    # (AudioLoopbackCapture_gst_linux.cpp) both need the pipewiresrc GStreamer
+    # element at runtime; nothing else in this list pulls it in transitively.
+    'gst-plugin-pipewire'
     're2' 'libzip' 'lua54' 'openssl' 'fontconfig' 'freetype2'
 )
 makedepends=('cmake' 'ninja' 'git' 'pkgconf')
