@@ -297,7 +297,17 @@ public:
         return stroker.createStroke(path());
     }
 
+    // Set while a compatible unconnected node is being dragged over this
+    // connection, as a drop hint that dropping will splice it in.
+    void setHighlighted(bool h) { if (m_highlighted != h) { m_highlighted = h; update(); } }
+    bool isHighlighted() const { return m_highlighted; }
+
     void paint(QPainter *p, const QStyleOptionGraphicsItem *opt, QWidget *w) override {
+        if (m_highlighted) {
+            QPen glow(QColor(255, 255, 255, 170), 7.0, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin);
+            p->setPen(glow);
+            p->drawPath(path());
+        }
         if (isSelected()) {
             QPen pen = m_basePen;
             pen.setWidthF(4.0);
@@ -315,6 +325,7 @@ private:
     PortItem *m_to;
     EdgeKind m_kind;
     QPen m_basePen;
+    bool m_highlighted = false;
 };
 
 class NodeItemBase : public QGraphicsItem {
@@ -607,6 +618,8 @@ public:
         e->accept();
     }
 
+    void mouseReleaseEvent(QGraphicsSceneMouseEvent *e) override;
+
     void contextMenuEvent(QGraphicsSceneContextMenuEvent *e) override {
         QMenu menu;
         if (m_desc->editDialog)
@@ -701,6 +714,8 @@ public:
         if (m_desc->editDialog && onEditRequested) onEditRequested(m_nodeId);
         e->accept();
     }
+
+    void mouseReleaseEvent(QGraphicsSceneMouseEvent *e) override;
 
     void contextMenuEvent(QGraphicsSceneContextMenuEvent *e) override {
         QMenu menu;
@@ -2475,6 +2490,39 @@ public:
         }
     }
 
+    // Called on every position change of an unconnected, single-in/single-out
+    // node while it's being dragged: highlights the connection under it (if
+    // any, matching edgeKind) as a hint that dropping here will splice it in.
+    void updateSpliceHighlight(NodeItemBase *node, PortItem *inPort, PortItem *outPort,
+                               ConnectionItem::EdgeKind edgeKind) {
+        ConnectionItem *candidate = nullptr;
+        if (!portHasEdge(inPort) && !portHasEdge(outPort)) {
+            for (QGraphicsItem *item : node->collidingItems()) {
+                auto *conn = dynamic_cast<ConnectionItem *>(item);
+                if (conn && conn->edgeKind() == edgeKind) { candidate = conn; break; }
+            }
+        }
+        if (candidate == m_spliceCandidate) return;
+        if (m_spliceCandidate) m_spliceCandidate->setHighlighted(false);
+        m_spliceCandidate = candidate;
+        if (m_spliceCandidate) m_spliceCandidate->setHighlighted(true);
+    }
+
+    // Called on mouse release for a node that participates in splice-on-drop:
+    // if it was dropped on a highlighted connection, cut that connection and
+    // rewire it through the node's in/out ports instead.
+    void commitPendingSplice(PortItem *inPort, PortItem *outPort) {
+        if (!m_spliceCandidate) return;
+        ConnectionItem *edge = m_spliceCandidate;
+        m_spliceCandidate = nullptr;
+        PortItem *upOut = edge->fromPort();
+        PortItem *downIn = edge->toPort();
+        const ConnectionItem::EdgeKind kind = edge->edgeKind();
+        removeConnection(edge);
+        connectPorts(upOut, inPort, kind);
+        connectPorts(outPort, downIn, kind);
+    }
+
     void removeConnection(ConnectionItem *item) {
         for (int i = m_edges.size() - 1; i >= 0; --i) {
             auto &e = m_edges[i];
@@ -2788,6 +2836,7 @@ private:
     QList<Edge> m_edges;
     PortItem *m_dragPort = nullptr;
     QGraphicsLineItem *m_tempLine = nullptr;
+    ConnectionItem *m_spliceCandidate = nullptr;
 };
 
 void ConnectionItem::contextMenuEvent(QGraphicsSceneContextMenuEvent *e) {
@@ -2908,15 +2957,33 @@ QVariant ClipNodeItem::itemChange(GraphicsItemChange change, const QVariant &val
 }
 
 QVariant ProcessNodeItem::itemChange(GraphicsItemChange change, const QVariant &value) {
-    if (change == ItemPositionHasChanged && scene())
-        static_cast<ClipNodeScene *>(scene())->updateConnectionsForNode(this);
+    if (change == ItemPositionHasChanged && scene()) {
+        auto *s = static_cast<ClipNodeScene *>(scene());
+        s->updateConnectionsForNode(this);
+        s->updateSpliceHighlight(this, m_inPort, m_outPort, ConnectionItem::Chain);
+    }
     return QGraphicsItem::itemChange(change, value);
 }
 
+void ProcessNodeItem::mouseReleaseEvent(QGraphicsSceneMouseEvent *e) {
+    QGraphicsItem::mouseReleaseEvent(e);
+    if (scene())
+        static_cast<ClipNodeScene *>(scene())->commitPendingSplice(m_inPort, m_outPort);
+}
+
 QVariant AudioEffectNodeItem::itemChange(GraphicsItemChange change, const QVariant &value) {
-    if (change == ItemPositionHasChanged && scene())
-        static_cast<ClipNodeScene *>(scene())->updateConnectionsForNode(this);
+    if (change == ItemPositionHasChanged && scene()) {
+        auto *s = static_cast<ClipNodeScene *>(scene());
+        s->updateConnectionsForNode(this);
+        s->updateSpliceHighlight(this, m_inPort, m_outPort, ConnectionItem::AudioEffectChain);
+    }
     return QGraphicsItem::itemChange(change, value);
+}
+
+void AudioEffectNodeItem::mouseReleaseEvent(QGraphicsSceneMouseEvent *e) {
+    QGraphicsItem::mouseReleaseEvent(e);
+    if (scene())
+        static_cast<ClipNodeScene *>(scene())->commitPendingSplice(m_inPort, m_outPort);
 }
 
 QVariant LayerNodeItem::itemChange(GraphicsItemChange change, const QVariant &value) {

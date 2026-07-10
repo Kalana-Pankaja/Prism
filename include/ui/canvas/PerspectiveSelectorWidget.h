@@ -21,8 +21,9 @@ protected:
     void mousePressEvent(QMouseEvent *e) override;
     void mouseMoveEvent(QMouseEvent *e) override;
     void mouseReleaseEvent(QMouseEvent *e) override;
+    void wheelEvent(QWheelEvent *e) override;
     void paintEvent(QPaintEvent *e) override;
-    QSize sizeHint() const override { return QSize(480, 270); }
+    QSize sizeHint() const override { return QSize(560, 340); }
 
 private:
     QRectF frameRect() const;
@@ -32,4 +33,5 @@ private:
     QImage m_frame;
     QVector<QPointF> m_corners;   // 4 normalized points
     int m_dragIndex = -1;
+    qreal m_zoom = 1.0;   // scales the fitted frame size; wheel-adjustable
 };

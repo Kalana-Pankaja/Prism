@@ -2,10 +2,14 @@
 
 #include <QMouseEvent>
 #include <QPainter>
+#include <QWheelEvent>
 #include <algorithm>
 
 namespace {
 constexpr qreal kHandleR = 7.0;
+// Margin around the video preview that handles are allowed to be dragged into,
+// so corners can be pulled outside the original frame's boundaries.
+constexpr qreal kOverscan = 60.0;
 }
 
 PerspectiveSelectorWidget::PerspectiveSelectorWidget(QWidget *parent) : QWidget(parent) {
@@ -32,10 +36,14 @@ void PerspectiveSelectorWidget::resetCorners() {
 }
 
 QRectF PerspectiveSelectorWidget::frameRect() const {
-    const QRectF area = rect().adjusted(kHandleR, kHandleR, -kHandleR, -kHandleR);
-    if (m_frame.isNull()) return area;
+    const QRectF area = rect().adjusted(kOverscan, kOverscan, -kOverscan, -kOverscan);
+    if (m_frame.isNull()) {
+        QRectF r(0, 0, area.width() * m_zoom, area.height() * m_zoom);
+        r.moveCenter(area.center());
+        return r;
+    }
     const QSizeF fs = m_frame.size().scaled(area.size().toSize(), Qt::KeepAspectRatio);
-    QRectF r(0, 0, fs.width(), fs.height());
+    QRectF r(0, 0, fs.width() * m_zoom, fs.height() * m_zoom);
     r.moveCenter(area.center());
     return r;
 }
@@ -48,8 +56,12 @@ QPointF PerspectiveSelectorWidget::normToWidget(const QPointF &n) const {
 QPointF PerspectiveSelectorWidget::widgetToNorm(const QPointF &p) const {
     const QRectF r = frameRect();
     if (r.width() <= 0 || r.height() <= 0) return {0, 0};
-    return {std::clamp((p.x() - r.x()) / r.width(), 0.0, 1.0),
-            std::clamp((p.y() - r.y()) / r.height(), 0.0, 1.0)};
+    // Clamp to the widget's own bounds (not the frame), so a corner can be
+    // dragged outside the original video but still stays reachable on screen.
+    const QRectF bounds = rect().adjusted(kHandleR, kHandleR, -kHandleR, -kHandleR);
+    const qreal x = std::clamp(p.x(), bounds.left(), bounds.right());
+    const qreal y = std::clamp(p.y(), bounds.top(), bounds.bottom());
+    return {(x - r.x()) / r.width(), (y - r.y()) / r.height()};
 }
 
 void PerspectiveSelectorWidget::mousePressEvent(QMouseEvent *e) {
@@ -75,21 +87,46 @@ void PerspectiveSelectorWidget::mouseReleaseEvent(QMouseEvent *) {
     m_dragIndex = -1;
 }
 
+void PerspectiveSelectorWidget::wheelEvent(QWheelEvent *e) {
+    const qreal factor = e->angleDelta().y() > 0 ? 1.1 : 1.0 / 1.1;
+    m_zoom = std::clamp(m_zoom * factor, 0.2, 3.0);
+    update();
+    e->accept();
+}
+
 void PerspectiveSelectorWidget::paintEvent(QPaintEvent *) {
     QPainter p(this);
     p.fillRect(rect(), QColor(24, 24, 28));
 
     const QRectF fr = frameRect();
-    if (!m_frame.isNull())
-        p.drawImage(fr, m_frame);
-    else {
-        p.setPen(QColor(90, 90, 96));
-        p.drawText(fr, Qt::AlignCenter, "No preview");
-    }
+
+    // Reference outline marking the original, undistorted video bounds.
+    p.setPen(QPen(QColor(90, 94, 102), 1, Qt::DashLine));
+    p.setBrush(Qt::NoBrush);
+    p.drawRect(fr);
 
     QPolygonF poly;
     for (const QPointF &c : m_corners)
         poly << normToWidget(c);
+
+    if (!m_frame.isNull()) {
+        // Warp the preview the same way KeystoneSource::process does, so the
+        // handles show exactly what the corners will do to the real output.
+        const qreal w = m_frame.width();
+        const qreal h = m_frame.height();
+        const QPolygonF srcQuad{{0, 0}, {w, 0}, {w, h}, {0, h}};
+        QTransform t;
+        if (QTransform::quadToQuad(srcQuad, poly, t)) {
+            p.save();
+            p.setRenderHint(QPainter::SmoothPixmapTransform, true);
+            p.setTransform(t, true);
+            p.drawImage(0, 0, m_frame);
+            p.restore();
+        }
+    } else {
+        p.setPen(QColor(90, 90, 96));
+        p.drawText(fr, Qt::AlignCenter, "No preview");
+    }
 
     p.setRenderHint(QPainter::Antialiasing, true);
     p.setPen(QPen(QColor(100, 180, 255), 2));

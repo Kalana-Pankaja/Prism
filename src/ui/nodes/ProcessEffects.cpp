@@ -215,10 +215,8 @@ ProcessEffectDescriptor makeRotate() {
                 if (angles[i] == cur) combo->setCurrentIndex(i);
             form->addRow("Angle", combo);
             layout->addLayout(form);
-        });
-        if (!ok) return false;
-        params["angle"] = angles[combo->currentIndex()];
-        return true;
+        }, [&]() { params["angle"] = angles[combo->currentIndex()]; });
+        return ok;
     };
     return d;
 }
@@ -250,10 +248,8 @@ ProcessEffectDescriptor makeOpacity() {
             row->addWidget(slider);
             row->addWidget(val);
             layout->addLayout(row);
-        });
-        if (!ok) return false;
-        params["opacity"] = slider->value() / 100.0;
-        return true;
+        }, [&]() { params["opacity"] = slider->value() / 100.0; });
+        return ok;
     };
     return d;
 }
@@ -306,14 +302,14 @@ ProcessEffectDescriptor makeChromaKey() {
             soft->setValue(qRound(params["smoothness"].toDouble(0.10) * 100));
             form->addRow("Smoothness", soft);
             layout->addLayout(form);
+        }, [&]() {
+            params["r"] = key->red();
+            params["g"] = key->green();
+            params["b"] = key->blue();
+            params["threshold"] = thr->value() / 100.0;
+            params["smoothness"] = soft->value() / 100.0;
         });
-        if (!ok) return false;
-        params["r"] = key->red();
-        params["g"] = key->green();
-        params["b"] = key->blue();
-        params["threshold"] = thr->value() / 100.0;
-        params["smoothness"] = soft->value() / 100.0;
-        return true;
+        return ok;
     };
     return d;
 }
@@ -345,10 +341,8 @@ ProcessEffectDescriptor makeBlur() {
             row->addWidget(slider);
             row->addWidget(val);
             layout->addLayout(row);
-        });
-        if (!ok) return false;
-        params["radius"] = slider->value();
-        return true;
+        }, [&]() { params["radius"] = slider->value(); });
+        return ok;
     };
     return d;
 }
@@ -380,10 +374,8 @@ ProcessEffectDescriptor makeSharpen() {
             row->addWidget(slider);
             row->addWidget(val);
             layout->addLayout(row);
-        });
-        if (!ok) return false;
-        params["amount"] = slider->value() / 100.0;
-        return true;
+        }, [&]() { params["amount"] = slider->value() / 100.0; });
+        return ok;
     };
     return d;
 }
@@ -415,10 +407,8 @@ ProcessEffectDescriptor makeKeystone() {
             QObject::connect(reset, &QPushButton::clicked, sel,
                              [sel] { sel->resetCorners(); });
             layout->addWidget(reset);
-        });
-        if (!ok) return false;
-        params["corners"] = pointsToArray(sel->corners());
-        return true;
+        }, [&]() { params["corners"] = pointsToArray(sel->corners()); });
+        return ok;
     };
     return d;
 }
@@ -457,11 +447,11 @@ ProcessEffectDescriptor makePolygonMask() {
             row->addStretch();
             row->addWidget(clear);
             layout->addLayout(row);
+        }, [&]() {
+            params["points"] = pointsToArray(sel->points());
+            params["invert"] = invert->isChecked();
         });
-        if (!ok) return false;
-        params["points"] = pointsToArray(sel->points());
-        params["invert"] = invert->isChecked();
-        return true;
+        return ok;
     };
     return d;
 }
