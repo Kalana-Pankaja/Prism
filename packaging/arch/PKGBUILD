@@ -1,0 +1,56 @@
+# Maintainer: Suhas Dissanayake <suhasdissa@gmail.com>
+pkgname=prism
+pkgver=0.1.1
+pkgrel=1
+pkgdesc="Qt6 live media mixer/switcher with FFmpeg, OpenGL and a dark Resolume-inspired UI"
+arch=('x86_64')
+url="https://github.com/CutWire-Studios/Prism"
+license=('GPL-3.0-or-later')
+depends=(
+    'qt6-base' 'qt6-multimedia' 'qt6-multimedia-ffmpeg' 'qt6-webengine'
+    'qt6-webchannel' 'qt6-positioning' 'qt6-serialport' 'qt6-websockets'
+    'ffmpeg' 'gstreamer' 'gst-plugins-base'
+    're2' 'libzip' 'lua54' 'openssl' 'fontconfig' 'freetype2'
+)
+makedepends=('cmake' 'ninja' 'git' 'pkgconf')
+# Defaults to the tagged release; CI overrides _commit (e.g. to $GITHUB_SHA)
+# to build the exact commit that triggered the workflow instead.
+_commit="${_commit:-v$pkgver}"
+source=("$pkgname::git+https://github.com/CutWire-Studios/Prism.git#commit=$_commit")
+sha256sums=('SKIP')
+
+pkgver() {
+    cd "$pkgname"
+    printf "r%s.%s" "$(git rev-list --count HEAD)" "$(git rev-parse --short HEAD)"
+}
+
+# ONNX Runtime has no Arch package; CMakeModules/FetchOnnxRuntime.cmake
+# auto-downloads a prebuilt release when it isn't found, and only Windows
+# gets a post-build copy-next-to-exe step for it (CMakeLists.txt's
+# `if(WIN32)` block) — package() below bundles the fetched .so into
+# /usr/lib/prism and points Prism at it via RPATH, mirroring what the
+# AppImage workflow does with LD_LIBRARY_PATH.
+_onnxruntime_libdir_glob="onnxruntime/onnxruntime-linux-x64-*/lib"
+
+build() {
+    cd "$pkgname"
+    cmake -B build -G Ninja \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_INSTALL_PREFIX=/usr \
+        -DCMAKE_EXE_LINKER_FLAGS="-Wl,-rpath,/usr/lib/prism" \
+        -DPRISM_WITH_NDI=OFF \
+        -DPRISM_WITH_WEBRTC=ON \
+        -DPRISM_WITH_SEGMENTATION=ON
+    cmake --build build --target Prism --target juice --target datachannel --parallel
+}
+
+package() {
+    cd "$pkgname"
+    DESTDIR="$pkgdir" cmake --install build
+
+    install -d "$pkgdir/usr/lib/prism"
+    install -m644 build/_deps/${_onnxruntime_libdir_glob}/libonnxruntime.so.* \
+        "$pkgdir/usr/lib/prism/"
+
+    install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}

@@ -8,7 +8,7 @@ on:
         required: false
         default: ""
       platform:
-        description: "Which platform(s) to build (use linux or windows to test one side first)"
+        description: "Which platform(s) to build (use linux, windows, or arch to test one side first)"
         required: true
         default: all
         type: choice
@@ -16,6 +16,7 @@ on:
           - all
           - linux
           - windows
+          - arch
 
 permissions:
   contents: read
@@ -277,3 +278,42 @@ jobs:
         with:
           name: windows-installer
           path: dist/*.exe
+
+  arch:
+    name: Arch package
+    runs-on: ubuntu-24.04
+    if: inputs.platform == 'all' || inputs.platform == 'arch'
+    timeout-minutes: 60
+    container:
+      image: archlinux:base-devel
+    steps:
+      - uses: actions/checkout@v4
+
+      # makepkg refuses to run as root, and archlinux:base-devel's default
+      # user is root — create an unprivileged builder with passwordless sudo
+      # (needed for makepkg -s to pacman-install PKGBUILD's own depends).
+      - name: Set up builder user
+        run: |
+          pacman -Syu --noconfirm
+          useradd -m builder
+          echo "builder ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
+          chown -R builder:builder "${GITHUB_WORKSPACE}"
+
+      # The PKGBUILD's source is git+https with a #commit= pin that defaults
+      # to the latest tagged release (so a plain `makepkg` — e.g. a real AUR
+      # build — stays reproducible), but it reads _commit from the
+      # environment first, so pin it to the exact commit that triggered this
+      # workflow instead of the tag.
+      - name: Build package
+        run: su builder -c "cd '${GITHUB_WORKSPACE}/packaging/arch' && _commit='${{ github.sha }}' makepkg -s --noconfirm"
+
+      - name: Collect package
+        run: |
+          mkdir -p dist
+          cp packaging/arch/*.pkg.tar.zst dist/
+
+      - name: Upload Arch package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: arch-package
+          path: dist/*.pkg.tar.zst
